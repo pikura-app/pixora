@@ -17,8 +17,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly UpdateCheckService _updateCheck;
     private ContentControl? _mainContentControl;
 
-    [ObservableProperty] private string _sidebarUserName = "Guest User";
-    [ObservableProperty] private string _sidebarUserStatus = "Not signed in";
+    [ObservableProperty] private string _sidebarUserName    = "Guest User";
+    [ObservableProperty] private string _sidebarUserStatus  = "Not signed in";
+    [ObservableProperty] private string _sidebarUserInitial = "G";
     [ObservableProperty] private bool   _updateAvailable;
     [ObservableProperty] private string _updateVersion = string.Empty;
     [ObservableProperty] private string _updateUrl     = string.Empty;
@@ -60,8 +61,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private void RefreshUserChip()
     {
         var s = _settingsService.Current;
-        SidebarUserName = s.IsConfigured ? (s.UserName ?? s.UserId ?? "Pixiv User") : "Guest User";
-        SidebarUserStatus = s.IsConfigured ? $"ID: {s.UserId}" : "Not signed in";
+        SidebarUserName    = s.IsConfigured ? (s.UserName ?? s.UserId ?? "Pixiv User") : "Guest User";
+        SidebarUserStatus  = s.IsConfigured ? $"ID: {s.UserId}" : "Not signed in";
+        SidebarUserInitial = string.IsNullOrEmpty(SidebarUserName) ? "G" : SidebarUserName[0].ToString().ToUpper();
     }
 
     public string Title { get; }

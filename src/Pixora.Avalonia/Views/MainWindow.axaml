@@ -116,25 +116,50 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- User chip -->
-                        <Border Grid.Row="1" Margin="10,0,10,10" Padding="10"
+                        <!-- Account switcher chip -->
+                        <Button Grid.Row="1" Margin="10,0,10,10" Padding="10"
                                 Background="{actipro:ThemeResource Container2BackgroundBrush}"
                                 BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
-                                BorderThickness="1" CornerRadius="8">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Border Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                BorderThickness="1" CornerRadius="8"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                Click="AccountChip_Click" x:Name="AccountChipBtn">
+                            <Button.Flyout>
+                                <Flyout x:Name="AccountFlyout" Placement="Top">
+                                    <Border MinWidth="200" MaxHeight="320" Padding="6">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="ACCOUNTS" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                                       Margin="6,2,0,4" LetterSpacing="1.5"/>
+                                            <ItemsControl x:Name="AccountList"/>
+                                            <Separator Margin="0,4"/>
+                                            <Button Content="＋  Add account" FontSize="12"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                    Padding="6,6" CornerRadius="4"
+                                                    Click="AddAccountBtn_Click"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Flyout>
+                            </Button.Flyout>
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Grid.Column="0" Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
                                         CornerRadius="14" Width="28" Height="28">
-                                    <TextBlock Text="U" FontSize="12" FontWeight="Bold" Foreground="White"
+                                    <TextBlock Text="{Binding SidebarUserInitial}" FontSize="12" FontWeight="Bold"
+                                               Foreground="White"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <StackPanel VerticalAlignment="Center" Spacing="1">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1" Margin="10,0,0,0">
                                     <TextBlock Text="{Binding SidebarUserName}" FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding SidebarUserStatus}" FontSize="10"
                                                Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
                                 </StackPanel>
-                            </StackPanel>
-                        </Border>
+                                <TextBlock Grid.Column="2" Text="⌄" FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           Margin="6,0,0,0"/>
+                            </Grid>
+                        </Button>
                     </Grid>
             </Border>
 

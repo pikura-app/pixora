@@ -108,6 +108,9 @@ public static class AppServices
                 // Update check
                 services.AddSingleton<UpdateCheckService>();
 
+                // Multi-account
+                services.AddSingleton<AccountService>();
+
                 // Avalonia-specific services
                 services.AddSingleton<NavigationService>();
                 services.AddSingleton<DialogService>();

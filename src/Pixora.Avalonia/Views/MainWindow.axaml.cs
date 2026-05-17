@@ -221,6 +221,88 @@ public partial class MainWindow : Window
             BeginMoveDrag(e);
     }
 
+    private void AccountChip_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var accountService = AppServices.Get<AccountService>();
+            var profiles = accountService.Profiles;
+
+            AccountList.Items.Clear();
+            foreach (var profile in profiles)
+            {
+                var p = profile; // capture
+                var btn = new Button
+                {
+                    Content = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Border
+                            {
+                                Background = Brushes.SteelBlue, CornerRadius = new CornerRadius(10),
+                                Width = 20, Height = 20,
+                                Child = new TextBlock
+                                {
+                                    Text = (p.DisplayLabel.Length > 0 ? p.DisplayLabel[0].ToString().ToUpper() : "?"),
+                                    FontSize = 10, FontWeight = FontWeight.Bold,
+                                    Foreground = Brushes.White,
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                }
+                            },
+                            new StackPanel
+                            {
+                                Spacing = 1,
+                                Children =
+                                {
+                                    new TextBlock { Text = p.DisplayLabel, FontSize = 12, FontWeight = FontWeight.SemiBold },
+                                    new TextBlock { Text = p.UserId != null ? $"ID: {p.UserId}" : "Not verified", FontSize = 10,
+                                                    Foreground = new SolidColorBrush(Color.Parse("#888888")) }
+                                }
+                            }
+                        }
+                    },
+                    Background = accountService.ActiveProfile?.Id == p.Id
+                        ? new SolidColorBrush(Color.Parse("#1A5599FF"))
+                        : Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(6),
+                    CornerRadius = new CornerRadius(4),
+                };
+                btn.Click += (_, _) =>
+                {
+                    AppServices.Get<AccountService>().SwitchTo(p.Id);
+                    AccountChipBtn.Flyout?.Hide();
+                };
+                AccountList.Items.Add(btn);
+            }
+        }
+        catch { /* non-fatal */ }
+    }
+
+    private async void AddAccountBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        AccountChipBtn.Flyout?.Hide();
+        try
+        {
+            var loginWindow = new Login.PixivLoginWindow();
+            await loginWindow.ShowDialog(this);
+            if (loginWindow.LoginSucceeded)
+            {
+                var vm = DataContext as ViewModels.MainWindowViewModel;
+                vm?.GetType().GetMethod("RefreshUserChip",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.Invoke(vm, null);
+            }
+        }
+        catch { /* non-fatal */ }
+    }
+
     private void HamburgerBtn_Click(object? sender, RoutedEventArgs e)
     {
         var col = RootGrid.ColumnDefinitions[0];

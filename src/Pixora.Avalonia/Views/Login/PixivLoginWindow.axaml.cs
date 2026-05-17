@@ -138,6 +138,8 @@ public partial class PixivLoginWindow : Window
             var client = AppServices.Get<PixivClient>();
             await client.ValidateSessionAsync();
 
+            AppServices.Get<AccountService>().UpsertFromCurrentSession();
+
             LoginSucceeded = true;
             StatusText.Text = $"Signed in as {settings.Current.UserName ?? settings.Current.UserId}";
             await Task.Delay(800);
