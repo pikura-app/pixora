@@ -1,0 +1,449 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:vm="using:Pixora.Avalonia.ViewModels"
+             xmlns:ctrl="using:Pixora.Avalonia.Views.Controls"
+             xmlns:conv="using:Pixora.Avalonia.Converters"
+             x:Class="Pixora.Avalonia.Views.Gallery.InlineArtworkViewer"
+             x:DataType="vm:GalleryViewModel"
+             x:Name="ViewerRoot"
+             Background="{actipro:ThemeResource Container3BackgroundBrush}">
+
+    <Grid Name="RootGrid" RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+
+        <!-- ── Tab strip ── -->
+        <Border Grid.Row="0"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="6,4">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <!-- Browse gallery alongside tabs -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="0,0,8,0">
+                    <Button x:Name="BrowsePanelButton"
+                            CornerRadius="6" Padding="10,5" FontSize="12"
+                            Click="OnBrowseButtonClicked"
+                            ToolTip.Tip="Hide or show the side panel">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="▣" FontSize="13" VerticalAlignment="Center"
+                                       IsVisible="{Binding ShowPreview}"/>
+                            <TextBlock Text="Hide Panel" FontSize="11" VerticalAlignment="Center"
+                                       IsVisible="{Binding ShowPreview}"/>
+                            <TextBlock Text="▣" FontSize="13" VerticalAlignment="Center"
+                                       IsVisible="{Binding !ShowPreview}"/>
+                            <TextBlock Text="Show Panel" FontSize="11" VerticalAlignment="Center"
+                                       IsVisible="{Binding !ShowPreview}"/>
+                        </StackPanel>
+                    </Button>
+                    <Button CornerRadius="6" Padding="10,5" FontSize="12"
+                            Click="OnExpandButtonClicked"
+                            ToolTip.Tip="Expand to full screen / restore side panel">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="⛶" FontSize="13" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ExpandLabel" Text="Expand" FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="RestoreLabel" Text="Restore" FontSize="11" VerticalAlignment="Center" IsVisible="False"/>
+                        </StackPanel>
+                    </Button>
+                    <Button CornerRadius="6" Padding="10,5" FontSize="12"
+                            Click="OnCloseAllClicked"
+                            ToolTip.Tip="Close all tabs">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="&#x2715;" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Text="Close all" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Scrollable tab list -->
+                <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl Name="TabStrip" ItemsSource="{Binding ViewerTabs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="2"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ViewerTab">
+                                <Border Name="TabItem" CornerRadius="6,6,0,0"
+                                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                        BorderThickness="1,1,1,0"
+                                        MinWidth="80" MaxWidth="200"
+                                        PointerPressed="OnTabPointerPressed">
+                                    <StackPanel Orientation="Horizontal" Spacing="0">
+                                        <TextBlock Text="{Binding Header}"
+                                                   FontSize="12" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="150" Margin="10,5,6,5"/>
+                                        <Button Name="TabCloseBtn" Content="&#x2715;" FontSize="9"
+                                                Padding="4,2" Margin="0,3,4,3"
+                                                CornerRadius="3" VerticalAlignment="Center"
+                                                Click="OnTabCloseClick"
+                                                ToolTip.Tip="Close this tab"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Right: tab list picker + zoom label -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="6,0,4,0">
+                    <Button Name="TabListBtn" Content="&#x2630;" FontSize="12"
+                            Padding="8,4" CornerRadius="6"
+                            ToolTip.Tip="All open tabs"
+                            Click="OnTabListClick"
+                            IsVisible="{Binding HasMultipleTabs}"/>
+                    <TextBlock Name="ZoomLabel" FontSize="11"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Active artwork info row ── -->
+        <Border Grid.Row="1"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="10,6">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding InlineViewerCard.Title}"
+                               FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding InlineViewerCard.UserName}"
+                               FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" VerticalAlignment="Center"/>
+                    <Button Name="FollowToggleBtn" CornerRadius="6" Padding="8,3" FontSize="11"
+                            Click="OnFollowToggleClicked" VerticalAlignment="Center"
+                            IsVisible="{Binding InlineViewerCard, Converter={x:Static ObjectConverters.IsNotNull}}"
+                            ToolTip.Tip="Follow or unfollow this artist"/>
+                    <Border Background="#7F374151" CornerRadius="4" Padding="6,2"
+                            IsVisible="{Binding InlineViewerCard.IsR18}">
+                        <TextBlock Text="R-18" FontSize="10" Foreground="#FC8181" FontWeight="Bold"/>
+                    </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Name="ArtworkCounterLabel" FontSize="11"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                               VerticalAlignment="Center"/>
+                    <Button Name="PrevArtworkBtn" CornerRadius="6" Padding="8,4" FontSize="12"
+                            Click="OnPrevArtwork" ToolTip.Tip="Previous artwork">
+                        <TextBlock Text="&#x276E;" FontSize="13"/>
+                    </Button>
+                    <Button Name="NextArtworkBtn" CornerRadius="6" Padding="8,4" FontSize="12"
+                            Click="OnNextArtwork" ToolTip.Tip="Next artwork">
+                        <TextBlock Text="&#x276F;" FontSize="13"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Action bar (scrollable so it never clips) ── -->
+        <Border Grid.Row="2"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="8,5">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <!-- Zoom controls -->
+                    <Button Content="−" CornerRadius="5" Padding="8,4" FontSize="14"
+                            Name="ZoomOutBtn" Click="OnZoomOut" ToolTip.Tip="Zoom out"/>
+                    <Button Content="⊡" CornerRadius="5" Padding="8,4" FontSize="12"
+                            Name="ZoomFitBtn" Click="OnZoomFit" ToolTip.Tip="Fit to window"/>
+                    <Button Content="+" CornerRadius="5" Padding="8,4" FontSize="14"
+                            Name="ZoomInBtn" Click="OnZoomIn" ToolTip.Tip="Zoom in"/>
+
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
+
+                    <!-- Page navigation (multi-page only) -->
+                    <Button Content="‹ Prev" CornerRadius="5" Padding="8,4" FontSize="12"
+                            Name="PrevPageBtn" Click="OnPrevPage"
+                            IsVisible="{Binding InlineViewerCard.IsMultiPage}"
+                            ToolTip.Tip="Previous page"/>
+                    <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                            CornerRadius="5" Padding="8,4"
+                            IsVisible="{Binding InlineViewerCard.IsMultiPage}">
+                        <TextBlock Name="PageIndicatorText" FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                    </Border>
+                    <Button Content="Next ›" CornerRadius="5" Padding="8,4" FontSize="12"
+                            Name="NextPageBtn" Click="OnNextPage"
+                            IsVisible="{Binding InlineViewerCard.IsMultiPage}"
+                            ToolTip.Tip="Next page"/>
+
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
+
+                    <!-- Downloads -->
+                    <Button Content="↓ Page" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Name="DlPageBtn" Click="OnDownloadCurrentPage"
+                            ToolTip.Tip="Download current page"/>
+                    <Button Content="↓ All pages" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Classes="accent" Name="DlAllBtn" Click="OnDownloadAllPages"
+                            IsVisible="{Binding InlineViewerCard.IsMultiPage}"
+                            ToolTip.Tip="Download all pages"/>
+                    <Button Content="↓ Range…" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Name="DlRangeBtn" Click="OnDownloadPageRange"
+                            IsVisible="{Binding InlineViewerCard.IsMultiPage}"
+                            ToolTip.Tip="Download page range"/>
+
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
+
+                    <Button Content="🌐 Pixiv" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Name="OpenPixivBtn" Click="OnOpenInPixiv"
+                            ToolTip.Tip="Open on pixiv.net"/>
+                    <Button x:Name="GoToArtistBtn"
+                            Content="👤 Artist" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Click="OnGoToArtist"
+                            ToolTip.Tip="Open this artist's gallery"/>
+                    <Button Content="⧉ Popup" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Click="OnOpenPopup"
+                            ToolTip.Tip="Open in floating popup window"/>
+                    <Button Content="📋 Copy" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Click="OnCopyImage"
+                            ToolTip.Tip="Copy this image to the clipboard"/>
+
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
+
+                    <!-- ★ Local favorite toggle -->
+                    <Button Name="LocalFavBtn" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Click="OnToggleLocalFavorite"
+                            ToolTip.Tip="Add / remove from local favorites">
+                        <TextBlock Name="LocalFavLabel" Text="☆ Favorite"/>
+                    </Button>
+
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
+
+                    <!-- Hoshi AI assistant toggle -->
+                    <Button Name="AiToggleBtn" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Click="OnAiToggleClicked"
+                            ToolTip.Tip="Toggle Hoshi (星) — AI assistant">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="✦" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Name="AiToggleBtnLabel" Text="Hoshi" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ── Zoomable image canvas ── -->
+        <Border Grid.Row="3" ClipToBounds="True" Name="ImageCanvas"
+                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                Margin="10,8" CornerRadius="12"
+                PointerWheelChanged="OnImageWheel"
+                PointerPressed="OnImagePointerPressed"
+                PointerMoved="OnImagePointerMoved"
+                PointerReleased="OnImagePointerReleased">
+            <Panel>
+                <!-- Loading spinner -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"
+                            Name="LoadingPanel">
+                    <ProgressBar IsIndeterminate="True" Width="180"/>
+                    <TextBlock Text="Loading…" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- The actual image, transformed by code-behind -->
+                <Image Name="ViewerImage"
+                       Stretch="Uniform"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       RenderTransformOrigin="0.5,0.5">
+                    <Image.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform X="0" Y="0"/>
+                        </TransformGroup>
+                    </Image.RenderTransform>
+                    <Image.ContextMenu>
+                        <ContextMenu Opening="OnImageContextMenuOpening">
+                            <MenuItem Name="CtxDlPage" Click="OnDownloadCurrentPage">
+                                <MenuItem.Header>
+                                    <TextBlock Name="CtxDlPageHeader" Text="↓ Download this page"/>
+                                </MenuItem.Header>
+                            </MenuItem>
+                            <MenuItem Name="CtxDlAll" Click="OnDownloadAllPages">
+                                <MenuItem.Header>
+                                    <TextBlock Name="CtxDlAllHeader" Text="↓ Download all pages"/>
+                                </MenuItem.Header>
+                            </MenuItem>
+                            <MenuItem Name="CtxDlRange" Click="OnDownloadPageRange">
+                                <MenuItem.Header>
+                                    <TextBlock Name="CtxDlRangeHeader" Text="↓ Download page range…"/>
+                                </MenuItem.Header>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="Open in popup window" Click="OnOpenPopup"/>
+                            <MenuItem Header="🌐 Open artwork on Pixiv" Click="OnOpenInPixiv"/>
+                            <Separator/>
+                            <MenuItem x:Name="GoToArtistMenuItem"
+                                      Header="👤 Go to artist's gallery" Click="OnGoToArtist"/>
+                            <MenuItem Header="🌐 Open artist on Pixiv" Click="OnOpenArtistInPixiv"/>
+                            <Separator/>
+                            <MenuItem Header="Copy artwork ID" Click="OnCopyId"/>
+                            <MenuItem Header="📋 Copy image" Click="OnCopyImage"/>
+                            <MenuItem Header="Reset zoom" Click="OnZoomFit"/>
+                        </ContextMenu>
+                    </Image.ContextMenu>
+                </Image>
+            </Panel>
+        </Border>
+
+        <!-- ── Hoshi AI panel (collapsible) ── -->
+        <Border Grid.Row="5" Name="AiPanel"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0"
+                IsVisible="False">
+            <Grid RowDefinitions="Auto,*,Auto">
+
+                <!-- Header -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto"
+                      Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                      Margin="0,0,0,0">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
+                                VerticalAlignment="Center" Margin="10,5,0,5">
+                        <TextBlock Text="✦ Hoshi 星" FontSize="12" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Name="AiStatusLabel" FontSize="10"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <!-- Quick action buttons -->
+                    <Button Grid.Column="1" Content="👁 Describe" CornerRadius="4" Padding="7,3" FontSize="10"
+                            Margin="0,4,4,4" Name="AiDescribeBtn" Click="OnAiDescribeClicked"
+                            ToolTip.Tip="Describe this image"/>
+                    <Button Grid.Column="2" Content="🏷 Tags" CornerRadius="4" Padding="7,3" FontSize="10"
+                            Margin="0,4,4,4" Name="AiTagsBtn" Click="OnAiTagsClicked"
+                            ToolTip.Tip="Suggest tags"/>
+                    <Button Grid.Column="3" Content="⭐ Fav" CornerRadius="4" Padding="7,3" FontSize="10"
+                            Margin="0,4,4,4" Name="AiFavBtn" Click="OnAiFavClicked"
+                            ToolTip.Tip="Add to local favorites"/>
+                    <Button Grid.Column="4" Content="↓ DL" CornerRadius="4" Padding="7,3" FontSize="10"
+                            Margin="0,4,4,4" Name="AiDlBtn" Click="OnAiDlClicked"
+                            ToolTip.Tip="Download this artwork"/>
+                    <Button Grid.Column="5" Content="🗑 Clear" CornerRadius="4" Padding="7,3" FontSize="10"
+                            Margin="0,4,8,4" Name="AiClearBtn" Click="OnAiClearClicked"
+                            ToolTip.Tip="Clear chat history"/>
+                </Grid>
+
+                <!-- Message list -->
+                <ScrollViewer Grid.Row="1" Name="AiScrollViewer"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl Name="AiMessagesList" Margin="8,6,8,8">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Spacing="8"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AiChatMessage">
+                                <Panel>
+                                    <!-- User bubble -->
+                                    <Border IsVisible="{Binding IsUser}"
+                                            Background="#3356A0DB"
+                                            CornerRadius="10,10,2,10"
+                                            Padding="10,7" Margin="50,0,0,0"
+                                            HorizontalAlignment="Right"
+                                            MaxWidth="340">
+                                        <ctrl:LinkTextBlock LinkText="{Binding Content}" FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                    </Border>
+                                    <!-- Assistant bubble -->
+                                    <Border IsVisible="{Binding IsAssistant}"
+                                            Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="10,10,10,2"
+                                            Padding="10,7" Margin="0,0,50,0"
+                                            HorizontalAlignment="Left"
+                                            MaxWidth="380">
+                                        <ctrl:LinkTextBlock LinkText="{Binding Content}" FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                    </Border>
+                                    <!-- System note -->
+                                    <Border IsVisible="{Binding IsSystem}"
+                                            Padding="4,2" HorizontalAlignment="Center">
+                                        <ctrl:LinkTextBlock LinkText="{Binding Content}" FontSize="10"
+                                                   TextWrapping="Wrap" FontStyle="Italic"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   HorizontalAlignment="Center"/>
+                                    </Border>
+                                </Panel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Input row -->
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="8,4,8,8">
+                    <TextBox Grid.Column="0" Name="AiInputBox"
+                             Watermark="Ask Hoshi anything — describe, suggest tags, download, add to favorites, move to folder…"
+                             FontSize="11" CornerRadius="6,0,0,6"
+                             KeyDown="OnAiInputKeyDown"/>
+                    <Button Grid.Column="1" Content="Send" Name="AiSendBtn"
+                            CornerRadius="0,6,6,0" Padding="12,0" FontSize="11"
+                            Click="OnAiSendClicked"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ── Info strip with clickable tags ── -->
+        <Border Grid.Row="4"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="14,10">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding InlineViewerCard.TypeLabel}"
+                           FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                <TextBlock Grid.Column="1" FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" VerticalAlignment="Center"
+                           Text="{Binding InlineViewerCard.PageCount, StringFormat='{}{0} pages'}"
+                           IsVisible="{Binding InlineViewerCard.IsMultiPage}" Margin="0,0,16,0"/>
+                <!-- Clickable tag chips -->
+                <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl Name="TagsItemsControl"
+                                  ItemsSource="{Binding InlineViewerCard.Tags}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="4"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Border Padding="6,2"
+                                        CornerRadius="8"
+                                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                        BorderThickness="1"
+                                        Cursor="Hand"
+                                        PointerPressed="OnTagPressed">
+                                    <Border.Styles>
+                                        <Style Selector="Border:pointerover">
+                                            <Setter Property="Background" Value="{actipro:ThemeResource Container3BackgroundBrush}"/>
+                                        </Style>
+                                        <Style Selector="Border:pointerover TextBlock">
+                                            <Setter Property="Foreground" Value="#5B8DEF"/>
+                                            <Setter Property="TextDecorations" Value="Underline"/>
+                                        </Style>
+                                    </Border.Styles>
+                                    <Border.ContextMenu>
+                                        <ContextMenu Opening="OnTagContextMenuOpening">
+                                            <MenuItem Header="👤 Open artist gallery" Click="OnTagOpenArtistGallery"
+                                                      Tag="OpenArtistGallery"/>
+                                            <Separator/>
+                                            <MenuItem Header="🔍 Search tag in Gallery" Click="OnTagSearchGallery"/>
+                                            <MenuItem Header="🌐 Search tag on Pixiv" Click="OnTagSearchPixiv"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <TextBlock Text="{Binding}" FontSize="10" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <TextBlock Grid.Column="3" FontSize="10" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                           Text="Click tag: filter • Shift+click: search global"
+                           VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

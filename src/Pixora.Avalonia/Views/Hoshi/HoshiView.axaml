@@ -1,0 +1,277 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:vm="using:Pixora.Avalonia.ViewModels"
+             xmlns:svc="using:Pixora.Avalonia.Services"
+             xmlns:conv="using:Pixora.Avalonia.Converters"
+             xmlns:ctrl="using:Pixora.Avalonia.Views.Controls"
+             x:DataType="vm:AiViewModel"
+             x:Class="Pixora.Avalonia.Views.Hoshi.HoshiView"
+             DragDrop.AllowDrop="True">
+
+    <Grid ColumnDefinitions="260,*" Margin="0,32,0,0">
+
+        <!-- ── Left sidebar: sessions list ───────────────────────────────── -->
+        <Border Grid.Column="0"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <!-- Sidebar header -->
+                <Border Grid.Row="0" Padding="12,10"
+                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="Sessions" FontSize="13" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Clear All" Name="ClearAllBtn"
+                                CornerRadius="4" Padding="8,3" FontSize="11" Margin="6,0"
+                                Click="OnClearAllSessionsClicked"/>
+                        <Button Grid.Column="2" Content="✚ New" Name="NewSessionBtn"
+                                CornerRadius="4" Padding="8,3" FontSize="11"
+                                Click="OnNewSessionClicked"/>
+                    </Grid>
+                </Border>
+
+                <!-- Empty state -->
+                <StackPanel Grid.Row="1" Margin="14,18" Spacing="6"
+                            IsVisible="{Binding Sessions.Count, Converter={x:Static svc:CountToBoolConverter.IsZero}}">
+                    <TextBlock Text="No sessions yet"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                               FontSize="12" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Click ✚ New to start, then drop an image to begin."
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                               FontSize="10" TextWrapping="Wrap" TextAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Sessions list (grouped by date) -->
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="8" Margin="6,6">
+                        <!-- Delete selected button -->
+                        <Button Name="DeleteSelectedBtn" Content="Delete Selected" 
+                                CornerRadius="4" Padding="8,3" FontSize="11"
+                                Click="OnDeleteSelectedSessionsClicked"
+                                IsVisible="False"/>
+                        <ItemsControl Name="SessionsList" ItemsSource="{Binding GroupedSessions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SessionGroupViewModel">
+                                    <StackPanel Spacing="2">
+                                        <!-- Date header (collapsible) -->
+                                        <Border Padding="8,4" CornerRadius="4"
+                                                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                Cursor="Hand"
+                                                PointerPressed="OnGroupHeaderClicked"
+                                                Tag="{Binding}">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding DisplayDate}" 
+                                                           FontWeight="SemiBold" FontSize="11"
+                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                <TextBlock Grid.Column="1" Text="▼" FontSize="10"
+                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                           Name="ExpandIcon"/>
+                                            </Grid>
+                                        </Border>
+                                        
+                                        <!-- Sessions for this date -->
+                                        <ItemsControl ItemsSource="{Binding Sessions}" IsVisible="{Binding IsExpanded}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="svc:HoshiSession">
+                                                    <Border Margin="0,2" Padding="10,8" CornerRadius="6"
+                                                            Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                                            BorderThickness="1"
+                                                            Cursor="Hand"
+                                                            Tag="{Binding}"
+                                                            PointerPressed="OnSessionClicked">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                                            <!-- Checkbox for selection -->
+                                                            <CheckBox Grid.Column="0" Name="SessionCheckbox"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                      VerticalAlignment="Center"
+                                                                      Margin="0,0,8,0"
+                                                                      Click="OnSessionCheckboxClicked"
+                                                                      Tag="{Binding}"/>
+                                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12"
+                                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                                                <TextBlock Text="{Binding Subtitle}" FontSize="10"
+                                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Border.ContextMenu>
+                                                            <ContextMenu>
+                                                                <ContextMenu.Styles>
+                                                                    <Style Selector="ContextMenu">
+                                                                        <Setter Property="Background" Value="{actipro:ThemeResource Container1BackgroundBrush}"/>
+                                                                        <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                                                    </Style>
+                                                                    <Style Selector="MenuItem">
+                                                                        <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                                                        <Setter Property="Background" Value="Transparent"/>
+                                                                    </Style>
+                                                                    <Style Selector="MenuItem:pointerover">
+                                                                        <Setter Property="Background" Value="{actipro:ThemeResource ControlBackgroundBrushSoftAccent}"/>
+                                                                        <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                                                    </Style>
+                                                                    <Style Selector="Separator">
+                                                                        <Setter Property="Background" Value="{actipro:ThemeResource Container1BorderBrush}"/>
+                                                                    </Style>
+                                                                </ContextMenu.Styles>
+                                                                <MenuItem Header="Rename" Click="OnRenameSession" Tag="{Binding}"/>
+                                                                <MenuItem Header="Duplicate" Click="OnDuplicateSession" Tag="{Binding}"/>
+                                                                <Separator/>
+                                                                <MenuItem Header="Delete Session" Click="OnDeleteSession" Tag="{Binding}"/>
+                                                            </ContextMenu>
+                                                        </Border.ContextMenu>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ── Right side: chat area ─────────────────────────────────────── -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
+
+            <!-- Header -->
+            <Border Grid.Row="0"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="0,0,0,1" Padding="16,12">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <TextBlock Text="✦" FontSize="20"/>
+                        <StackPanel Spacing="1">
+                            <TextBlock Name="SessionTitleLabel" Text="Hoshi 星" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Name="StatusLabel" Text="{Binding StatusText}" FontSize="11"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Button Name="ToggleBtn" Content="Enable" CornerRadius="6" Padding="12,6"
+                                FontSize="11" Click="OnToggleClicked"/>
+                        <Button Content="🗑 Clear" CornerRadius="6" Padding="10,6" FontSize="11"
+                                Click="OnClearClicked"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Image preview strip (visible when an image is attached) -->
+            <Border Grid.Row="1" Name="ImageStrip" Padding="12,10"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <!-- Thumbnail -->
+                    <Border Grid.Column="0" Width="56" Height="56" CornerRadius="6"
+                            ClipToBounds="True"
+                            Background="{actipro:ThemeResource Container3BackgroundBrush}">
+                        <Image Name="ImageThumb" Stretch="UniformToFill"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Name="ImageLabel" Text="No image attached" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Name="ImageHint"
+                                   Text="Drop an image here, paste with Ctrl+V, or click 📂 Open"
+                                   FontSize="10"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button Content="📂 Open" CornerRadius="4" Padding="8,4" FontSize="11"
+                                Click="OnOpenImageClicked"/>
+                        <Button Content="📋 Paste" CornerRadius="4" Padding="8,4" FontSize="11"
+                                Click="OnPasteImageClicked"
+                                ToolTip.Tip="Paste image from clipboard (Ctrl+V also works)"/>
+                        <Button Content="🌐 URL" CornerRadius="4" Padding="8,4" FontSize="11"
+                                Click="OnUrlImageClicked"/>
+                        <Button Name="ClearImageBtn" Content="✕ Clear" CornerRadius="4" Padding="8,4" FontSize="11"
+                                Click="OnClearImageClicked" IsVisible="False"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Chat messages -->
+            <ScrollViewer Grid.Row="2" Name="ChatScroll"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl Name="MessagesList" Margin="12,8,12,12" ItemsSource="{Binding Messages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AiChatMessage">
+                            <Grid ColumnDefinitions="Auto,*" Margin="0,4"
+                                  IsVisible="{Binding Content, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <Border Grid.Column="0" Padding="6,2" CornerRadius="4" Margin="0,2,8,0"
+                                        VerticalAlignment="Top"
+                                        Background="{actipro:ThemeResource Container2BackgroundBrush}">
+                                    <TextBlock Text="{Binding Role}" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                </Border>
+                                <Border Grid.Column="1" Padding="10,8" CornerRadius="8"
+                                        Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                        BorderThickness="1">
+                                    <StackPanel Spacing="8">
+                                        <!-- Image thumbnail (if present) -->
+                                        <Border Name="MessageImage" Width="200" Height="150" CornerRadius="6"
+                                                ClipToBounds="True"
+                                                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                IsVisible="{Binding HasImage}">
+                                            <Image Stretch="UniformToFill">
+                                                <Image.Source>
+                                                    <Binding Path="ImageBytes">
+                                                        <Binding.Converter>
+                                                            <conv:BytesToImageConverter/>
+                                                        </Binding.Converter>
+                                                    </Binding>
+                                                </Image.Source>
+                                            </Image>
+                                        </Border>
+                                        <!-- Message text -->
+                                        <ctrl:LinkTextBlock LinkText="{Binding Content}" TextWrapping="Wrap" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Quick actions + input -->
+            <Border Grid.Row="3"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="10,8">
+                <StackPanel Spacing="8">
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Content="👁 Describe" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,4,4" Name="DescribeBtn" Click="OnDescribeClicked"/>
+                        <Button Content="🏷 Tags" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,4,4" Name="TagsBtn" Click="OnTagsClicked"/>
+                        <Button Content="🎨 Style" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,4,4" Name="StyleBtn" Click="OnStyleClicked"/>
+                        <Button Content="✨ Character" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,4,4" Name="CharBtn" Click="OnCharClicked"/>
+                        <Button Content="⭐ Fav" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,4,4" Name="FavBtn" Click="OnFavClicked"/>
+                        <Button Content="↓ DL" CornerRadius="4" Padding="8,4" FontSize="10"
+                                Margin="0,0,0,4" Name="DlBtn" Click="OnDlClicked"/>
+                    </WrapPanel>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Name="InputBox"
+                                 Watermark="Ask Hoshi anything — drop an image, paste, or type a question…"
+                                 FontSize="12" CornerRadius="6,0,0,6"
+                                 KeyDown="OnInputKeyDown"/>
+                        <Button Grid.Column="1" Content="Send" Name="SendBtn"
+                                CornerRadius="0,6,6,0" Padding="14,0" FontSize="12"
+                                Click="OnSendClicked"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

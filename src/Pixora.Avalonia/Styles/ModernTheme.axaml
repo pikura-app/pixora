@@ -1,0 +1,21 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- Modern Color Palette -->
+    <Color x:Key="PrimaryColor">#0096FA</Color>
+    <Color x:Key="SecondaryColor">#FF6B9D</Color>
+    <Color x:Key="AccentColor">#FFD93D</Color>
+    <Color x:Key="BackgroundColor">#FAFBFC</Color>
+    <Color x:Key="SurfaceColor">#FFFFFF</Color>
+    <Color x:Key="OnSurfaceColor">#000000</Color>
+    <Color x:Key="OnBackgroundColor">#2D3748</Color>
+    
+    <!-- Modern Brushes -->
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource PrimaryColor}"/>
+    <SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource SecondaryColor}"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
+    <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
+    <SolidColorBrush x:Key="OnSurfaceBrush" Color="{StaticResource OnSurfaceColor}"/>
+    
+</ResourceDictionary>

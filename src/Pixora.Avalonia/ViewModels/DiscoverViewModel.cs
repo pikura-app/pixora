@@ -1,0 +1,487 @@
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
+using Pixora.Core.Models;
+using Pixora.Core.Services;
+using Pixora.Core.Settings;
+using System;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Pixora.Avalonia.ViewModels;
+
+public partial class DiscoverViewModel : ViewModelBase
+{
+    private readonly PixivClient _pixivClient;
+    private readonly PixivImageLoader _imageLoader;
+    private readonly SettingsService _settingsService;
+    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _usersCts;
+    private CancellationTokenSource? _artistWorksCts;
+    private DateTime _lastLoaded = DateTime.MinValue;
+    private bool _isLoadingWorks;
+    private bool _isLoadingUsers;
+    private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(30);
+
+    // ── Status ──────────────────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private bool _isLoadingArtistWorks;
+    partial void OnIsLoadingArtistWorksChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowNoArtistPlaceholder));
+        OnPropertyChanged(nameof(ShowNoWorksPlaceholder));
+    }
+    [ObservableProperty] private string _statusMessage = "Discover new artwork and artists";
+
+    // ── Tab state ────────────────────────────────────────────────────────────
+
+    [ObservableProperty] private int _selectedTabIndex;
+
+    public bool IsWorksTab => SelectedTabIndex == 0;
+    public bool IsUsersTab => SelectedTabIndex == 1;
+
+    // ── Works ────────────────────────────────────────────────────────────────
+
+    [ObservableProperty] public ObservableCollection<ArtworkCardViewModel> _recommendedWorks = new();
+    [ObservableProperty] private bool _canLoadMoreRecommended;
+    [ObservableProperty] private int _recommendedOffset;
+
+    public bool HasRecommendedWorks => RecommendedWorks.Count > 0;
+
+    // Filtered view (tag filter applied)
+    public ObservableCollection<ArtworkCardViewModel> FilteredWorks { get; } = [];
+
+    [ObservableProperty] private string _tagFilter = string.Empty;
+    partial void OnTagFilterChanged(string _) => UpdateFilteredWorks();
+
+    public void UpdateFilteredWorks()
+    {
+        // Rebuild recommended works filter
+        var src = RecommendedWorks.AsEnumerable();
+        if (!string.IsNullOrEmpty(TagFilter))
+            src = src.Where(a => a.Tags.Any(t => t.Contains(TagFilter, StringComparison.OrdinalIgnoreCase)));
+        if (!ShowR18)
+            src = src.Where(a => !a.Artwork.IsR18);
+        FilteredWorks.Clear();
+        foreach (var a in src) FilteredWorks.Add(a);
+
+        // Rebuild artist works filter
+        var artistSrc = ArtistWorks.AsEnumerable();
+        if (!ShowR18)
+            artistSrc = artistSrc.Where(a => !a.Artwork.IsR18);
+        FilteredArtistWorks.Clear();
+        foreach (var a in artistSrc) FilteredArtistWorks.Add(a);
+        OnPropertyChanged(nameof(HasArtistWorks));
+        OnPropertyChanged(nameof(ShowNoArtistPlaceholder));
+        OnPropertyChanged(nameof(ShowNoWorksPlaceholder));
+    }
+
+    // ── Users ────────────────────────────────────────────────────────────────
+
+    [ObservableProperty] public ObservableCollection<DiscoveryUserCardViewModel> _recommendedUsers = new();
+    [ObservableProperty] private bool _canLoadMoreUsers;
+    [ObservableProperty] private int _usersOffset;
+
+    public bool HasRecommendedUsers => RecommendedUsers.Count > 0;
+
+    // Two-column user layout: selected user + their works
+    [ObservableProperty] private DiscoveryUserCardViewModel? _selectedUser;
+    [ObservableProperty] public ObservableCollection<ArtworkCardViewModel> _artistWorks = new();
+    public ObservableCollection<ArtworkCardViewModel> FilteredArtistWorks { get; } = [];
+    public bool HasArtistWorks => FilteredArtistWorks.Count > 0;
+    public bool HasSelectedUser => SelectedUser != null;
+    public bool ShowNoArtistPlaceholder => !HasSelectedUser && !IsLoadingArtistWorks;
+    public bool ShowNoWorksPlaceholder => HasSelectedUser && !IsLoadingArtistWorks && !HasArtistWorks;
+
+    partial void OnSelectedUserChanged(DiscoveryUserCardViewModel? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedUser));
+        OnPropertyChanged(nameof(ShowNoArtistPlaceholder));
+        OnPropertyChanged(nameof(ShowNoWorksPlaceholder));
+        if (value != null)
+            _ = LoadArtistWorksAsync(value.UserId);
+    }
+
+    // ── View options ─────────────────────────────────────────────────────────
+
+    [ObservableProperty] private int _cardSize = 180;
+    [ObservableProperty] private bool _isFixedHeight = true;
+    [ObservableProperty] private bool _isNaturalHeight;
+    [ObservableProperty] private bool _isGridView = true;
+    [ObservableProperty] private bool _isListView;
+    [ObservableProperty] private bool _showTags = true;
+    [ObservableProperty] private bool _showInfo = true;
+    [ObservableProperty] private bool _showPreview;
+    [ObservableProperty] private bool _showR18 = true;
+    [ObservableProperty] private double _browsePanelWidth = 420;
+
+    public bool ShowR18Buttons => _settingsService?.Current.R18Mode != Pixora.Core.Settings.R18Mode.Off;
+
+    public bool IsResizingPanel { get; set; }
+    public bool IsDiscoverViewerOpen => GalleryVm.HasTabs;
+    [ObservableProperty] private bool _isViewerExpanded;
+    partial void OnIsViewerExpandedChanged(bool v) { OnPropertyChanged(nameof(IsViewerFullScreen)); }
+    public bool IsViewerFullScreen => IsViewerExpanded;
+    public double FixedCardTotalHeight => CardSize;
+
+    // ── Commands ─────────────────────────────────────────────────────────────
+
+    [RelayCommand] public void SetFixedHeight()   { IsFixedHeight = true;  IsNaturalHeight = false; }
+    [RelayCommand] public void SetNaturalHeight() { IsFixedHeight = false; IsNaturalHeight = true; }
+    [RelayCommand] public void SetGridView()  { IsGridView = true;  IsListView = false; }
+    [RelayCommand] public void SetListView()  { IsGridView = false; IsListView = true; }
+
+    partial void OnCardSizeChanged(int value)
+    {
+        OnPropertyChanged(nameof(FixedCardTotalHeight));
+        _settingsService?.Update(s => s.DiscoverCardSize = value);
+    }
+    partial void OnIsFixedHeightChanged(bool value) => _settingsService?.Update(s => s.DiscoverCardHeightMode = value ? "Fixed" : "Natural");
+    partial void OnIsGridViewChanged(bool value)    => _settingsService?.Update(s => s.DiscoverViewMode = value ? "Grid" : "List");
+    partial void OnShowTagsChanged(bool value)      => _settingsService?.Update(s => s.DiscoverShowTags = value);
+    partial void OnShowInfoChanged(bool value)      => _settingsService?.Update(s => s.DiscoverShowInfo = value);
+    partial void OnShowPreviewChanged(bool value)   { _settingsService?.Update(s => s.DiscoverShowPreview = value); }
+    partial void OnShowR18Changed(bool value)       { _settingsService?.Update(s => s.DiscoverShowR18 = value); UpdateFilteredWorks(); }
+
+    // ── GalleryViewModel bridge ──────────────────────────────────────────────
+
+    public GalleryViewModel GalleryVm { get; }
+
+    // ── Constructor ──────────────────────────────────────────────────────────
+
+    public DiscoverViewModel(PixivClient pixivClient, PixivImageLoader imageLoader, SettingsService settingsService, GalleryViewModel galleryVm)
+    {
+        _pixivClient = pixivClient;
+        _imageLoader = imageLoader;
+        _settingsService = settingsService;
+        GalleryVm = galleryVm;
+        GalleryVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(GalleryViewModel.IsInlineViewerOpen) or nameof(GalleryViewModel.HasTabs))
+            {
+                OnPropertyChanged(nameof(IsDiscoverViewerOpen));
+                if (!GalleryVm.HasTabs) IsViewerExpanded = false;
+            }
+        };
+        GalleryVm.ViewerTabs.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(IsDiscoverViewerOpen));
+            if (!GalleryVm.HasTabs) IsViewerExpanded = false;
+        };
+
+        var s = settingsService.Current;
+        _isFixedHeight    = s.DiscoverCardHeightMode != "Natural";
+        _isNaturalHeight  = s.DiscoverCardHeightMode == "Natural";
+        _isGridView       = s.DiscoverViewMode != "List";
+        _isListView       = s.DiscoverViewMode == "List";
+        _cardSize         = s.DiscoverCardSize;
+        _showTags         = s.DiscoverShowTags;
+        _showInfo         = s.DiscoverShowInfo;
+        _showPreview      = s.DiscoverShowPreview;
+        _showR18          = s.DiscoverShowR18;
+        _browsePanelWidth = s.BrowsePanelWidth >= 200 ? s.BrowsePanelWidth : 420;
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────────
+
+    private bool _navigatingTo;
+
+    public void OnNavigatedTo()
+    {
+        // Raise tab/works visibility bindings so the view refreshes on re-entry
+        OnPropertyChanged(nameof(IsWorksTab));
+        OnPropertyChanged(nameof(IsUsersTab));
+        OnPropertyChanged(nameof(HasRecommendedWorks));
+        OnPropertyChanged(nameof(HasRecommendedUsers));
+        OnPropertyChanged(nameof(HasArtistWorks));
+
+        // Always rebuild FilteredWorks so the grid isn't blank on re-entry
+        UpdateFilteredWorks();
+
+        // Restore browse panel if a viewer tab is still open
+        if (GalleryVm.HasTabs && !ShowPreview) ShowPreview = true;
+
+        var isStale = _lastLoaded == DateTime.MinValue
+            || DateTime.UtcNow - _lastLoaded > StaleThreshold
+            || DateTime.UtcNow.Date > _lastLoaded.Date;
+        if (!_isLoadingWorks && (RecommendedWorks.Count == 0 || isStale))
+            _ = LoadRecommendedWorksAsync();
+    }
+
+    partial void OnSelectedTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsWorksTab));
+        OnPropertyChanged(nameof(IsUsersTab));
+        if (_navigatingTo) return;
+        switch (value)
+        {
+            case 0:
+                if (RecommendedWorks.Count == 0 && !_isLoadingWorks)
+                    _ = LoadRecommendedWorksAsync();
+                break;
+            case 1:
+                if (RecommendedUsers.Count == 0 && !_isLoadingUsers)
+                    _ = LoadRecommendedUsersAsync();
+                break;
+        }
+    }
+
+    [RelayCommand]
+    private void SetTabIndex(object? param)
+    {
+        if (param is int i) SelectedTabIndex = i;
+        else if (param is string s && int.TryParse(s, out var n)) SelectedTabIndex = n;
+    }
+
+    // ── Load recommended works ───────────────────────────────────────────────
+
+    [RelayCommand]
+    public async Task LoadRecommendedWorksAsync()
+    {
+        if (_isLoadingWorks) return;
+        _isLoadingWorks = true;
+        IsLoading = true;
+        StatusMessage = "Loading recommended works…";
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+
+        RecommendedWorks.Clear();
+        RecommendedOffset = 0;
+        FilteredWorks.Clear();
+
+        try
+        {
+            var response = await _pixivClient.GetDiscoveryArtworksAsync(RecommendedOffset, 48, ct);
+            if (response?.Thumbnails?.Illust == null || response.Thumbnails.Illust.Count == 0)
+            {
+                StatusMessage = "No recommended works found.";
+                return;
+            }
+
+            foreach (var illust in response.Thumbnails.Illust)
+            {
+                if (ct.IsCancellationRequested) break;
+                var artwork = illust.ToArtworkPreview();
+                var vm = new ArtworkCardViewModel(artwork)
+                {
+                    IsBlurred = _settingsService.Current.BlurR18Content && artwork.IsR18
+                };
+                RecommendedWorks.Add(vm);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+            }
+
+            RecommendedOffset += response.Thumbnails.Illust.Count;
+            // Pixiv discovery returns exactly 48 per call — assume more are available
+            CanLoadMoreRecommended = response.Thumbnails.Illust.Count >= 48;
+            StatusMessage = $"{RecommendedWorks.Count} recommended works";
+            _lastLoaded = DateTime.UtcNow;
+            OnPropertyChanged(nameof(HasRecommendedWorks));
+            UpdateFilteredWorks();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load recommended works");
+            StatusMessage = "Failed to load: " + ex.Message;
+        }
+        finally
+        {
+            _isLoadingWorks = false;
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task LoadMoreWorksAsync()
+    {
+        if (_isLoadingWorks || !CanLoadMoreRecommended) return;
+        _isLoadingWorks = true;
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+
+        try
+        {
+            var response = await _pixivClient.GetDiscoveryArtworksAsync(RecommendedOffset, 48, ct);
+            if (response?.Thumbnails?.Illust == null) return;
+
+            foreach (var illust in response.Thumbnails.Illust)
+            {
+                if (ct.IsCancellationRequested) break;
+                var artwork = illust.ToArtworkPreview();
+                var vm = new ArtworkCardViewModel(artwork)
+                {
+                    IsBlurred = _settingsService.Current.BlurR18Content && artwork.IsR18
+                };
+                RecommendedWorks.Add(vm);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+            }
+
+            RecommendedOffset += response.Thumbnails.Illust.Count;
+            CanLoadMoreRecommended = response.Thumbnails.Illust.Count >= 48;
+            StatusMessage = $"{RecommendedWorks.Count} recommended works";
+            OnPropertyChanged(nameof(HasRecommendedWorks));
+            UpdateFilteredWorks();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to load more works"); }
+        finally { _isLoadingWorks = false; }
+    }
+
+    // ── Load recommended users ───────────────────────────────────────────────
+
+    [RelayCommand]
+    public async Task LoadRecommendedUsersAsync()
+    {
+        if (_isLoadingUsers) return;
+        _isLoadingUsers = true;
+        StatusMessage = "Loading recommended users…";
+        _usersCts?.Cancel();
+        _usersCts = new CancellationTokenSource();
+        var ct = _usersCts.Token;
+
+        RecommendedUsers.Clear();
+        UsersOffset = 0;
+        SelectedUser = null;
+        ArtistWorks.Clear();
+
+        try
+        {
+            var response = await _pixivClient.GetDiscoveryUsersAsync(UsersOffset, 48, ct);
+            if (response?.Users == null || response.Users.Count == 0)
+            {
+                StatusMessage = "No recommended users found.";
+                return;
+            }
+
+            foreach (var user in response.Users)
+            {
+                if (ct.IsCancellationRequested) break;
+                var card = new DiscoveryUserCardViewModel(user);
+                RecommendedUsers.Add(card);
+                _ = card.LoadProfileImageAsync(_imageLoader, ct);
+            }
+
+            UsersOffset += response.Users.Count;
+            CanLoadMoreUsers = response.Users.Count >= 48;
+            StatusMessage = $"{RecommendedUsers.Count} recommended users";
+            OnPropertyChanged(nameof(HasRecommendedUsers));
+
+            // Auto-select first user to populate right panel
+            if (RecommendedUsers.Count > 0)
+                SelectedUser = RecommendedUsers[0];
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load recommended users");
+            StatusMessage = "Failed to load recommended users: " + ex.Message;
+        }
+        finally { _isLoadingUsers = false; }
+    }
+
+    // ── Load artist works (Users tab right panel) ────────────────────────────
+
+    private async Task LoadArtistWorksAsync(string userId)
+    {
+        _artistWorksCts?.Cancel();
+        _artistWorksCts = new CancellationTokenSource();
+        var ct = _artistWorksCts.Token;
+
+        IsLoadingArtistWorks = true;
+        ArtistWorks.Clear();
+        FilteredArtistWorks.Clear();
+        OnPropertyChanged(nameof(HasArtistWorks));
+
+        try
+        {
+            // Step 1: get all illust+manga IDs via profile/all (same approach as Gallery)
+            var profile = await _pixivClient.GetUserProfileAllAsync(userId, ct);
+            ct.ThrowIfCancellationRequested();
+
+            var allIds = profile.AllArtworkIds();
+            if (allIds.Count == 0)
+            {
+                OnPropertyChanged(nameof(HasArtistWorks));
+                return;
+            }
+
+            // Step 2: fetch metadata for first 48 IDs
+            var batch = allIds.Take(48).ToList();
+            var works = await _pixivClient.GetArtworksMetadataAsync(userId, batch, ct);
+            ct.ThrowIfCancellationRequested();
+
+            foreach (var id in batch)
+            {
+                if (ct.IsCancellationRequested) break;
+                if (!works.TryGetValue(id, out var preview)) continue;
+                var vm = new ArtworkCardViewModel(preview)
+                {
+                    IsBlurred = _settingsService.Current.BlurR18Content && preview.IsR18
+                };
+                ArtistWorks.Add(vm);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+            }
+
+            UpdateFilteredWorks();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to load artist works for {UserId}", userId); }
+        finally { IsLoadingArtistWorks = false; }
+    }
+
+    // ── Refresh ──────────────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private async Task RefreshAsync()
+    {
+        switch (SelectedTabIndex)
+        {
+            case 0: await LoadRecommendedWorksAsync(); break;
+            case 1: await LoadRecommendedUsersAsync(); break;
+        }
+    }
+}
+
+/// <summary>
+/// ViewModel wrapper for discovery users with follow functionality.
+/// </summary>
+public partial class DiscoveryUserCardViewModel : ObservableObject
+{
+    [ObservableProperty]
+    private DiscoveryUser _user;
+
+    [ObservableProperty]
+    private Bitmap? _profileImage;
+
+    public string UserId => User.UserId ?? "";
+    public string UserName => User.UserName ?? "";
+    public string? ProfileImageUrl => User.ProfileImageUrl;
+    public bool IsFollowed => User.IsFollowed;
+
+    public DiscoveryUserCardViewModel(DiscoveryUser user)
+    {
+        User = user;
+    }
+
+    public async Task LoadProfileImageAsync(PixivImageLoader loader, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(ProfileImageUrl)) return;
+        try
+        {
+            var bytes = await loader.FetchBytesAsync(ProfileImageUrl, ct);
+            if (bytes is null || ct.IsCancellationRequested) return;
+            var bmp = await Task.Run(() => { using var ms = new MemoryStream(bytes); return new Bitmap(ms); }, ct);
+            if (!ct.IsCancellationRequested)
+                await Dispatcher.UIThread.InvokeAsync(() => ProfileImage = bmp);
+        }
+        catch { }
+    }
+}

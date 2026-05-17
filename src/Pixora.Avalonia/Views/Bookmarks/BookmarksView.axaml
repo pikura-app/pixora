@@ -1,0 +1,704 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:vm="using:Pixora.Avalonia.ViewModels"
+             xmlns:gallery="using:Pixora.Avalonia.Views.Gallery"
+             xmlns:local="using:Pixora.Avalonia.Views.Gallery"
+             xmlns:conv="using:Pixora.Avalonia.Converters"
+             x:DataType="vm:BookmarksViewModel"
+             x:Class="Pixora.Avalonia.Views.Bookmarks.BookmarksView"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800">
+
+    <UserControl.Resources>
+        <conv:BoolToBlurRadiusConverter x:Key="BoolToBlurRadiusConverter"/>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             Shared card badge fragments (reused in all templates below)
+             ══════════════════════════════════════════════════════════════════ -->
+
+        <!-- Tag chip template (used inside ItemsControl in all views) -->
+        <DataTemplate x:Key="TagChipTemplate" x:DataType="x:String">
+            <Border Margin="0,1,3,1" Padding="4,1" CornerRadius="3"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}">
+                <TextBlock Text="{Binding}" FontSize="9"
+                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             BOOKMARK card — Fixed height (WrapPanel grid, image fills card)
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="BookmarkFixedCardTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Width="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}"
+                    Height="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).FixedCardTotalHeight}"
+                    Margin="0,0,6,6"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped"
+                    ClipToBounds="True">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="👁 Open in side panel"   Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"      Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"       Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"         Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"              Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery"  Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"    Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Add to local favorites"    Click="OnContextAddFavorite"    IsVisible="{Binding !IsLocalFavorite}"/>
+                        <MenuItem Header="★ Remove from favorites"     Click="OnContextRemoveFavorite" IsVisible="{Binding IsLocalFavorite}"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"        Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image"  Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"    Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush"  Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Panel>
+                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                        <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                    </Image>
+                    <!-- Info overlay -->
+                    <Border VerticalAlignment="Bottom" Background="#CC000000" Padding="8,5"
+                            IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowInfo}">
+                        <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Title}"    FontSize="11" FontWeight="SemiBold" Foreground="White"    TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                            <TextBlock Text="{Binding UserName}" FontSize="10"                       Foreground="#CCFFFFFF" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        </StackPanel>
+                    </Border>
+                    <!-- Badges -->
+                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"  Margin="6,0,0,6" Padding="5,2" CornerRadius="4" Background="#BB000000" IsVisible="{Binding IsMultiPage}"    IsHitTestVisible="False"><TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/></Border>
+                    <Border VerticalAlignment="Top"    HorizontalAlignment="Left"  Margin="16,6,0,0" Padding="5,2" CornerRadius="4" Background="#CCDC2626" IsVisible="{Binding IsR18}"          IsHitTestVisible="False"><TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/></Border>
+                    <Border VerticalAlignment="Top"    HorizontalAlignment="Right" Margin="0,6,6,0" Padding="5,2" CornerRadius="4" Background="#CC8B5CF6" IsVisible="{Binding IsLocalFavorite}" IsHitTestVisible="False"><TextBlock Text="★"    FontSize="9" Foreground="White"/></Border>
+                </Panel>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             BOOKMARK card — Natural height (Masonry grid)
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="BookmarkNaturalCardTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Width="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}"
+                    Margin="0,0,6,6"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="👁 Open in side panel"   Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"      Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"       Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"         Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"              Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery"  Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"    Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Add to local favorites"    Click="OnContextAddFavorite"    IsVisible="{Binding !IsLocalFavorite}"/>
+                        <MenuItem Header="★ Remove from favorites"     Click="OnContextRemoveFavorite" IsVisible="{Binding IsLocalFavorite}"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"        Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image"  Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"   Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Grid RowDefinitions="Auto,Auto">
+                    <!-- Image section -->
+                    <Border Grid.Row="0" CornerRadius="7,7,0,0" ClipToBounds="True" MinHeight="120">
+                        <Panel>
+                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                    IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}"/>
+                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                                <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                            </Image>
+                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"  Margin="6,0,0,6" Padding="5,2" CornerRadius="4" Background="#BB000000" IsVisible="{Binding IsMultiPage}"     IsHitTestVisible="False"><TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/></Border>
+                            <Border VerticalAlignment="Top"    HorizontalAlignment="Left"  Margin="16,6,0,0" Padding="5,2" CornerRadius="4" Background="#CCDC2626" IsVisible="{Binding IsR18}"           IsHitTestVisible="False"><TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/></Border>
+                            <Border VerticalAlignment="Top"    HorizontalAlignment="Right" Margin="0,6,6,0" Padding="5,2" CornerRadius="4" Background="#CC8B5CF6" IsVisible="{Binding IsLocalFavorite}"  IsHitTestVisible="False"><TextBlock Text="★"    FontSize="9" Foreground="White"/></Border>
+                        </Panel>
+                    </Border>
+                    <!-- Info strip -->
+                    <StackPanel Grid.Row="1" Margin="8,6,8,8" Spacing="2"
+                                IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowInfo}">
+                        <TextBlock Text="{Binding Title}"    FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <TextBlock Text="{Binding UserName}" FontSize="10" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <ItemsControl ItemsSource="{Binding TopTags}" Margin="0,2,0,0"
+                                      IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowTags}"
+                                      ItemTemplate="{StaticResource TagChipTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             BOOKMARK card — List row
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="BookmarkListRowTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="👁 Open in side panel"   Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"      Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"       Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"         Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"              Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery"  Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"    Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Add to local favorites"    Click="OnContextAddFavorite"    IsVisible="{Binding !IsLocalFavorite}"/>
+                        <MenuItem Header="★ Remove from favorites"     Click="OnContextRemoveFavorite" IsVisible="{Binding IsLocalFavorite}"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"        Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image"  Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"   Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Grid ColumnDefinitions="72,*" Height="72">
+                    <Border Grid.Column="0" CornerRadius="7,0,0,7" ClipToBounds="True">
+                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                            <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                        </Image>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="10,0,10,0" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"    FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <TextBlock Text="{Binding UserName}" FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <ItemsControl ItemsSource="{Binding TopTags}"
+                                      IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowTags}"
+                                      ItemTemplate="{StaticResource TagChipTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             FAVORITES card — Fixed height (adds selection checkbox)
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="FavoriteFixedCardTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Width="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}"
+                    Height="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).FixedCardTotalHeight}"
+                    Margin="0,0,6,6"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped"
+                    ClipToBounds="True">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="☑ Select"              Click="OnContextSelectFavorite"/>
+                        <Separator/>
+                        <MenuItem Header="👁 Open in side panel"  Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"     Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"      Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"        Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"             Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery" Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"   Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Remove from favorites" Click="OnContextRemoveFavorite"/>
+                        <MenuItem Header="📁 Set folder…"          Click="OnContextSetFolder"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"       Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image" Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"   Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Panel>
+                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                        <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                    </Image>
+                    <CheckBox ZIndex="6" IsChecked="{Binding IsSelected}"
+                              VerticalAlignment="Top" HorizontalAlignment="Left"
+                              Margin="6,6,0,0" MinWidth="0" MinHeight="0"
+                              Click="OnFavCardCheckboxClicked"/>
+                    <Border VerticalAlignment="Bottom" Background="#CC000000" Padding="8,5"
+                            IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowInfo}">
+                        <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Title}"    FontSize="11" FontWeight="SemiBold" Foreground="White"    TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                            <TextBlock Text="{Binding UserName}" FontSize="10"                       Foreground="#CCFFFFFF" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        </StackPanel>
+                    </Border>
+                    <!-- Badges -->
+                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"  Margin="6,0,0,6"  Padding="5,2" CornerRadius="4" Background="#BB000000" IsVisible="{Binding IsMultiPage}" IsHitTestVisible="False"><TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/></Border>
+                    <Border VerticalAlignment="Top"    HorizontalAlignment="Left"  Margin="34,6,0,0" Padding="5,2" CornerRadius="4" Background="#CCDC2626" IsVisible="{Binding IsR18}"          IsHitTestVisible="False"><TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/></Border>
+                    <Border VerticalAlignment="Top"    HorizontalAlignment="Right" Margin="0,6,6,0" Padding="5,2" CornerRadius="4" Background="#CC8B5CF6" IsHitTestVisible="False"><TextBlock Text="★"    FontSize="9" Foreground="White"/></Border>
+                </Panel>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             FAVORITES card — Natural height (Masonry, adds checkbox)
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="FavoriteNaturalCardTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Width="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}"
+                    Margin="0,0,6,6"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="☑ Select"              Click="OnContextSelectFavorite"/>
+                        <Separator/>
+                        <MenuItem Header="👁 Open in side panel"  Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"     Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"      Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"        Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"             Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery" Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"   Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Remove from favorites" Click="OnContextRemoveFavorite"/>
+                        <MenuItem Header="📁 Set folder…"          Click="OnContextSetFolder"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"       Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image" Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"   Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Grid RowDefinitions="Auto,Auto">
+                    <Border Grid.Row="0" CornerRadius="7,7,0,0" ClipToBounds="True">
+                        <Panel>
+                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                    IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}"/>
+                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                                <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                            </Image>
+                            <CheckBox ZIndex="6" IsChecked="{Binding IsSelected}"
+                                      VerticalAlignment="Top" HorizontalAlignment="Left"
+                                      Margin="6,6,0,0" MinWidth="0" MinHeight="0"
+                                      Click="OnFavCardCheckboxClicked"/>
+                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"  Margin="6,0,0,6"  Padding="5,2" CornerRadius="4" Background="#BB000000" IsVisible="{Binding IsMultiPage}" IsHitTestVisible="False"><TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/></Border>
+                            <Border VerticalAlignment="Top"    HorizontalAlignment="Left"  Margin="34,6,0,0" Padding="5,2" CornerRadius="4" Background="#CCDC2626" IsVisible="{Binding IsR18}"        IsHitTestVisible="False"><TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/></Border>
+                            <Border VerticalAlignment="Top"    HorizontalAlignment="Right" Margin="0,6,6,0" Padding="5,2" CornerRadius="4" Background="#CC8B5CF6"                                    IsHitTestVisible="False"><TextBlock Text="★"    FontSize="9" Foreground="White"/></Border>
+                        </Panel>
+                    </Border>
+                    <StackPanel Grid.Row="1" Margin="8,6,8,8" Spacing="2"
+                                IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowInfo}">
+                        <TextBlock Text="{Binding Title}"    FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <TextBlock Text="{Binding UserName}" FontSize="10" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <ItemsControl ItemsSource="{Binding TopTags}" Margin="0,2,0,0"
+                                      IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowTags}"
+                                      ItemTemplate="{StaticResource TagChipTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             FAVORITES card — List row (adds checkbox column)
+             ══════════════════════════════════════════════════════════════════ -->
+        <DataTemplate x:Key="FavoriteListRowTemplate" x:DataType="vm:ArtworkCardViewModel">
+            <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" BoxShadow="0 1 4 0 #28000000"
+                    Cursor="Hand" Tapped="OnCardTapped" DoubleTapped="OnCardDoubleTapped">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="☑ Select"              Click="OnContextSelectFavorite"/>
+                        <Separator/>
+                        <MenuItem Header="👁 Open in side panel"  Click="OnContextPreview"/>
+                        <MenuItem Header="⛶ Open full screen"     Click="OnContextOpenFullScreen"/>
+                        <MenuItem Header="⊞ Open in new tab"      Click="OnContextOpenInNewTab"/>
+                        <MenuItem Header="⧉ Open in popup"        Click="OnContextOpenPopup"/>
+                        <Separator/>
+                        <MenuItem Header="↓ Download"             Click="OnContextDownload"/>
+                        <Separator/>
+                        <MenuItem Header="👤 Open artist gallery" Click="OnContextOpenArtistGallery"/>
+                        <MenuItem Header="🌐 Open on pixiv.net"   Click="OnContextOpenPixiv"/>
+                        <Separator/>
+                        <MenuItem Header="★ Remove from favorites" Click="OnContextRemoveFavorite"/>
+                        <MenuItem Header="📁 Set folder…"          Click="OnContextSetFolder"/>
+                        <Separator/>
+                        <MenuItem Header="Copy ID"       Click="OnContextCopyId"/>
+                        <MenuItem Header="📋 Copy image" Click="OnContextCopyImage"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Border.Styles>
+                    <Style Selector="Border:pointerover">
+                        <Setter Property="BoxShadow"   Value="0 6 20 0 #55000000"/>
+                        <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
+                    </Style>
+                </Border.Styles>
+                <Grid ColumnDefinitions="Auto,72,*" Height="72">
+                    <CheckBox Grid.Column="0" ZIndex="6" IsChecked="{Binding IsSelected}"
+                              VerticalAlignment="Center" Margin="6,0,2,0"
+                              MinWidth="0" MinHeight="0" Click="OnFavCardCheckboxClicked"/>
+                    <Border Grid.Column="1" CornerRadius="7,0,0,7" ClipToBounds="True">
+                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                            <Image.Effect><BlurEffect Radius="{Binding IsBlurred, Converter={StaticResource BoolToBlurRadiusConverter}}"/></Image.Effect>
+                        </Image>
+                    </Border>
+                    <StackPanel Grid.Column="2" Margin="10,0,10,0" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"    FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <TextBlock Text="{Binding UserName}" FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                        <ItemsControl ItemsSource="{Binding TopTags}"
+                                      IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).ShowTags}"
+                                      ItemTemplate="{StaticResource TagChipTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <!-- ════════════════════════════════════════════════════════════════════════
+         ROOT LAYOUT
+         ════════════════════════════════════════════════════════════════════════ -->
+    <Grid RowDefinitions="Auto,*,Auto"
+          Background="{actipro:ThemeResource Container3BackgroundBrush}">
+
+        <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
+        <Border Grid.Row="0"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Margin="0,32,0,0" Padding="10,7">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+
+                <!-- Left: tabs + refresh + R-18 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <ToggleButton IsChecked="{Binding IsPublicTab}"    CornerRadius="6" Padding="10,5" FontSize="12" Click="OnTabClicked" Tag="0">
+                        <StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="🔖" FontSize="12" VerticalAlignment="Center"/><TextBlock Text="Public"          FontSize="12" VerticalAlignment="Center"/></StackPanel>
+                    </ToggleButton>
+                    <ToggleButton IsChecked="{Binding IsPrivateTab}"   CornerRadius="6" Padding="10,5" FontSize="12" Click="OnTabClicked" Tag="1">
+                        <StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="🔒" FontSize="12" VerticalAlignment="Center"/><TextBlock Text="Private"         FontSize="12" VerticalAlignment="Center"/></StackPanel>
+                    </ToggleButton>
+                    <ToggleButton IsChecked="{Binding IsFavoritesTab}" CornerRadius="6" Padding="10,5" FontSize="12" Click="OnTabClicked" Tag="2">
+                        <StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="★"  FontSize="13" VerticalAlignment="Center"/><TextBlock Text="Local Favorites" FontSize="12" VerticalAlignment="Center"/></StackPanel>
+                    </ToggleButton>
+                    <Rectangle Width="1" Height="18" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                    <Button Content="⟳ Refresh" CornerRadius="6" Padding="9,5" FontSize="12"
+                            Command="{Binding RefreshCommand}" ToolTip.Tip="Reload current tab"/>
+                    <Rectangle Width="1" Height="18" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"
+                               IsVisible="{Binding ShowR18Buttons}"/>
+                    <ToggleButton IsChecked="{Binding ShowR18}" CornerRadius="6" Padding="9,5" FontSize="12"
+                                  IsVisible="{Binding ShowR18Buttons}" ToolTip.Tip="Show / hide R-18 content">
+                        <ToggleButton.Styles>
+                            <Style Selector="ToggleButton:checked">
+                                <Setter Property="Background" Value="#DC2626"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Style>
+                            <Style Selector="ToggleButton:pointerover:checked">
+                                <Setter Property="Background" Value="#B91C1C"/>
+                            </Style>
+                        </ToggleButton.Styles>
+                        <StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="🔞" FontSize="13" VerticalAlignment="Center"/><TextBlock Text="R-18" FontSize="12" VerticalAlignment="Center"/></StackPanel>
+                    </ToggleButton>
+                    <Rectangle Width="1" Height="18" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                    <Button Content="↓ Download Selected" CornerRadius="6" Padding="9,5" FontSize="12"
+                            Command="{Binding DownloadSelectedCommand}" ToolTip.Tip="Download selected bookmarks"/>
+                    <Button Content="↓ Download All" CornerRadius="6" Padding="9,5" FontSize="12"
+                            Command="{Binding DownloadAllCommand}" ToolTip.Tip="Download all bookmarks"/>
+                    <Button Content="📁 Download Folder" CornerRadius="6" Padding="9,5" FontSize="12"
+                            Command="{Binding DownloadFolderCommand}" ToolTip.Tip="Download all bookmarks to folder"
+                            IsVisible="{Binding IsFavoritesTab}"/>
+                </StackPanel>
+
+                <!-- Center: height mode + toggles + tag filter + size -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsGridView}">
+                        <Button CornerRadius="6" Padding="8,4" FontSize="11" Command="{Binding SetFixedHeightCommand}"   IsEnabled="{Binding !IsFixedHeight}"   ToolTip.Tip="Fixed card height">Fixed</Button>
+                        <Button CornerRadius="6" Padding="8,4" FontSize="11" Command="{Binding SetNaturalHeightCommand}" IsEnabled="{Binding !IsNaturalHeight}" ToolTip.Tip="Natural height">Natural</Button>
+                        <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                    </StackPanel>
+                    <ToggleButton IsChecked="{Binding ShowTags,    Mode=TwoWay}" CornerRadius="6" Padding="8,4" FontSize="11" ToolTip.Tip="Show/hide tag chips">🏷 Tags</ToggleButton>
+                    <ToggleButton IsChecked="{Binding ShowInfo,    Mode=TwoWay}" CornerRadius="6" Padding="8,4" FontSize="11" ToolTip.Tip="Show/hide info strip">ℹ Info</ToggleButton>
+                    <ToggleButton IsChecked="{Binding ShowPreview, Mode=TwoWay}" CornerRadius="6" Padding="8,4" FontSize="11" ToolTip.Tip="Toggle side panel">▣ Side Panel</ToggleButton>
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                    <TextBox x:Name="TagFilterBox" Text="{Binding TagFilter}" Watermark="Filter by tag…"
+                             CornerRadius="6" Width="140" FontSize="12" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding IsGridView}">
+                        <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                        <TextBlock Text="Size" FontSize="11" VerticalAlignment="Center" Opacity="0.7"/>
+                        <Slider Minimum="100" Maximum="320" Value="{Binding CardSize, Mode=TwoWay}"
+                                Width="80" VerticalAlignment="Center"
+                                ToolTip.Tip="{Binding CardSize, StringFormat='Card size: {0}px'}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Right: Grid / List -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <Button CornerRadius="6" Padding="8,4" FontSize="11" Command="{Binding SetGridViewCommand}" IsEnabled="{Binding !IsGridView}" ToolTip.Tip="Grid view">⊞ Grid</Button>
+                    <Button CornerRadius="6" Padding="8,4" FontSize="11" Command="{Binding SetListViewCommand}" IsEnabled="{Binding !IsListView}" ToolTip.Tip="List view">≡ List</Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Content area ────────────────────────────────────────────────── -->
+        <Grid Grid.Row="1" Name="BookmarksBodyGrid"
+              PointerMoved="OnSplitterPointerMoved"
+              PointerReleased="OnSplitterPointerReleased">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="280"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto" MinWidth="0"/>
+            </Grid.ColumnDefinitions>
+
+
+            <!-- Splitter -->
+            <Border Grid.Column="1" Width="5" Name="BookmarksSplitter"
+                    IsVisible="{Binding ShowPreview}"
+                    Cursor="SizeWestEast"
+                    Background="{actipro:ThemeResource Container1BorderBrush}"
+                    PointerPressed="OnSplitterPointerPressed"/>
+
+            <!-- Side-panel viewer -->
+            <Border Grid.Column="2"
+                    IsVisible="{Binding ShowPreview}"
+                    Width="{Binding BrowsePanelWidth}"
+                    MinWidth="320"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="1,0,0,0">
+                <local:InlineArtworkViewer x:Name="BookmarksInlineViewer" DataContext="{Binding GalleryVm}"
+                                           IsExpanded="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).IsViewerExpanded}"
+                                           IsVisible="{Binding HasTabs}"/>
+            </Border>
+
+            <!-- ── PUBLIC TAB ──────────────────────────────────────────────── -->
+            <ScrollViewer Grid.Column="0" x:Name="PublicScrollViewer"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          AllowAutoHide="False"
+                          IsVisible="{Binding PublicTabVisible}">
+                <StackPanel>
+                    <TextBlock Text="No public bookmarks loaded yet."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Margin="0,40" FontSize="14"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                               IsVisible="{Binding !HasPublic}"/>
+
+                    <!-- Fixed grid -->
+                    <ItemsControl ItemsSource="{Binding FilteredPublic}" Margin="10,10,4,4"
+                                  IsVisible="{Binding ShowFixedGrid}"
+                                  ItemTemplate="{StaticResource BookmarkFixedCardTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Natural grid -->
+                    <ItemsControl ItemsSource="{Binding FilteredPublic}" Margin="10,10,4,4"
+                                  IsVisible="{Binding ShowNaturalGrid}"
+                                  ItemTemplate="{StaticResource BookmarkNaturalCardTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><gallery:MasonryPanel ColumnWidth="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}" ItemSpacing="6"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- List -->
+                    <ItemsControl ItemsSource="{Binding FilteredPublic}" Margin="10"
+                                  IsVisible="{Binding IsListView}"
+                                  ItemTemplate="{StaticResource BookmarkListRowTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <Button Content="Load more…" Command="{Binding LoadMoreCommand}"
+                            IsVisible="{Binding CanLoadMore}"
+                            HorizontalAlignment="Center" Margin="0,8" CornerRadius="6" Padding="16,8"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── PRIVATE TAB ─────────────────────────────────────────────── -->
+            <ScrollViewer Grid.Column="0" x:Name="PrivateScrollViewer"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          AllowAutoHide="False"
+                          IsVisible="{Binding PrivateTabVisible}">
+                <StackPanel>
+                    <TextBlock Text="No private bookmarks loaded yet."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Margin="0,40" FontSize="14"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                               IsVisible="{Binding !HasPrivate}"/>
+
+                    <!-- Fixed grid -->
+                    <ItemsControl ItemsSource="{Binding FilteredPrivate}" Margin="10,10,4,4"
+                                  IsVisible="{Binding ShowFixedGrid}"
+                                  ItemTemplate="{StaticResource BookmarkFixedCardTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Natural grid -->
+                    <ItemsControl ItemsSource="{Binding FilteredPrivate}" Margin="10,10,4,4"
+                                  IsVisible="{Binding ShowNaturalGrid}"
+                                  ItemTemplate="{StaticResource BookmarkNaturalCardTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><gallery:MasonryPanel ColumnWidth="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}" ItemSpacing="6"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- List -->
+                    <ItemsControl ItemsSource="{Binding FilteredPrivate}" Margin="10"
+                                  IsVisible="{Binding IsListView}"
+                                  ItemTemplate="{StaticResource BookmarkListRowTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <Button Content="Load more…" Command="{Binding LoadMoreCommand}"
+                            IsVisible="{Binding CanLoadMore}"
+                            HorizontalAlignment="Center" Margin="0,8" CornerRadius="6" Padding="16,8"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── LOCAL FAVORITES TAB ─────────────────────────────────────── -->
+            <Grid Grid.Column="0" ColumnDefinitions="Auto,*" IsVisible="{Binding FavoritesTabVisible}">
+
+                <!-- Folder sidebar -->
+                <Border Grid.Column="0" Width="140"
+                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                        BorderThickness="0,0,1,0"
+                        IsVisible="{Binding AvailableFolders.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="2" Margin="6,8">
+                            <TextBlock Text="FOLDERS" FontSize="9" FontWeight="SemiBold" Opacity="0.5" Margin="4,0,0,4"/>
+                            <Button Content="All" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    CornerRadius="5" Padding="8,5" FontSize="11"
+                                    IsEnabled="{Binding FolderFilter, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Command="{Binding SetFolderCommand}" CommandParameter="{x:Null}"/>
+                            <ItemsControl ItemsSource="{Binding AvailableFolders}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Button Content="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                CornerRadius="5" Padding="8,5" FontSize="11"
+                                                Command="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).SetFolderCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Favorites content -->
+                <Grid Grid.Column="1" RowDefinitions="Auto,*">
+
+                    <!-- Selection action bar -->
+                    <Border Grid.Row="0" IsVisible="{Binding HasSelection}"
+                            Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                            BorderThickness="0,0,0,1" Padding="10,6">
+                        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" FontWeight="SemiBold"
+                                       Text="{Binding SelectedFavoritesCount, StringFormat='{}{0} selected'}"/>
+                            <Button Content="📁 Move to folder…"  CornerRadius="5" Padding="8,4" FontSize="11" Margin="0,0,6,0" Click="OnSelectionSetFolder"/>
+                            <Button Content="✕ Remove selected"   CornerRadius="5" Padding="8,4" FontSize="11" Margin="0,0,6,0" Command="{Binding RemoveSelectedFavoritesCommand}"/>
+                            <Button Content="Select all"           CornerRadius="5" Padding="8,4" FontSize="11" Margin="0,0,6,0" Command="{Binding SelectAllFavoritesCommand}"/>
+                            <Button Content="Clear"                CornerRadius="5" Padding="8,4" FontSize="11"                  Command="{Binding ClearFavoritesSelectionCommand}"/>
+                        </WrapPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" x:Name="FavoritesScrollViewer"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  AllowAutoHide="False">
+                        <StackPanel>
+                            <!-- Empty state -->
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="0,40"
+                                        IsVisible="{Binding !HasFavorites}">
+                                <TextBlock Text="★ No local favorites yet"
+                                           HorizontalAlignment="Center" FontSize="14"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                <TextBlock Text="Right-click any artwork anywhere and choose ★ Add to favorites"
+                                           HorizontalAlignment="Center" FontSize="12"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                            </StackPanel>
+
+                            <!-- Fixed grid -->
+                            <ItemsControl ItemsSource="{Binding FilteredFavorites}" Margin="10,10,4,4"
+                                          IsVisible="{Binding ShowFixedGrid}"
+                                          ItemTemplate="{StaticResource FavoriteFixedCardTemplate}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            </ItemsControl>
+
+                            <!-- Natural grid -->
+                            <ItemsControl ItemsSource="{Binding FilteredFavorites}" Margin="10,10,4,4"
+                                          IsVisible="{Binding ShowNaturalGrid}"
+                                          ItemTemplate="{StaticResource FavoriteNaturalCardTemplate}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><gallery:MasonryPanel ColumnWidth="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).CardSize}" ItemSpacing="6"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            </ItemsControl>
+
+                            <!-- List -->
+                            <ItemsControl ItemsSource="{Binding FilteredFavorites}" Margin="10"
+                                          IsVisible="{Binding IsListView}"
+                                          ItemTemplate="{StaticResource FavoriteListRowTemplate}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+
+            <!-- Loading overlay -->
+            <Border Grid.Column="0" IsVisible="{Binding IsLoading}" Background="#88000000" ZIndex="10">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                    <ProgressBar IsIndeterminate="True" Width="200" Height="4"/>
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" HorizontalAlignment="Center" Foreground="White"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Full-screen viewer overlay — covers entire view incl. toolbar -->
+        <local:InlineArtworkViewer x:Name="BookmarksFullViewer"
+                                    Grid.Row="0" Grid.RowSpan="3"
+                                    Margin="0,32,0,0"
+                                    IsVisible="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).IsViewerExpanded}"
+                                    IsExpanded="{Binding $parent[UserControl].((vm:BookmarksViewModel)DataContext).IsViewerExpanded}"
+                                    ZIndex="10"
+                                    DataContext="{Binding GalleryVm}"/>
+
+        <!-- ── Status bar ───────────────────────────────────────────────────── -->
+        <Border Grid.Row="2"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16,6">
+            <TextBlock Text="{Binding StatusMessage}" FontSize="11"
+                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                       VerticalAlignment="Center"/>
+        </Border>
+
+    </Grid>
+</UserControl>

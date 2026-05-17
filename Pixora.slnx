@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src\Pixora.Core\Pixora.Core.csproj" />
+  <Project Path="src\Pixora.Avalonia\Pixora.Avalonia.csproj" />
+</Solution>

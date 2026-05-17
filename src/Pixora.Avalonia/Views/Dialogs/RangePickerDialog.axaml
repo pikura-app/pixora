@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        x:Class="Pixora.Avalonia.Views.Dialogs.RangePickerDialog"
+        Title="Pick Range"
+        Width="440" Height="230"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{actipro:ThemeResource Container2BackgroundBrush}">
+
+    <StackPanel Margin="24,20" Spacing="14">
+        <TextBlock x:Name="TitleText" FontWeight="SemiBold" FontSize="14"/>
+        <TextBlock x:Name="DescText" FontSize="12" Foreground="#9CA3AF"
+                   TextWrapping="Wrap"/>
+        <TextBox x:Name="RangeInput"
+                 PlaceholderText="e.g. 1-20 or 1,5-10,50"
+                 CornerRadius="6" FontSize="13"/>
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button Content="Cancel" CornerRadius="6" Padding="14,7"
+                    Click="OnCancel"/>
+            <Button Content="OK" CornerRadius="6" Padding="14,7" Classes="accent"
+                    Click="OnOk"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

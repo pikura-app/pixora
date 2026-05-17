@@ -1,0 +1,61 @@
+# Build output
+bin/
+obj/
+publish/
+
+# .NET
+*.user
+*.suo
+.vs/
+*.userprefs
+*.userosscache
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# App data / logs
+*.log
+crash.txt
+out.txt
+err.txt
+startup_crash.txt
+
+# SQLite databases (user data — never commit)
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets / credentials
+appsettings.Development.json
+secrets.json
+*.pfx
+*.p12
+
+# Playwright
+playwright/.local-chromium/
+playwright/.local-firefox/
+playwright/.local-webkit/
+
+# Temp icon generation
+tools/MakeIco/bin/
+tools/MakeIco/obj/

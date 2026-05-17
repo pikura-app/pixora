@@ -1,0 +1,1087 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:vm="using:Pixora.Avalonia.ViewModels"
+             xmlns:conv="using:Pixora.Avalonia.Converters"
+             xmlns:svc="using:Pixora.Avalonia.Services"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="Pixora.Avalonia.Views.Settings.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Page title -->
+        <TextBlock DockPanel.Dock="Top" Text="Settings" FontSize="22" FontWeight="Bold"
+                   Margin="24,36,24,8"/>
+
+        <!-- Restart banner -->
+        <Border DockPanel.Dock="Top" Background="#1AFFA500" BorderBrush="Orange"
+                BorderThickness="0,0,0,2" Padding="16,7"
+                IsVisible="{Binding RestartRequired}">
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <TextBlock Text="&#x26A0; Some changes require a restart to take effect."
+                           VerticalAlignment="Center" FontSize="12"/>
+                <Button Content="Restart Now" CornerRadius="5" Padding="8,4" FontSize="11"
+                        Classes="accent" Command="{Binding RestartApplicationCommand}"/>
+                <Button Content="Dismiss" CornerRadius="5" Padding="8,4" FontSize="11"
+                        Command="{Binding DismissRestartNotificationCommand}"/>
+            </StackPanel>
+        </Border>
+
+        <TabControl TabStripPlacement="Top" Margin="16,0,16,16">
+
+            <!-- ====================== APPEARANCE ====================== -->
+            <TabItem Header="Appearance">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8">
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="14"/>
+                                <StackPanel Orientation="Horizontal" Spacing="16">
+                                    <Button Content="&#x1F319; Dark" CornerRadius="6" Padding="16,8" FontSize="13"
+                                            Command="{Binding SetThemeCommand}" CommandParameter="Dark"
+                                            Classes.accent="{Binding !IsLightTheme}"/>
+                                    <Button Content="&#x2600; Light" CornerRadius="6" Padding="16,8" FontSize="13"
+                                            Command="{Binding SetThemeCommand}" CommandParameter="Light"
+                                            Classes.accent="{Binding IsLightTheme}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Accessibility" FontWeight="SemiBold" FontSize="14"/>
+                                <WrapPanel>
+                                    <CheckBox Content="High Contrast Mode" IsChecked="{Binding UseHighContrast, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Large Fonts" IsChecked="{Binding UseLargeFonts, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Increase Spacing" IsChecked="{Binding IncreaseSpacing, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Reduce Motion" IsChecked="{Binding ReduceMotion, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                </WrapPanel>
+                                <StackPanel Spacing="8" Margin="0,8,0,0">
+                                    <TextBlock Text="Font Size Scale" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Slider Grid.Column="0" Value="{Binding FontSizeScale, Mode=TwoWay}"
+                                               Minimum="0.5" Maximum="2.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                               Margin="0,0,16,0"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding FontSizeScale, StringFormat='{}{0:F1}x'}"
+                                                   FontSize="13" MinWidth="40" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== STORAGE & NAMING ====================== -->
+            <TabItem Header="Storage &amp; Naming">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="16" Margin="8,8,8,8">
+
+                        <!-- Download Folder -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Download Folder" FontWeight="SemiBold" FontSize="14"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding DownloadRoot}" IsReadOnly="True"
+                                             CornerRadius="6" FontSize="13" Margin="0,0,10,0"/>
+                                    <Button Grid.Column="1" Content="Browse&#x2026;"
+                                            Command="{Binding ChangeDownloadFolderCommand}"
+                                            CornerRadius="6" FontSize="13" Padding="16,8"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Naming Templates -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="24">
+                                <TextBlock Text="Naming Templates" FontWeight="SemiBold" FontSize="14"/>
+
+                                <Grid ColumnDefinitions="*,20,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+
+                                    <!-- Folder template -->
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Folder template"
+                                               FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto">
+                                        <TextBox Grid.Column="0" Text="{Binding FolderTemplate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 CornerRadius="6" FontSize="13" Margin="0,0,8,0" Watermark="%artist% (%member_id%)"/>
+                                        <ComboBox Grid.Column="1" Width="120" CornerRadius="6" FontSize="12"
+                                                  PlaceholderText="Token&#x2026;" SelectionChanged="OnFolderTokenSelected">
+                                            <ComboBoxItem>%artist%</ComboBoxItem>
+                                            <ComboBoxItem>%member_id%</ComboBoxItem>
+                                            <ComboBoxItem>%member_token%</ComboBoxItem>
+                                            <ComboBoxItem>%R-18%</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" FontSize="12" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="&#x1F4C1; "/><Run FontWeight="SemiBold" Text="{Binding FolderPreview}"/>
+                                    </TextBlock>
+
+                                    <!-- Filename template -->
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Filename template"
+                                               FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="1" Grid.Column="2" ColumnDefinitions="*,Auto">
+                                        <TextBox Grid.Column="0" Text="{Binding FilenameTemplate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 CornerRadius="6" FontSize="13" Margin="0,0,8,0" Watermark="%image_id% - %title%"/>
+                                        <ComboBox Grid.Column="1" Width="120" CornerRadius="6" FontSize="12"
+                                                  PlaceholderText="Token&#x2026;" SelectionChanged="OnFilenameTokenSelected">
+                                            <ComboBoxItem>%image_id%</ComboBoxItem>
+                                            <ComboBoxItem>%title%</ComboBoxItem>
+                                            <ComboBoxItem>%artist%</ComboBoxItem>
+                                            <ComboBoxItem>%page_index%</ComboBoxItem>
+                                            <ComboBoxItem>%page_number%</ComboBoxItem>
+                                            <ComboBoxItem>%date%</ComboBoxItem>
+                                            <ComboBoxItem>%works_date%</ComboBoxItem>
+                                            <ComboBoxItem>%member_id%</ComboBoxItem>
+                                            <ComboBoxItem>%member_token%</ComboBoxItem>
+                                            <ComboBoxItem>%R-18%</ComboBoxItem>
+                                            <ComboBoxItem>%AI%</ComboBoxItem>
+                                            <ComboBoxItem>%image_ext%</ComboBoxItem>
+                                            <ComboBoxItem>%urlFilename%</ComboBoxItem>
+                                            <ComboBoxItem>%bookmark_count%</ComboBoxItem>
+                                            <ComboBoxItem>%manga_series_title%</ComboBoxItem>
+                                            <ComboBoxItem>%tags%</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" FontSize="12" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="&#x1F4C4; "/><Run FontWeight="SemiBold" Text="{Binding FilenamePreview}"/>
+                                    </TextBlock>
+
+                                    <Separator Grid.Row="3" Grid.ColumnSpan="3" Margin="0,10"
+                                               Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                    <!-- Manga / Info templates -->
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Manga filename (multi-page)"
+                                               FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="5" Grid.Column="0" ColumnDefinitions="*,Auto">
+                                        <TextBox Grid.Column="0" Text="{Binding FilenameMangaFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 CornerRadius="6" FontSize="13" Margin="0,0,8,0" Watermark="%artist%\%image_id%\p%page_number%"/>
+                                        <ComboBox Grid.Column="1" Width="120" CornerRadius="6" FontSize="12"
+                                                  PlaceholderText="Token&#x2026;" SelectionChanged="OnMangaFilenameTokenSelected">
+                                            <ComboBoxItem>%image_id%</ComboBoxItem>
+                                            <ComboBoxItem>%title%</ComboBoxItem>
+                                            <ComboBoxItem>%artist%</ComboBoxItem>
+                                            <ComboBoxItem>%member_id%</ComboBoxItem>
+                                            <ComboBoxItem>%member_token%</ComboBoxItem>
+                                            <ComboBoxItem>%page_index%</ComboBoxItem>
+                                            <ComboBoxItem>%page_number%</ComboBoxItem>
+                                            <ComboBoxItem>%date%</ComboBoxItem>
+                                            <ComboBoxItem>%works_date%</ComboBoxItem>
+                                            <ComboBoxItem>%R-18%</ComboBoxItem>
+                                            <ComboBoxItem>%image_ext%</ComboBoxItem>
+                                            <ComboBoxItem>%urlFilename%</ComboBoxItem>
+                                            <ComboBoxItem>%tags%</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Grid.Row="6" Grid.Column="0" FontSize="12" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="&#x1F4C4; "/><Run FontWeight="SemiBold" Text="{Binding MangaFilenamePreview}"/>
+                                    </TextBlock>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="2" Text="Info text filename"
+                                               FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="5" Grid.Column="2" ColumnDefinitions="*,Auto">
+                                        <TextBox Grid.Column="0" Text="{Binding FilenameInfoFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 CornerRadius="6" FontSize="13" Margin="0,0,8,0" Watermark="%artist%\%image_id%.txt"/>
+                                        <ComboBox Grid.Column="1" Width="120" CornerRadius="6" FontSize="12"
+                                                  PlaceholderText="Token&#x2026;" SelectionChanged="OnInfoFilenameTokenSelected">
+                                            <ComboBoxItem>%image_id%</ComboBoxItem>
+                                            <ComboBoxItem>%title%</ComboBoxItem>
+                                            <ComboBoxItem>%artist%</ComboBoxItem>
+                                            <ComboBoxItem>%member_id%</ComboBoxItem>
+                                            <ComboBoxItem>%member_token%</ComboBoxItem>
+                                            <ComboBoxItem>%date%</ComboBoxItem>
+                                            <ComboBoxItem>%works_date%</ComboBoxItem>
+                                            <ComboBoxItem>%R-18%</ComboBoxItem>
+                                            <ComboBoxItem>%urlFilename%</ComboBoxItem>
+                                            <ComboBoxItem>%tags%</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Grid.Row="6" Grid.Column="2" FontSize="12" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="&#x1F4C4; "/><Run FontWeight="SemiBold" Text="{Binding InfoFilenamePreview}"/>
+                                    </TextBlock>
+
+                                    <Separator Grid.Row="7" Grid.ColumnSpan="3" Margin="0,10"
+                                               Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                    <!-- Tags separator + Date format -->
+                                    <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" Spacing="20">
+                                        <StackPanel Spacing="5">
+                                            <TextBlock Text="Tags separator" FontSize="13"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                            <TextBox Text="{Binding TagsSeparator, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     CornerRadius="6" FontSize="13" Width="80"/>
+                                        </StackPanel>
+                                        <StackPanel Spacing="5">
+                                            <TextBlock Text="Date format" FontSize="13"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                            <TextBox Text="{Binding DateFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     CornerRadius="6" FontSize="13" Width="160" Watermark="yyyy-MM-dd"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Subfolder checkboxes -->
+                                    <StackPanel Grid.Row="8" Grid.Column="2" Spacing="10" VerticalAlignment="Bottom">
+                                        <CheckBox Content="Subfolder per multi-page work"
+                                                  IsChecked="{Binding CreateSubfolderPerSubmission, Mode=TwoWay}" FontSize="13"/>
+                                        <CheckBox Content="R-18 works in separate folder"
+                                                  IsChecked="{Binding SeparateR18Folder, Mode=TwoWay}" FontSize="13"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Metadata Export -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Metadata Export" FontWeight="SemiBold" FontSize="14"/>
+                                <WrapPanel>
+                                    <CheckBox Content="JSON metadata" IsChecked="{Binding WriteImageJSON, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Info text file" IsChecked="{Binding WriteImageInfo, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Raw API JSON" IsChecked="{Binding WriteRawJSON, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Series metadata" IsChecked="{Binding IncludeSeriesJSON, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Embed XMP" IsChecked="{Binding WriteImageXMP, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="XMP per page" IsChecked="{Binding WriteImageXMPPerImage, Mode=TwoWay}"
+                                              IsEnabled="{Binding WriteImageXMP}" FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Verify images" IsChecked="{Binding VerifyImage, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Preserve timestamps" IsChecked="{Binding SetLastModified, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="Local timezone" IsChecked="{Binding UseLocalTimezone, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== CONTENT FILTERING ====================== -->
+            <TabItem Header="Content Filtering">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8">
+
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Excluded Tags (gallery hide only)" FontWeight="SemiBold" FontSize="13"/>
+                                <TextBlock FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                           Text="Hides artworks from gallery views. Does not block downloads."/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding NewExcludedTag, Mode=TwoWay}"
+                                             Watermark="Tag to exclude&#x2026;" CornerRadius="5" FontSize="12" Margin="0,0,8,0"/>
+                                    <Button Grid.Column="1" Content="Add" CornerRadius="5" FontSize="12"
+                                            Command="{Binding AddExcludedTagCommand}"/>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding ExcludedTags}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="5" Padding="7,3" Margin="0,0,5,5">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                    <Button Content="&#x2715;" FontSize="10" CornerRadius="3" Padding="3,1"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveExcludedTagCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Blacklists (block download)" FontWeight="SemiBold" FontSize="13"/>
+                                <Grid ColumnDefinitions="*,1,*,1,*" ColumnSpan="1">
+
+                                    <!-- Tags -->
+                                    <StackPanel Grid.Column="0" Spacing="12">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="Tags" FontWeight="SemiBold" FontSize="12"/>
+                                            <CheckBox Grid.Column="1" Content="Regex" FontSize="11"
+                                                      IsChecked="{Binding UseBlacklistTagsRegex, Mode=TwoWay}"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBox Grid.Column="0" Text="{Binding NewBlacklistTag, Mode=TwoWay}"
+                                                     PlaceholderText="Tag&#x2026;" CornerRadius="5" FontSize="12" Margin="0,0,6,0"/>
+                                            <Button Grid.Column="1" Content="Add" CornerRadius="5" FontSize="12"
+                                                    Command="{Binding AddBlacklistTagCommand}"/>
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding BlacklistTags}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                            BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                            BorderThickness="1" CornerRadius="5" Padding="7,3" Margin="0,0,5,5">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                            <Button Content="&#x2715;" FontSize="10" CornerRadius="3" Padding="3,1"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveBlacklistTagCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+
+                                    <!-- Divider -->
+                                    <Rectangle Grid.Column="1" Fill="{actipro:ThemeResource Container1BorderBrush}" Width="1" Margin="12,0"/>
+
+                                    <!-- Titles -->
+                                    <StackPanel Grid.Column="2" Spacing="12">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="Titles" FontWeight="SemiBold" FontSize="12"/>
+                                            <CheckBox Grid.Column="1" Content="Regex" FontSize="11"
+                                                      IsChecked="{Binding UseBlacklistTitlesRegex, Mode=TwoWay}"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBox Grid.Column="0" Text="{Binding NewBlacklistTitle, Mode=TwoWay}"
+                                                     PlaceholderText="Title pattern&#x2026;" CornerRadius="5" FontSize="12" Margin="0,0,6,0"/>
+                                            <Button Grid.Column="1" Content="Add" CornerRadius="5" FontSize="12"
+                                                    Command="{Binding AddBlacklistTitleCommand}"/>
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding BlacklistTitles}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                            BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                            BorderThickness="1" CornerRadius="5" Padding="7,3" Margin="0,0,5,5">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                            <Button Content="&#x2715;" FontSize="10" CornerRadius="3" Padding="3,1"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveBlacklistTitleCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+
+                                    <!-- Divider -->
+                                    <Rectangle Grid.Column="3" Fill="{actipro:ThemeResource Container1BorderBrush}" Width="1" Margin="12,0"/>
+
+                                    <!-- Member IDs -->
+                                    <StackPanel Grid.Column="4" Spacing="12">
+                                        <TextBlock Text="Member IDs" FontWeight="SemiBold" FontSize="12"/>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBox Grid.Column="0" Text="{Binding NewBlacklistMember, Mode=TwoWay}"
+                                                     PlaceholderText="Member ID&#x2026;" CornerRadius="5" FontSize="12" Margin="0,0,6,0"/>
+                                            <Button Grid.Column="1" Content="Add" CornerRadius="5" FontSize="12"
+                                                    Command="{Binding AddBlacklistMemberCommand}"/>
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding BlacklistMembers}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                            BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                            BorderThickness="1" CornerRadius="5" Padding="7,3" Margin="0,0,5,5">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                            <Button Content="&#x2715;" FontSize="10" CornerRadius="3" Padding="3,1"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveBlacklistMemberCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- R-18 Content -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <Grid ColumnDefinitions="*,20,*">
+                                <StackPanel Grid.Column="0" Spacing="24">
+                                    <TextBlock Text="R-18 Content" FontWeight="SemiBold" FontSize="14"/>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Content mode" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="Off" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Mode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Off}"
+                                                    Click="OnR18ModeButtonClick" Tag="Off"/>
+                                            <Button Content="Show" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Mode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Show}"
+                                                    Click="OnR18ModeButtonClick" Tag="Show"/>
+                                            <Button Content="Only" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Mode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Only}"
+                                                    Click="OnR18ModeButtonClick" Tag="Only"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Type filter" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="Both" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Type, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Both}"
+                                                    Click="OnR18TypeButtonClick" Tag="Both"/>
+                                            <Button Content="R-18" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Type, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=R18}"
+                                                    Click="OnR18TypeButtonClick" Tag="R18"/>
+                                            <Button Content="R-18G" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding R18Type, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=R18G}"
+                                                    Click="OnR18TypeButtonClick" Tag="R18G"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="24">
+                                    <TextBlock Text="Gallery Display" FontWeight="SemiBold" FontSize="14"/>
+                                    <CheckBox Content="Blur R-18 content in gallery"
+                                              IsChecked="{Binding BlurR18Content, Mode=TwoWay}" FontSize="13"/>
+                                    <StackPanel Spacing="6" IsEnabled="{Binding BlurR18Content}">
+                                        <TextBlock Text="{Binding BlurIntensity, StringFormat='Blur intensity: {0}px'}"
+                                                   FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <Slider Value="{Binding BlurIntensity, Mode=TwoWay}"
+                                                Minimum="5" Maximum="50" TickFrequency="5" IsSnapToTickEnabled="True"/>
+                                    </StackPanel>
+                                    <CheckBox Content="Filter AI-generated content"
+                                              IsChecked="{Binding FilterAiGenerated, Mode=TwoWay}"
+                                              FontSize="13"
+                                              ToolTip.Tip="Skip downloading AI-generated artworks (aiType==2)"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== ADVANCED ====================== -->
+            <TabItem Header="Advanced">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8,8,8,32">
+                        <Grid ColumnDefinitions="*,12,*" VerticalAlignment="Top">
+                            <StackPanel Grid.Column="0" Spacing="20">
+                                <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="24">
+                                    <StackPanel Spacing="16">
+                                        <TextBlock Text="Network / Proxy" FontWeight="SemiBold" FontSize="13"/>
+                                        <CheckBox Content="Use proxy" IsChecked="{Binding UseProxy, Mode=TwoWay}" FontSize="12"/>
+                                        <TextBox Text="{Binding ProxyAddress, Mode=TwoWay}" CornerRadius="5" FontSize="12"
+                                                 Watermark="http://127.0.0.1:8080" IsEnabled="{Binding UseProxy}"/>
+                                        <CheckBox Content="Verify SSL certificates" IsChecked="{Binding EnableSSLVerification, Mode=TwoWay}" FontSize="12"/>
+                                        <CheckBox Content="Respect robots.txt" IsChecked="{Binding UseRobots, Mode=TwoWay}" FontSize="12"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="24">
+                                    <StackPanel Spacing="16">
+                                        <TextBlock Text="FANBOX" FontWeight="SemiBold" FontSize="13"/>
+                                        <CheckBox Content="Download cover for restricted posts"
+                                                  IsChecked="{Binding DownloadFanboxCoverWhenRestricted, Mode=TwoWay}" FontSize="12"/>
+                                        <CheckBox Content="Generate HTML for article posts"
+                                                  IsChecked="{Binding WriteFanboxHtml, Mode=TwoWay}" FontSize="12"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <Border Grid.Column="2" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="24">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Ugoira (Animated Images)" FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                               Text="Convert animated ZIP frames � requires FFmpeg." TextWrapping="Wrap"/>
+                                    <WrapPanel>
+                                        <CheckBox Content="WebM" IsChecked="{Binding CreateUgoiraWebm, Mode=TwoWay}" FontSize="12" Margin="0,0,12,4"/>
+                                        <CheckBox Content="GIF"  IsChecked="{Binding CreateUgoiraGif,  Mode=TwoWay}" FontSize="12" Margin="0,0,12,4"/>
+                                        <CheckBox Content="WebP" IsChecked="{Binding CreateUgoiraWebp, Mode=TwoWay}" FontSize="12" Margin="0,0,12,4"/>
+                                        <CheckBox Content="APNG" IsChecked="{Binding CreateUgoiraApng, Mode=TwoWay}" FontSize="12" Margin="0,0,12,4"/>
+                                    </WrapPanel>
+                                    <CheckBox Content="Keep original ZIP after conversion"
+                                              IsChecked="{Binding KeepUgoiraZip, Mode=TwoWay}" FontSize="12"/>
+                                    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
+                                        <TextBlock Text="Codec:" VerticalAlignment="Center" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,8,0"/>
+                                        <ComboBox Grid.Column="1" CornerRadius="5" FontSize="12"
+                                                  SelectedItem="{Binding FfMpegCodec, Mode=TwoWay}">
+                                            <ComboBoxItem>libvpx-vp9</ComboBoxItem>
+                                            <ComboBoxItem>libx264</ComboBoxItem>
+                                            <ComboBoxItem>libvpx</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Text="{Binding FfMpegCRF, StringFormat='Quality (CRF): {0} � lower = better'}"
+                                               FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    <Slider Minimum="0" Maximum="35" TickFrequency="1" IsSnapToTickEnabled="True"
+                                            Value="{Binding FfMpegCRF, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                    <!-- Download Behavior -->
+                    <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="20" Margin="4,10,4,4">
+                        <StackPanel Spacing="24">
+                            <TextBlock Text="Download Behavior" FontWeight="SemiBold" FontSize="14"/>
+                            <Grid ColumnDefinitions="*,20,*,20,*">
+
+                                <!-- Concurrency + Overwrite -->
+                                <StackPanel Grid.Column="0" Spacing="24">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Max concurrent downloads" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <Slider Minimum="1" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True"
+                                                Value="{Binding MaxConcurrentDownloads, Mode=TwoWay}"/>
+                                        <TextBlock Text="{Binding MaxConcurrentDownloads, StringFormat='{}{0} parallel downloads'}"
+                                                   FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Overwrite behavior" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="Skip" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding OverwriteMode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=0}"
+                                                    Click="OnOverwriteModeButtonClick" Tag="0"/>
+                                            <Button Content="Overwrite" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding OverwriteMode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=1}"
+                                                    Click="OnOverwriteModeButtonClick" Tag="1"/>
+                                            <Button Content="Backup" CornerRadius="6" Padding="12,6" FontSize="12"
+                                                    Classes.accent="{Binding OverwriteMode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=2}"
+                                                    Click="OnOverwriteModeButtonClick" Tag="2"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- File size limits -->
+                                <StackPanel Grid.Column="2" Spacing="24">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Min file size (KB)" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding MinFileSizeKB, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="102400" Increment="100"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Max file size (KB)" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding MaxFileSizeKB, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="102400" Increment="1000"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                    <TextBlock Text="0 = no limit" FontSize="12"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                </StackPanel>
+
+                                <!-- Timing -->
+                                <StackPanel Grid.Column="4" Spacing="24">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Timeout (s)" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding DownloadTimeout, Mode=TwoWay}"
+                                                       Minimum="10" Maximum="300" Increment="5"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Retry count" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding RetryCount, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="10" Increment="1"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Retry delay (s)" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding RetryDelaySeconds, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="60" Increment="1"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Delay between downloads (s)" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Value="{Binding DownloadDelaySeconds, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="30" Increment="1"
+                                                       CornerRadius="6" FontSize="13"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Diagnostics & Logging -->
+                    <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="20" Margin="4,10,4,24">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Diagnostics &amp; Logging" FontWeight="SemiBold" FontSize="14"/>
+
+                            <CheckBox Content="Enable verbose logging (debug level)"
+                                      IsChecked="{Binding VerboseLogging, Mode=TwoWay}"/>
+                            <TextBlock Text="⚠ Verbose mode writes detailed debug output. Takes effect after restart."
+                                       FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                       IsVisible="{Binding VerboseLogging}"/>
+
+                            <Separator Background="{actipro:ThemeResource Container1BorderBrush}" Margin="0,4"/>
+
+                            <!-- App log -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Application log" FontSize="13"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBox Grid.Column="0" IsReadOnly="True" FontSize="13" CornerRadius="5"
+                                             Text="{Binding AppLogPath, Mode=OneWay}"
+                                             FontFamily="Consolas,Menlo,monospace"/>
+                                    <Button Grid.Column="1" Content="Copy" FontSize="12" Margin="6,0,0,0"
+                                            CornerRadius="5" Padding="10,5" Click="OnCopyAppLogPath"/>
+                                    <Button Grid.Column="2" Content="Open folder" FontSize="12" Margin="6,0,0,0"
+                                            CornerRadius="5" Padding="10,5" Click="OnOpenLogFolder"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Crash log -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Crash log (Desktop)" FontSize="13"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" IsReadOnly="True" FontSize="13" CornerRadius="5"
+                                             Text="{Binding CrashLogPath, Mode=OneWay}"
+                                             FontFamily="Consolas,Menlo,monospace"/>
+                                    <Button Grid.Column="1" Content="Copy" FontSize="12" Margin="6,0,0,0"
+                                            CornerRadius="5" Padding="10,5" Click="OnCopyCrashLogPath"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== HOSHI AI ====================== -->
+            <TabItem Header="Hoshi AI">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="16" Margin="8,8,8,8">
+
+                        <!-- Active models -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Active models" FontWeight="SemiBold" FontSize="14"/>
+                                <TextBlock FontSize="12"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           TextWrapping="Wrap"
+                                           Text="Choose which installed Ollama models Hoshi uses for chat (text) and image understanding (vision). Toggle 'Use custom models' to override the defaults."/>
+
+                                <CheckBox Content="Use custom models (instead of defaults)"
+                                          IsChecked="{Binding UseCustomHoshiModels}"/>
+
+                                <Grid ColumnDefinitions="*,20,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Text model" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <TextBox Grid.Row="1" Grid.Column="0"
+                                             Text="{Binding HoshiTextModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             IsEnabled="{Binding UseCustomHoshiModels}"
+                                             CornerRadius="6" FontSize="13"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" FontSize="11" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="Default: "/><Run FontWeight="SemiBold" Text="{Binding DefaultTextModelName}"/>
+                                    </TextBlock>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Vision model" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,0,5"/>
+                                    <TextBox Grid.Row="1" Grid.Column="2"
+                                             Text="{Binding HoshiVisionModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             IsEnabled="{Binding UseCustomHoshiModels}"
+                                             CornerRadius="6" FontSize="13"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" FontSize="11" Margin="0,4,0,0"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                        <Run Text="Default: "/><Run FontWeight="SemiBold" Text="{Binding DefaultVisionModelName}"/>
+                                    </TextBlock>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Install a model -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Install a model" FontWeight="SemiBold" FontSize="14"/>
+                                <TextBlock FontSize="12"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           TextWrapping="Wrap"
+                                           Text="Type any Ollama model name (e.g. llama3.2, llava, qwen2.5:7b) and click Install. The download runs in the background — you can keep using the app."/>
+
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding ModelToInstall, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             CornerRadius="6" FontSize="13" Margin="0,0,8,0"
+                                             Watermark="Model name (e.g. llama3.2)"/>
+                                    <Button Grid.Column="1" Content="Install"
+                                            Classes="accent" CornerRadius="6" Padding="14,7" FontSize="13"
+                                            Command="{Binding PullModelCommand}"
+                                            IsEnabled="{Binding !IsPullingModel}"/>
+                                    <Button Grid.Column="2" Content="Cancel" Margin="6,0,0,0"
+                                            CornerRadius="6" Padding="14,7" FontSize="13"
+                                            Command="{Binding CancelModelPullCommand}"
+                                            IsVisible="{Binding IsPullingModel}"/>
+                                </Grid>
+
+                                <!-- Suggested chips -->
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Suggested:" FontSize="11" VerticalAlignment="Center"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,6,0"/>
+                                    <ItemsControl ItemsSource="{Binding SuggestedModels}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Content="{Binding}" Margin="0,0,6,4" Padding="8,3"
+                                                        FontSize="11" CornerRadius="10"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SelectSuggestedModelCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- Progress -->
+                                <StackPanel Spacing="6" IsVisible="{Binding IsPullingModel}">
+                                    <ProgressBar Minimum="0" Maximum="100"
+                                                 Value="{Binding ModelPullPercent}" Height="6"/>
+                                    <TextBlock Text="{Binding ModelPullStatus}" FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding ModelManagementError}" FontSize="11"
+                                           Foreground="#F87171" TextWrapping="Wrap"
+                                           IsVisible="{Binding ModelManagementError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Installed models -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="Installed models" FontWeight="SemiBold" FontSize="14"
+                                               VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="↻ Refresh"
+                                            CornerRadius="6" Padding="10,5" FontSize="12"
+                                            Command="{Binding RefreshInstalledModelsCommand}"
+                                            IsEnabled="{Binding !IsLoadingModels}"/>
+                                </Grid>
+
+                                <TextBlock Text="Loading…" FontSize="12"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           IsVisible="{Binding IsLoadingModels}"/>
+
+                                <TextBlock Text="No models installed yet. Use 'Install a model' above to download one."
+                                           FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                    <TextBlock.IsVisible>
+                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                            <Binding Path="!IsLoadingModels"/>
+                                            <Binding Path="InstalledModels.Count" Converter="{x:Static svc:CountToBoolConverter.IsZero}"/>
+                                        </MultiBinding>
+                                    </TextBlock.IsVisible>
+                                </TextBlock>
+
+                                <ItemsControl ItemsSource="{Binding InstalledModels}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:InstalledModelRow">
+                                            <Border Margin="0,3" Padding="12,8" CornerRadius="6"
+                                                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                                    BorderThickness="1">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+                                                    <StackPanel Grid.Column="0" Spacing="2">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
+                                                        <TextBlock FontSize="11"
+                                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                                            <Run Text="{Binding DisplaySize}"/>
+                                                            <Run Text="  ·  "/>
+                                                            <Run Text="{Binding DisplayModified}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="Use for chat" Margin="6,0,0,0"
+                                                            CornerRadius="5" Padding="9,4" FontSize="11"
+                                                            Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).UseModelForTextCommand}"
+                                                            CommandParameter="{Binding Name}"/>
+                                                    <Button Grid.Column="2" Content="Use for vision" Margin="6,0,0,0"
+                                                            CornerRadius="5" Padding="9,4" FontSize="11"
+                                                            Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).UseModelForVisionCommand}"
+                                                            CommandParameter="{Binding Name}"/>
+                                                    <Button Grid.Column="3" Content="Uninstall" Margin="6,0,0,0"
+                                                            CornerRadius="5" Padding="9,4" FontSize="11"
+                                                            Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).DeleteModelCommand}"
+                                                            CommandParameter="{Binding Name}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                   Text="Tip: Browse models at https://ollama.com/library. Type the exact name (e.g. 'llama3.2:3b' for a smaller variant)."/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== CONFIG ====================== -->
+            <TabItem Header="Config">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8">
+
+                        <Grid ColumnDefinitions="*,12,*">
+                            <!-- Languages -->
+                            <Border Grid.Column="0" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="24">
+                                <StackPanel Spacing="20">
+                                    <TextBlock Text="Language" FontWeight="SemiBold" FontSize="13"/>
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="App language" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ComboBox Grid.Row="0" Grid.Column="1"
+                                                  ItemsSource="{Binding AvailableAppLanguages}"
+                                                  SelectedItem="{Binding AppLanguage, Mode=TwoWay}"
+                                                  SelectionChanged="OnAppLanguageChanged"
+                                                  CornerRadius="5" FontSize="12"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="API language" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   VerticalAlignment="Center" Margin="0,8,10,0"/>
+                                        <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,8,0,0"
+                                                  ItemsSource="{Binding AvailableLocales}"
+                                                  SelectedItem="{Binding PixivLocale, Mode=TwoWay}"
+                                                  SelectionChanged="OnPixivLocaleChanged"
+                                                  CornerRadius="5" FontSize="12"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Startup -->
+                            <Border Grid.Column="2" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="24">
+                                <StackPanel Spacing="20">
+                                    <TextBlock Text="Startup" FontWeight="SemiBold" FontSize="13"/>
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Window state" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ComboBox Grid.Row="0" Grid.Column="1"
+                                                  SelectedItem="{Binding StartupWindowState, Mode=TwoWay}"
+                                                  ItemsSource="{Binding StartupWindowStates}"
+                                                  CornerRadius="5" FontSize="12"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="System tray" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   VerticalAlignment="Center" Margin="0,8,10,0"/>
+                                        <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,8,0,0"
+                                                  CornerRadius="5" FontSize="12"
+                                                  SelectedIndex="{Binding TrayBehavior, Mode=TwoWay}">
+                                            <ComboBoxItem>Disabled</ComboBoxItem>
+                                            <ComboBoxItem>Minimize to tray</ComboBoxItem>
+                                            <ComboBoxItem>Close to tray</ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                    <CheckBox Content="Start with Windows"
+                                              IsChecked="{Binding StartWithWindows, Mode=TwoWay}" FontSize="12"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Settings.json -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="20">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="{Binding SettingsPathHint}" FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                                    <Button Content="Reset to Defaults" Command="{Binding ResetSettingsCommand}"
+                                            CornerRadius="6" FontSize="12"/>
+                                    <TextBlock Text="Pixora &#xB7; Avalonia UI 12" FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== ACCOUNT ====================== -->
+            <TabItem Header="Account">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8">
+
+                        <!-- Sign-in status -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Grid.Column="0" Width="38" Height="38" CornerRadius="19" Margin="0,0,12,0"
+                                        Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="&#x2713;" FontSize="17" FontWeight="Bold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               IsVisible="{Binding IsSignedIn}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding AccountStatus}" FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock Text="{Binding AccountDetail}" FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button Content="Sign in" Command="{Binding LoginCommand}"
+                                            CornerRadius="6" Classes="accent" IsVisible="{Binding !IsSignedIn}"/>
+                                    <Button Content="Sign out" Command="{Binding LogoutCommand}"
+                                            CornerRadius="6" IsVisible="{Binding IsSignedIn}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== ABOUT ====================== -->
+            <TabItem Header="About">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8" HorizontalAlignment="Center" MaxWidth="560">
+
+                        <!-- Logo / App Identity -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="36,32">
+                            <StackPanel Spacing="10" HorizontalAlignment="Center">
+                                <Image Source="/Assets/pixora-logo.png" Width="80" Height="80"
+                                       HorizontalAlignment="Center"/>
+                                <TextBlock Text="Pixora" FontSize="32" FontWeight="Bold"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Text="ピクラ" FontSize="13"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"
+                                           HorizontalAlignment="Center" Margin="0,-4,0,0"/>
+                                <TextBlock Text="Pixiv Artwork Manager" FontSize="14"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           HorizontalAlignment="Center"/>
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}" Margin="0,8"/>
+                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" HorizontalAlignment="Center">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Version" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="1.0.0" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Developer" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="mrplusultra" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Year" FontSize="13"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,0"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="© 2026" FontSize="13" FontWeight="SemiBold"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- License -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="License" FontWeight="SemiBold" FontSize="14"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           Text="Pixora is source-available software. Free for personal, non-commercial use. Commercial use requires a separate license. Contributions welcome."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Tech Stack -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Built With" FontWeight="SemiBold" FontSize="14"/>
+                                <WrapPanel>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text=".NET 10" FontSize="11"/>
+                                    </Border>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text="Avalonia UI" FontSize="11"/>
+                                    </Border>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text="ActiPro" FontSize="11"/>
+                                    </Border>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text="SQLite" FontSize="11"/>
+                                    </Border>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text="CommunityToolkit.Mvvm" FontSize="11"/>
+                                    </Border>
+                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                            CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                        <TextBlock Text="Ollama" FontSize="11"/>
+                                    </Border>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background rounded square -->
+  <rect width="256" height="256" rx="52" ry="52" fill="#1A1D2E"/>
+  <!-- Accent ring -->
+  <rect width="256" height="256" rx="52" ry="52" fill="none" stroke="#5B8DEF" stroke-width="8" opacity="0.6"/>
+  <!-- Stylised "P" glyph -->
+  <g fill="#5B8DEF">
+    <!-- Vertical stem -->
+    <rect x="72" y="64" width="26" height="128" rx="8"/>
+    <!-- Top bowl -->
+    <path d="M98 64 h28 a44 44 0 0 1 0 88 h-28 z" rx="0"/>
+    <!-- Bowl fill (white interior to give cutout feel) -->
+    <rect x="98" y="84" width="22" height="48" rx="4" fill="#1A1D2E"/>
+  </g>
+  <!-- Dot accent bottom right -->
+  <circle cx="180" cy="186" r="14" fill="#5B8DEF" opacity="0.85"/>
+</svg>

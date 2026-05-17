@@ -1,0 +1,218 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pixora.Avalonia.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="Pixora.Avalonia.Views.Settings.EnhancedSettingsView"
+             x:DataType="vm:EnhancedSettingsViewModel">
+
+    <Design.DataContext>
+        <vm:EnhancedSettingsViewModel/>
+    </Design.DataContext>
+
+    <Grid Background="#FAFBFC">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="1"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Settings Sidebar -->
+        <Border Grid.Column="0" 
+                Background="#FFFFFF"
+                BorderBrush="#E2E8F0"
+                BorderThickness="0,0,1,0">
+            <StackPanel Margin="0,24,0,24">
+                <TextBlock Text="⚙️ Settings" 
+                          FontWeight="Bold" 
+                          FontSize="20"
+                          Margin="24,0,24,20"
+                          HorizontalAlignment="Center"/>
+                
+                <!-- Settings Categories -->
+                <StackPanel Spacing="4">
+                    <Button Content="🎨 Appearance" 
+                            Background="#0096FA"
+                            Foreground="White"
+                            Margin="16,4"
+                            Padding="16,12"/>
+                    <Button Content="👤 Account" 
+                            Background="Transparent"
+                            Foreground="#1A1A1A"
+                            Margin="16,4"
+                            Padding="16,12"/>
+                    <Button Content="⬇️ Downloads" 
+                            Background="Transparent"
+                            Foreground="#1A1A1A"
+                            Margin="16,4"
+                            Padding="16,12"/>
+                    <Button Content="🔒 Privacy" 
+                            Background="Transparent"
+                            Foreground="#1A1A1A"
+                            Margin="16,4"
+                            Padding="16,12"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Settings Content -->
+        <ScrollViewer Grid.Column="2" Padding="32">
+            <StackPanel Spacing="24">
+                <!-- Appearance Settings -->
+                <Border Background="#FFFFFF"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <TextBlock Text="🎨 Appearance" 
+                                  FontWeight="SemiBold" 
+                                  FontSize="18"/>
+                        
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Theme"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <RadioButton Content="Light" GroupName="Theme"/>
+                                    <RadioButton Content="Dark" GroupName="Theme"/>
+                                    <RadioButton Content="System" GroupName="Theme"/>
+                                </StackPanel>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Language"/>
+                                <ComboBox SelectedIndex="0" Width="200">
+                                    <ComboBoxItem Content="English (US)"/>
+                                    <ComboBoxItem Content="Japanese"/>
+                                    <ComboBoxItem Content="Chinese"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Font Size"/>
+                                <Slider Minimum="10" Maximum="20" Value="14" Width="200"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Account Settings -->
+                <Border Background="#FFFFFF"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <TextBlock Text="👤 Account" 
+                                  FontWeight="SemiBold" 
+                                  FontSize="18"/>
+                        
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Profile Information"/>
+                                <TextBlock Text="Username: DemoUser" Opacity="0.7"/>
+                                <TextBlock Text="Email: user@example.com" Opacity="0.7"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Authentication"/>
+                                <CheckBox Content="Two-factor authentication enabled" IsChecked="True"/>
+                                <CheckBox Content="API connected" IsChecked="True"/>
+                            </StackPanel>
+                            
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Edit Profile" Background="#0096FA" Foreground="White"/>
+                                <Button Content="Sign Out" Background="Transparent" BorderBrush="#0096FA" Foreground="#0096FA"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Download Settings -->
+                <Border Background="#FFFFFF"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <TextBlock Text="⬇️ Downloads" 
+                                  FontWeight="SemiBold" 
+                                  FontSize="18"/>
+                        
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Download Location"/>
+                                <TextBox Text="C:\Users\Marlon\Downloads\PixivUtil2" IsReadOnly="True"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Image Quality"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <RadioButton Content="Low" GroupName="Quality"/>
+                                    <RadioButton Content="Medium" GroupName="Quality" IsChecked="True"/>
+                                    <RadioButton Content="High" GroupName="Quality"/>
+                                    <RadioButton Content="Original" GroupName="Quality"/>
+                                </StackPanel>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Parallel Downloads"/>
+                                <Slider Minimum="1" Maximum="10" Value="4" Width="200"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Auto-download"/>
+                                <CheckBox Content="Followed artists" IsChecked="True"/>
+                                <CheckBox Content="Bookmarked artworks"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Privacy Settings -->
+                <Border Background="#FFFFFF"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <TextBlock Text="🔒 Privacy" 
+                                  FontWeight="SemiBold" 
+                                  FontSize="18"/>
+                        
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Content Filtering"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <RadioButton Content="Safe Only" GroupName="Content" IsChecked="True"/>
+                                    <RadioButton Content="Include R-15" GroupName="Content"/>
+                                    <RadioButton Content="Include R-18" GroupName="Content"/>
+                                </StackPanel>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Data &amp; Analytics"/>
+                                <CheckBox Content="Share usage statistics"/>
+                                <CheckBox Content="Send crash reports" IsChecked="True"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Action Buttons -->
+                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
+                    <Button Content="Save Settings" 
+                            Background="#0096FA"
+                            Foreground="White"
+                            Padding="24,12"/>
+                    <Button Content="Reset to Defaults" 
+                            Background="Transparent"
+                            BorderBrush="#0096FA"
+                            Foreground="#0096FA"
+                            Padding="24,12"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

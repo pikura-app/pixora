@@ -1,0 +1,77 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:generation="using:ActiproSoftware.UI.Avalonia.Themes.Generation"
+             x:Class="Pixora.Avalonia.App"
+             xmlns:local="using:Pixora.Avalonia"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <actipro:ModernTheme>
+            <actipro:ModernTheme.Definition>
+                <generation:ThemeDefinition
+                    UseAccentedSwitches="True"
+                    AccentColorRampName="Blue">
+                    <generation:ThemeDefinition.ColorPaletteFactory>
+                        <generation:DefaultColorPaletteFactory NeutralMidtoneColor="#4A5568" />
+                    </generation:ThemeDefinition.ColorPaletteFactory>
+                </generation:ThemeDefinition>
+            </actipro:ModernTheme.Definition>
+        </actipro:ModernTheme>
+        
+        <!-- Accessibility Styles -->
+        <Style Selector="TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="Button">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="ComboBox">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="CheckBox">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="Slider">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <Style Selector="Label">
+            <Setter Property="FontSize" Value="{DynamicResource AccessibilityFontSize}"/>
+        </Style>
+        
+        <!-- High Contrast Styles -->
+        <Style Selector="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccessibilityBorder}"/>
+        </Style>
+    </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/pixora-logo.png"
+                      ToolTipText="Pixora"
+                      Clicked="OnTrayIconClicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Open Pixora" Click="OnTrayOpen"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Quit" Click="OnTrayQuit"/>
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+
+</Application>

@@ -1,0 +1,176 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:vm="using:Pixora.Avalonia.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:DataType="vm:MainWindowViewModel"
+        x:Class="Pixora.Avalonia.Views.MainWindow"
+        Icon="/Assets/pixora-logo.png"
+        Title=""
+        MinWidth="1000" MinHeight="600"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="-1">
+
+    <Window.Styles>
+        <Style Selector="Button.nav">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Margin" Value="8,1"/>
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{actipro:ThemeResource ControlBackgroundBrushSoftAccent}"/>
+            <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
+        </Style>
+        <Style Selector="Button.nav:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{actipro:ThemeResource ControlBackgroundBrushSoftAccentPressed}"/>
+        </Style>
+        <!-- Active nav item -->
+        <Style Selector="Button.nav.active /template/ ContentPresenter">
+            <Setter Property="Background" Value="{actipro:ThemeResource ControlBackgroundBrushSoftAccent}"/>
+            <Setter Property="Foreground" Value="{actipro:ThemeResource ControlForegroundBrushOutlineAccent}"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid x:Name="RootGrid" ColumnDefinitions="220,*">
+
+            <!-- Sidebar with box shadow for depth -->
+            <Border x:Name="SidebarBorder" Grid.Column="0"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    BoxShadow="4 0 12 0 #33000000">
+                    <Grid RowDefinitions="*,Auto">
+
+                        <!-- Nav Items -->
+                        <StackPanel Grid.Row="0" Margin="0,40,0,0">
+                            <TextBlock Text="MENU" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                       Margin="20,4,0,4" LetterSpacing="1.5"/>
+                            <Button Classes="nav" Click="GalleryButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="⊞" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Gallery"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="RankingsButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="★" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Rankings"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="DiscoverButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="✨" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Discover"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="BookmarksButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="🔖" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Bookmarks"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="HoshiButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="✦" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Hoshi 星"/>
+                                </StackPanel>
+                            </Button>
+                                                        <Button Classes="nav" Click="BatchDownloadButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="📥" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Batch"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="HistoryButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="🕐" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="History"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Separator Margin="14,8" Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                            <TextBlock Text="SYSTEM" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                       Margin="20,4,0,4" LetterSpacing="1.5"/>
+                            <Button Classes="nav" Click="AnalyticsButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="📊" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Analytics"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="nav" Click="SettingsButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="⚙" FontSize="15" Width="18" TextAlignment="Center"/>
+                                    <TextBlock Text="Settings"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- User chip -->
+                        <Border Grid.Row="1" Margin="10,0,10,10" Padding="10"
+                                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                BorderThickness="1" CornerRadius="8">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                        CornerRadius="14" Width="28" Height="28">
+                                    <TextBlock Text="U" FontSize="12" FontWeight="Bold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock Text="{Binding SidebarUserName}" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrush}"/>
+                                    <TextBlock Text="{Binding SidebarUserStatus}" FontSize="10"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+            </Border>
+
+            <!-- Main content -->
+            <Border Grid.Column="1" Background="{actipro:ThemeResource Container3BackgroundBrush}">
+                <ContentControl x:Name="MainContentControl"/>
+            </Border>
+
+            <!-- Title bar background — sidebar half matches sidebar, content half matches gallery top bar -->
+            <Border Grid.Column="0" Height="32" VerticalAlignment="Top" ZIndex="9"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    IsHitTestVisible="False"/>
+            <Border Grid.Column="1" Height="32" VerticalAlignment="Top" ZIndex="9"
+                    Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                    IsHitTestVisible="False"/>
+
+            <!-- Draggable title bar strip — spans full width, transparent, ZIndex=10 -->
+            <Panel Grid.Column="0" Grid.ColumnSpan="2"
+                   Height="32" VerticalAlignment="Top" ZIndex="10"
+                   Background="Transparent"
+                   IsHitTestVisible="True"
+                   PointerPressed="TitleBar_PointerPressed"/>
+
+            <!-- Hamburger button — sits in the native title bar row, ZIndex=20 so it wins over drag panel -->
+            <Button x:Name="HamburgerBtn"
+                    Grid.Column="0" Grid.ColumnSpan="2"
+                    VerticalAlignment="Top" HorizontalAlignment="Left"
+                    Margin="8,4,0,0" Padding="7,4" ZIndex="20"
+                    Background="Transparent" BorderThickness="0"
+                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                    FontSize="15" CornerRadius="5"
+                    IsHitTestVisible="True"
+                    Click="HamburgerBtn_Click"
+                    ToolTip.Tip="Toggle sidebar">☰</Button>
+    </Grid>
+
+</Window>
