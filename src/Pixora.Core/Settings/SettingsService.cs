@@ -49,7 +49,11 @@ public sealed class SettingsService
             try
             {
                 using var fs = File.OpenRead(_path);
-                Current = JsonSerializer.Deserialize<AppSettings>(fs, JsonOptions) ?? new AppSettings();
+                var loaded = JsonSerializer.Deserialize<AppSettings>(fs, JsonOptions) ?? new AppSettings();
+                // Decrypt sensitive fields (handles both legacy plaintext and ENC: prefixed values)
+                loaded.PhpSessId    = CredentialStore.Unprotect(loaded.PhpSessId);
+                loaded.RefreshToken = CredentialStore.Unprotect(loaded.RefreshToken);
+                Current = loaded;
             }
             catch
             {
@@ -63,8 +67,9 @@ public sealed class SettingsService
     {
         lock (_gate)
         {
+            var toWrite = ShallowCopyWithEncryptedCredentials(Current);
             using var fs = File.Create(_path);
-            JsonSerializer.Serialize(fs, Current, JsonOptions);
+            JsonSerializer.Serialize(fs, toWrite, JsonOptions);
         }
     }
 
@@ -74,9 +79,25 @@ public sealed class SettingsService
         lock (_gate)
         {
             mutator(Current);
+            var toWrite = ShallowCopyWithEncryptedCredentials(Current);
             using var fs = File.Create(_path);
-            JsonSerializer.Serialize(fs, Current, JsonOptions);
+            JsonSerializer.Serialize(fs, toWrite, JsonOptions);
         }
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Returns a copy of <paramref name="s"/> where <c>PhpSessId</c> and
+    /// <c>RefreshToken</c> are replaced with their encrypted equivalents.
+    /// The in-memory <see cref="Current"/> always holds plaintext.
+    /// </summary>
+    private static AppSettings ShallowCopyWithEncryptedCredentials(AppSettings s)
+    {
+        // System.Text.Json round-trip is the safest shallow-copy for a POCO this large.
+        var json = JsonSerializer.Serialize(s, JsonOptions);
+        var copy = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions)!;
+        copy.PhpSessId    = CredentialStore.Protect(s.PhpSessId);
+        copy.RefreshToken = CredentialStore.Protect(s.RefreshToken);
+        return copy;
     }
 }

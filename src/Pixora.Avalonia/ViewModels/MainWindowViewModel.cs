@@ -1,9 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pixora.Avalonia.Services;
+using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using System;
+using System.Threading.Tasks;
 
 namespace Pixora.Avalonia.ViewModels;
 
@@ -11,19 +14,48 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly NavigationService _navigationService;
     private readonly SettingsService _settingsService;
+    private readonly UpdateCheckService _updateCheck;
     private ContentControl? _mainContentControl;
 
     [ObservableProperty] private string _sidebarUserName = "Guest User";
     [ObservableProperty] private string _sidebarUserStatus = "Not signed in";
+    [ObservableProperty] private bool   _updateAvailable;
+    [ObservableProperty] private string _updateVersion = string.Empty;
+    [ObservableProperty] private string _updateUrl     = string.Empty;
 
-    public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService)
+    public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck)
     {
         _navigationService = navigationService;
-        _settingsService = settingsService;
+        _settingsService   = settingsService;
+        _updateCheck       = updateCheck;
         Title = "Pixora";
         RefreshUserChip();
         _settingsService.Changed += (_, _) => RefreshUserChip();
+        _ = Task.Run(CheckForUpdateAsync);
     }
+
+    private async Task CheckForUpdateAsync()
+    {
+        var info = await _updateCheck.CheckAsync().ConfigureAwait(false);
+        if (info is null) return;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            UpdateVersion   = info.Version;
+            UpdateUrl       = info.ReleasePageUrl;
+            UpdateAvailable = true;
+        });
+    }
+
+    [RelayCommand]
+    private void OpenUpdatePage()
+    {
+        if (!string.IsNullOrEmpty(UpdateUrl))
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UpdateUrl) { UseShellExecute = true });
+        UpdateAvailable = false;
+    }
+
+    [RelayCommand]
+    private void DismissUpdate() => UpdateAvailable = false;
 
     private void RefreshUserChip()
     {

@@ -105,6 +105,9 @@ public static class AppServices
                         provider.GetRequiredService<SettingsService>(),
                         provider.GetRequiredService<ImageLookupService>()));
 
+                // Update check
+                services.AddSingleton<UpdateCheckService>();
+
                 // Avalonia-specific services
                 services.AddSingleton<NavigationService>();
                 services.AddSingleton<DialogService>();

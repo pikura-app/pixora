@@ -140,7 +140,35 @@
 
             <!-- Main content -->
             <Border Grid.Column="1" Background="{actipro:ThemeResource Container3BackgroundBrush}">
-                <ContentControl x:Name="MainContentControl"/>
+                <Grid RowDefinitions="Auto,*">
+                    <!-- Update available banner -->
+                    <Border Grid.Row="0"
+                            IsVisible="{Binding UpdateAvailable}"
+                            Background="#1A3A7AFF" BorderBrush="#3A5A9AFF"
+                            BorderThickness="0,0,0,1" Padding="12,7">
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="🆕" FontSize="13" VerticalAlignment="Center"/>
+                                <TextBlock FontSize="13" VerticalAlignment="Center">
+                                    <Run Text="Pixora v"/>
+                                    <Run Text="{Binding UpdateVersion}"/>
+                                    <Run Text=" is available — "/>
+                                    <Run Text="see what's new"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Download update"
+                                    Command="{Binding OpenUpdatePageCommand}"
+                                    FontSize="12" Padding="10,4" Margin="8,0"
+                                    CornerRadius="4"/>
+                            <Button Grid.Column="2" Content="✕"
+                                    Command="{Binding DismissUpdateCommand}"
+                                    Background="Transparent" BorderThickness="0"
+                                    FontSize="12" Padding="6,4" CornerRadius="4"
+                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                        </Grid>
+                    </Border>
+                    <ContentControl x:Name="MainContentControl" Grid.Row="1"/>
+                </Grid>
             </Border>
 
             <!-- Title bar background — sidebar half matches sidebar, content half matches gallery top bar -->
