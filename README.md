@@ -7,6 +7,10 @@
   [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
   [![.NET](https://img.shields.io/badge/.NET-10-purple?style=flat-square)](https://dotnet.microsoft.com)
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#download)
+
+  <br/>
+
+  [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/mrplusultra)
 </div>
 
 ---
