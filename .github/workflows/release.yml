@@ -74,7 +74,7 @@ jobs:
           APP=publish/Pixora.app
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
-          cp publish/osx-x64/Pixora.Avalonia "$APP/Contents/MacOS/Pixora"
+          cp publish/osx-x64/Pixora "$APP/Contents/MacOS/Pixora"
           chmod +x "$APP/Contents/MacOS/Pixora"
           cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -123,7 +123,7 @@ jobs:
 
       - name: Create tar.gz
         run: |
-          chmod +x publish/linux-x64/Pixora.Avalonia
+          chmod +x publish/linux-x64/Pixora
           tar -czf publish/Pixora-${{ github.ref_name }}-linux-x64.tar.gz \
             -C publish/linux-x64 .
 
@@ -135,7 +135,7 @@ jobs:
 
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
 
-          cp publish/linux-x64/Pixora.Avalonia AppDir/usr/bin/pixora
+          cp publish/linux-x64/Pixora AppDir/usr/bin/pixora
           chmod +x AppDir/usr/bin/pixora
           cp src/Pixora.Avalonia/Assets/pixora-logo.png AppDir/usr/share/icons/hicolor/256x256/apps/pixora.png
           cp src/Pixora.Avalonia/Assets/pixora-logo.png AppDir/pixora.png
