@@ -59,9 +59,6 @@ public partial class MainWindow : Window
             };
         }
 
-        if (OperatingSystem.IsMacOS())
-            HamburgerBtn.Margin = new Thickness(78, 4, 0, 0);
-
         LoadGalleryView();
     }
 
