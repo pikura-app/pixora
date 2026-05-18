@@ -163,80 +163,27 @@ public partial class PixivLoginWindow : Window
 
     /// <summary>
     /// Reads PHPSESSID from the WebView cookie store.
-    /// On Windows uses the WebView2 cookie manager (can read HttpOnly cookies).
-    /// On Linux/macOS falls back to JS document.cookie (only works if cookie is not HttpOnly),
-    /// then prompts the user to paste it manually as a final fallback.
+    /// Uses the official cross-platform TryGetCookieManager() API first (works on Windows and macOS).
+    /// Falls back to JS document.cookie, then manual prompt as a last resort.
     /// </summary>
     private async Task<string?> TryGetPhpSessIdViaCookieManagerAsync(NativeWebView webView)
     {
-        if (OperatingSystem.IsWindows())
-            return await TryGetPhpSessIdWindowsAsync(webView);
-        return await TryGetPhpSessIdFallbackAsync(webView);
-    }
-
-    private async Task<string?> TryGetPhpSessIdWindowsAsync(NativeWebView webView)
-    {
+        // 1. Try the official Avalonia cross-platform cookie manager (Windows + macOS)
         try
         {
-            var platformHandle = webView.TryGetPlatformHandle();
-            if (platformHandle == null)
+            var cookieManager = webView.TryGetCookieManager();
+            if (cookieManager != null)
             {
-                StatusText.Text = "Session confirmed — cookie manager unavailable (null handle).";
-                return null;
+                var cookies = await cookieManager.GetCookiesAsync();
+                var sid = cookies
+                    .FirstOrDefault(c => string.Equals(c.Name, "PHPSESSID", StringComparison.OrdinalIgnoreCase));
+                if (sid != null && !string.IsNullOrWhiteSpace(sid.Value))
+                    return sid.Value;
             }
-
-            // Dynamically access Windows WebView2 handle to avoid compile-time dependency on non-Windows
-            var handleType = platformHandle.GetType();
-            var coreWebView2Prop = handleType.GetProperty("CoreWebView2");
-            if (coreWebView2Prop == null)
-            {
-                StatusText.Text = $"Session confirmed — no CoreWebView2 on handle type {handleType.Name}.";
-                return null;
-            }
-
-            // Use Microsoft.Web.WebView2.Core via reflection so Linux builds don't need the package
-            var coreWebView2 = coreWebView2Prop.GetValue(platformHandle);
-            if (coreWebView2 == null) return null;
-
-            var createMethod = Type.GetType("Microsoft.Web.WebView2.Core.CoreWebView2, Microsoft.Web.WebView2.Core")
-                ?.GetMethod("CreateFromComICoreWebView2",
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-            if (createMethod == null) return null;
-
-            var wv2 = createMethod.Invoke(null, [coreWebView2]);
-            if (wv2 == null) return null;
-
-            var cookieManager = wv2.GetType().GetProperty("CookieManager")?.GetValue(wv2);
-            if (cookieManager == null) return null;
-
-            var getCookiesTask = cookieManager.GetType()
-                .GetMethod("GetCookiesAsync")?
-                .Invoke(cookieManager, ["https://www.pixiv.net/"]) as System.Threading.Tasks.Task;
-            if (getCookiesTask == null) return null;
-
-            await getCookiesTask.ConfigureAwait(false);
-            var result = getCookiesTask.GetType().GetProperty("Result")?.GetValue(getCookiesTask);
-            if (result is not System.Collections.IEnumerable cookies) return null;
-
-            foreach (var cookie in cookies)
-            {
-                var name = cookie.GetType().GetProperty("Name")?.GetValue(cookie) as string;
-                if (string.Equals(name, "PHPSESSID", StringComparison.OrdinalIgnoreCase))
-                    return cookie.GetType().GetProperty("Value")?.GetValue(cookie) as string;
-            }
-            return null;
         }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"Cookie read error: {ex.GetType().Name}: {ex.Message}";
-            await Task.Delay(1500);
-            return null;
-        }
-    }
+        catch { /* non-fatal — fall through */ }
 
-    private async Task<string?> TryGetPhpSessIdFallbackAsync(NativeWebView webView)
-    {
-        // Try reading via JS (works only if cookie is not marked HttpOnly by Pixiv)
+        // 2. Try JS document.cookie (only works if not HttpOnly, but worth trying)
         try
         {
             const string script = """
@@ -254,7 +201,7 @@ public partial class PixivLoginWindow : Window
         }
         catch { /* non-fatal */ }
 
-        // Final fallback: ask the user to paste the cookie manually
+        // 3. Last resort: ask the user to paste it manually
         StatusText.Text = "Session confirmed — paste your PHPSESSID below to complete sign-in.";
         return await PromptForPhpSessIdAsync();
     }
