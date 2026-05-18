@@ -206,9 +206,19 @@ public partial class HoshiView : UserControl
 
     private void OnFavClicked(object? sender, RoutedEventArgs e)
     {
-        if (VM?.CurrentCard == null) return;
+        if (VM is not { } vm) return;
+        if (vm.CurrentCard == null)
+        {
+            vm.Messages.Add(new AiChatMessage { Role = "system", Content = "⚠ No artwork selected — open an artwork in the viewer first." });
+            return;
+        }
         var favs = AppServices.Get<Pixora.Core.Services.LocalFavoritesService>();
-        favs.Toggle(VM.CurrentCard.Artwork);
+        favs.Toggle(vm.CurrentCard.Artwork);
+        var isFav = favs.IsFavorite(vm.CurrentCard.Id);
+        var msg = isFav
+            ? $"Added \"{vm.CurrentCard.Title}\" to local favorites ★"
+            : $"Removed \"{vm.CurrentCard.Title}\" from favorites.";
+        vm.Messages.Add(new AiChatMessage { Role = "assistant", Content = msg });
     }
 
     private async void OnDlClicked(object? sender, RoutedEventArgs e)

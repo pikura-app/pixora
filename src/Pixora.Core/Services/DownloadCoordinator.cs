@@ -41,6 +41,11 @@ public sealed class DownloadCoordinator : IDisposable
     private readonly ConcurrentDictionary<Guid, List<IProgress<JobProgress>>> _progressListeners = new();
 
     /// <summary>
+    /// Event raised when a job starts running.
+    /// </summary>
+    public event EventHandler<JobCompletedEventArgs>? JobStarted;
+
+    /// <summary>
     /// Event raised when a job completes (successfully or with failures).
     /// </summary>
     public event EventHandler<JobCompletedEventArgs>? JobCompleted;
@@ -132,6 +137,10 @@ public sealed class DownloadCoordinator : IDisposable
 
         // Update status
         await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Running, null, ct);
+        job.Status = JobStatus.Running;
+
+        // Notify listeners that job is starting
+        JobStarted?.Invoke(this, new JobCompletedEventArgs(job));
 
         // Start the job task
         var task = ExecuteJobAsync(job, cts.Token);
