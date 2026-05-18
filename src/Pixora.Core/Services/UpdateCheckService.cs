@@ -108,11 +108,22 @@ public sealed class UpdateCheckService
     }
 
     private static GitHubAsset? FindWindowsAsset(GitHubRelease release)
-        => release.Assets?.FirstOrDefault(a =>
+    {
+        if (release.Assets == null) return null;
+        // Prefer the Inno Setup installer over portable zip
+        var installer = release.Assets.FirstOrDefault(a =>
+            a.Name != null &&
+            (a.Name.Contains("setup", StringComparison.OrdinalIgnoreCase) ||
+             a.Name.Contains("install", StringComparison.OrdinalIgnoreCase)) &&
+            a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+        if (installer != null) return installer;
+        // Fall back to portable zip
+        return release.Assets.FirstOrDefault(a =>
             a.Name != null &&
             a.Name.Contains("win", StringComparison.OrdinalIgnoreCase) &&
             (a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
              a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
+    }
 
     // ── Release notes for a specific version ──────────────────────────────────
 
@@ -210,13 +221,15 @@ public sealed class UpdateCheckService
     {
         var srcName = Path.GetFileName(src).ToLowerInvariant();
 
-        // If the downloaded file is an Inno Setup installer, run it directly.
-        // The installer handles replacing the binary and can relaunch Pixora itself.
+        // If the downloaded file is an Inno Setup installer, run it silently.
+        // /SILENT skips wizard UI, /CLOSEAPPLICATIONS closes running instances,
+        // /RESTARTAPPLICATIONS relaunches after install.
         if (srcName.Contains("setup") || srcName.Contains("install"))
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName        = src,
+                Arguments       = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
                 UseShellExecute = true,
             });
             return;
