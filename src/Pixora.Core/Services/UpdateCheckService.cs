@@ -80,7 +80,10 @@ public sealed class UpdateCheckService
 
             _logger.LogInformation("Update available: {Latest} (current: {Current})", latestTag, CurrentVersion);
 
-            var asset = FindWindowsAsset(release);
+            GitHubAsset? asset;
+            if (OperatingSystem.IsWindows())      asset = FindWindowsAsset(release);
+            else if (OperatingSystem.IsMacOS())   asset = FindMacAsset(release);
+            else                                  asset = FindLinuxAsset(release);
 
             return new UpdateInfo(
                 latestTag,
@@ -123,6 +126,28 @@ public sealed class UpdateCheckService
             a.Name.Contains("win", StringComparison.OrdinalIgnoreCase) &&
             (a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
              a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static GitHubAsset? FindMacAsset(GitHubRelease release)
+    {
+        if (release.Assets == null) return null;
+        // Prefer DMG, fall back to zip
+        return release.Assets.FirstOrDefault(a =>
+                   a.Name != null && a.Name.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase))
+               ?? release.Assets.FirstOrDefault(a =>
+                   a.Name != null && a.Name.Contains("mac", StringComparison.OrdinalIgnoreCase) &&
+                   a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static GitHubAsset? FindLinuxAsset(GitHubRelease release)
+    {
+        if (release.Assets == null) return null;
+        // Prefer AppImage, fall back to tar.gz
+        return release.Assets.FirstOrDefault(a =>
+                   a.Name != null && a.Name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase))
+               ?? release.Assets.FirstOrDefault(a =>
+                   a.Name != null && a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) &&
+                   a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── Release notes for a specific version ──────────────────────────────────
@@ -266,21 +291,90 @@ public sealed class UpdateCheckService
 
     private static void LaunchUnixUpdater(string src, string dest)
     {
-        var script = Path.Combine(Path.GetTempPath(), "pixora_update.sh");
+        var script      = Path.Combine(Path.GetTempPath(), "pixora_update.sh");
+        var srcLower    = src.ToLowerInvariant();
+        string installBlock;
+
+        if (srcLower.EndsWith(".dmg"))
+        {
+            // macOS DMG: mount, copy .app bundle to /Applications, unmount
+            installBlock = $"""
+                MOUNT=$(hdiutil attach "{src}" -nobrowse -noverify | awk 'END{{print $NF}}')
+                if [ -d "$MOUNT/Pixora.app" ]; then
+                  rm -rf /Applications/Pixora.app
+                  cp -R "$MOUNT/Pixora.app" /Applications/
+                  RELAUNCH=/Applications/Pixora.app/Contents/MacOS/Pixora
+                else
+                  RELAUNCH="{dest}"
+                fi
+                hdiutil detach "$MOUNT" -quiet
+                """;
+        }
+        else if (srcLower.EndsWith(".appimage"))
+        {
+            // Linux AppImage: replace in-place
+            installBlock = $"""
+                cp -f "{src}" "{dest}"
+                chmod +x "{dest}"
+                RELAUNCH="{dest}"
+                """;
+        }
+        else if (srcLower.EndsWith(".tar.gz") || srcLower.EndsWith(".tgz"))
+        {
+            // Linux tar.gz: extract into the same directory as the current binary
+            var destDir = Path.GetDirectoryName(dest) ?? "/tmp";
+            installBlock = $"""
+                tar -xzf "{src}" -C "{destDir}"
+                chmod +x "{dest}"
+                RELAUNCH="{dest}"
+                """;
+        }
+        else if (srcLower.EndsWith(".zip"))
+        {
+            // macOS zip fallback: unzip and copy .app
+            var tmpDir = Path.Combine(Path.GetTempPath(), "pixora_update_extract");
+            installBlock = $"""
+                mkdir -p "{tmpDir}"
+                unzip -o "{src}" -d "{tmpDir}"
+                if [ -d "{tmpDir}/Pixora.app" ]; then
+                  rm -rf /Applications/Pixora.app
+                  cp -R "{tmpDir}/Pixora.app" /Applications/
+                  RELAUNCH=/Applications/Pixora.app/Contents/MacOS/Pixora
+                else
+                  cp -f "{tmpDir}/Pixora" "{dest}" 2>/dev/null || true
+                  chmod +x "{dest}"
+                  RELAUNCH="{dest}"
+                fi
+                rm -rf "{tmpDir}"
+                """;
+        }
+        else
+        {
+            // Generic fallback: treat as raw binary
+            installBlock = $"""
+                cp -f "{src}" "{dest}"
+                chmod +x "{dest}"
+                RELAUNCH="{dest}"
+                """;
+        }
+
         File.WriteAllText(script, $"""
             #!/bin/bash
             sleep 2
             while pgrep -x Pixora > /dev/null; do sleep 1; done
-            cp -f "{src}" "{dest}"
-            chmod +x "{dest}"
-            "{dest}" &
+            {installBlock}
+            "$RELAUNCH" &
             rm -- "$0"
             """);
-        System.Diagnostics.Process.Start("chmod", $"+x {script}");
+
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "/bin/chmod", Arguments = $"+x \"{script}\"", UseShellExecute = false
+        })?.WaitForExit();
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
             FileName        = "/bin/bash",
-            Arguments       = script,
+            Arguments       = $"\"{script}\"",
             UseShellExecute = false,
         });
     }
