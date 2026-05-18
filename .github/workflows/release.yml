@@ -52,9 +52,16 @@ jobs:
 
   # ── macOS ──────────────────────────────────────────────────────────────────
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /Library/Developer/CoreSimulator /Applications/Xcode_14*.app /Applications/Xcode_15*.app || true
+          sudo rm -rf ~/Library/Caches /private/var/folders || true
+          df -h
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -69,12 +76,20 @@ jobs:
             -p:PublishSingleFile=true \
             -o publish/osx-x64
 
-      - name: Bundle .app
+      - name: Publish self-contained macOS arm64
+        run: |
+          dotnet publish src/Pixora.Avalonia/Pixora.Avalonia.csproj \
+            -c Release -r osx-arm64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -o publish/osx-arm64
+
+      - name: Bundle .app (universal binary)
         run: |
           APP=publish/Pixora.app
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
-          cp publish/osx-x64/Pixora "$APP/Contents/MacOS/Pixora"
+          lipo -create publish/osx-x64/Pixora publish/osx-arm64/Pixora -output "$APP/Contents/MacOS/Pixora"
           chmod +x "$APP/Contents/MacOS/Pixora"
           cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -96,11 +111,18 @@ jobs:
             -ov -format UDZO \
             publish/Pixora-${{ github.ref_name }}-macos.dmg
 
+      - name: Create arm64 standalone zip
+        run: |
+          chmod +x publish/osx-arm64/Pixora
+          zip -j publish/Pixora-${{ github.ref_name }}-macos-arm64.zip publish/osx-arm64/Pixora
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: publish/Pixora-*-macos.dmg
+          path: |
+            publish/Pixora-*-macos.dmg
+            publish/Pixora-*-macos-arm64.zip
 
   # ── Linux ──────────────────────────────────────────────────────────────────
   build-linux:
