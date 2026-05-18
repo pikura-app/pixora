@@ -232,6 +232,8 @@ public sealed class UpdateCheckService
                 Arguments       = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
                 UseShellExecute = true,
             });
+            // Let /CLOSEAPPLICATIONS shut us down gracefully — don't Kill() here
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
             return;
         }
 
