@@ -12,7 +12,7 @@ namespace Pixora.Core.Services;
 /// </summary>
 public sealed class UpdateCheckService
 {
-    public const  string CurrentVersion  = "1.0.2";
+    public const  string CurrentVersion  = "1.0.4";
     private const string Owner           = "pikura-app";
     private const string Repo            = "pixora";
     private const string ReleasesApiUrl  = $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
