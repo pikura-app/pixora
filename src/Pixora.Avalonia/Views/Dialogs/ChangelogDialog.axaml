@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        x:Class="Pixora.Avalonia.Views.Dialogs.ChangelogDialog"
+        Title="What's New"
+        Width="560" Height="500"
+        MinWidth="400" MinHeight="300"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Background="{actipro:ThemeResource Container2BackgroundBrush}">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="20,16">
+            <StackPanel Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="🎉" FontSize="20" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="VersionLabel"
+                               FontSize="18" FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="Pixora has been updated. Here's what changed:"
+                           FontSize="12"
+                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Release notes body -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="20,14">
+            <TextBlock x:Name="NotesText"
+                       FontSize="12.5"
+                       TextWrapping="Wrap"
+                       LineHeight="20"
+                       Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"/>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Border Grid.Row="2"
+                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="20,12">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button x:Name="ReleasePageBtn"
+                        Content="Full release notes ↗"
+                        CornerRadius="6" Padding="12,7" FontSize="12"/>
+                <Button x:Name="CloseBtn"
+                        Content="Got it"
+                        Classes="accent"
+                        CornerRadius="6" Padding="18,7" FontSize="12"/>
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</Window>

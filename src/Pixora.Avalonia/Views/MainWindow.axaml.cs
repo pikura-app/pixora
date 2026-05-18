@@ -46,7 +46,34 @@ public partial class MainWindow : Window
         }
         catch { /* Services may not be available during design time */ }
 
+        // Subscribe to changelog notification from ViewModel
+        if (DataContext is ViewModels.MainWindowViewModel mainVm)
+        {
+            mainVm.PropertyChanged += async (_, ev) =>
+            {
+                if (ev.PropertyName == nameof(ViewModels.MainWindowViewModel.ChangelogAvailable)
+                    && mainVm.ChangelogAvailable)
+                {
+                    await ShowChangelogDialogAsync(mainVm);
+                }
+            };
+        }
+
         LoadGalleryView();
+    }
+
+    private async Task ShowChangelogDialogAsync(ViewModels.MainWindowViewModel mainVm)
+    {
+        try
+        {
+            var dialog = new Dialogs.ChangelogDialog(
+                mainVm.ChangelogVersion,
+                mainVm.ChangelogNotes,
+                mainVm.ChangelogReleaseUrl);
+            await dialog.ShowDialog(this);
+            mainVm.DismissChangelogCommand.Execute(null);
+        }
+        catch { /* non-fatal */ }
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)

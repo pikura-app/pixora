@@ -33,6 +33,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private string?     _downloadedPath;
     private System.Threading.CancellationTokenSource? _downloadCts;
 
+    [ObservableProperty] private bool   _changelogAvailable;
+    [ObservableProperty] private string _changelogVersion     = string.Empty;
+    [ObservableProperty] private string _changelogNotes       = string.Empty;
+    [ObservableProperty] private string _changelogReleaseUrl  = string.Empty;
+
     public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck)
     {
         _navigationService = navigationService;
@@ -42,7 +47,46 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshUserChip();
         _settingsService.Changed += (_, _) => RefreshUserChip();
         _ = Task.Run(CheckForUpdateAsync);
+        _ = Task.Run(CheckChangelogAsync);
     }
+
+    /// <summary>
+    /// If the app version is newer than LastSeenVersion, fetch that release's notes
+    /// from the GitHub API and signal the UI to show the changelog popup.
+    /// </summary>
+    public async Task CheckChangelogAsync()
+    {
+        try
+        {
+            var current = UpdateCheckService.CurrentVersion;
+            var lastSeen = _settingsService.Current.LastSeenVersion;
+
+            // Mark seen immediately so we don't show it again on next launch
+            _settingsService.Update(s => s.LastSeenVersion = current);
+
+            // First-ever launch or same version — nothing to show
+            if (string.IsNullOrEmpty(lastSeen)) return;
+            if (Version.TryParse(current, out var cv) &&
+                Version.TryParse(lastSeen,  out var lv) &&
+                cv <= lv) return;
+
+            // Fetch release notes for the current version tag
+            var notes = await _updateCheck.FetchReleaseNotesAsync(current).ConfigureAwait(false);
+            if (notes is null) return;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ChangelogVersion    = notes.Version;
+                ChangelogNotes      = notes.ReleaseNotes;
+                ChangelogReleaseUrl = notes.ReleasePageUrl;
+                ChangelogAvailable  = true;
+            });
+        }
+        catch { /* non-fatal */ }
+    }
+
+    [RelayCommand]
+    private void DismissChangelog() => ChangelogAvailable = false;
 
     public async Task CheckForUpdateAsync()
     {

@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        x:Class="Pixora.Avalonia.Views.Login.ManualCookieDialog"
+        Title="Paste PHPSESSID"
+        Width="520" Height="270"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{actipro:ThemeResource Container2BackgroundBrush}">
+
+    <StackPanel Margin="24,20" Spacing="14">
+
+        <TextBlock Text="Manual Session Setup" FontWeight="SemiBold" FontSize="14"/>
+
+        <TextBlock TextWrapping="Wrap" FontSize="12"
+                   Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}">
+            Your browser's PHPSESSID cookie couldn't be read automatically on Linux.
+            Open your browser's DevTools → Application → Cookies → www.pixiv.net,
+            copy the value of PHPSESSID, and paste it below.
+        </TextBlock>
+
+        <TextBox x:Name="CookieInput"
+                 PlaceholderText="Paste PHPSESSID value here…"
+                 CornerRadius="6" FontSize="13"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" CornerRadius="6" Padding="14,7"
+                    Click="OnCancel"/>
+            <Button Content="Confirm" Classes="accent" CornerRadius="6" Padding="14,7"
+                    Click="OnConfirm"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>

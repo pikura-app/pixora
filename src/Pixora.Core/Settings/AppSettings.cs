@@ -492,6 +492,9 @@ public sealed class AppSettings
     /// <summary>UTC timestamp of the last update check.</summary>
     public DateTime? LastUpdateCheck { get; set; }
 
+    /// <summary>The version that was running last time the app launched — used to show changelog on first run after update.</summary>
+    public string? LastSeenVersion { get; set; }
+
     #endregion
 
     #region Window geometry

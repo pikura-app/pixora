@@ -114,6 +114,29 @@ public sealed class UpdateCheckService
             (a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
              a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
 
+    // ── Release notes for a specific version ──────────────────────────────────
+
+    /// <summary>
+    /// Fetches release notes for the given version tag from GitHub, e.g. "1.0.9".
+    /// Returns null if the tag does not exist or the request fails.
+    /// </summary>
+    public async Task<UpdateInfo?> FetchReleaseNotesAsync(string version, CancellationToken ct = default)
+    {
+        try
+        {
+            var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases/tags/v{version}";
+            var release = await _http.GetFromJsonAsync<GitHubRelease>(url, ct).ConfigureAwait(false);
+            if (release is null) return null;
+            return new UpdateInfo(
+                version,
+                release.Name ?? $"Pixora v{version}",
+                release.Body ?? string.Empty,
+                ReleasesPageUrl,
+                null);
+        }
+        catch { return null; }
+    }
+
     // ── Download ──────────────────────────────────────────────────────────────
 
     /// <summary>
