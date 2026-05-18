@@ -23,6 +23,7 @@
 ## Screenshots
 
 <div align="center">
+   ![Pixora Gallery screenshot](.github/screenshots/gallery.png)
   <img src=".github/screenshots/bookmarks.png" width="49%" alt="Bookmarks &amp; Side Panel"/>
   <br/><br/>
   <img src=".github/screenshots/batch.png" width="49%" alt="Batch Download"/>
