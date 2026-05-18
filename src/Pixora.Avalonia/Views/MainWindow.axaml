@@ -261,11 +261,11 @@
                    IsHitTestVisible="True"
                    PointerPressed="TitleBar_PointerPressed"/>
 
-            <!-- Hamburger button — sits in the native title bar row, ZIndex=20 so it wins over drag panel -->
+            <!-- Hamburger button — always in column 1 so it survives sidebar collapse -->
             <Button x:Name="HamburgerBtn"
-                    Grid.Column="0"
-                    VerticalAlignment="Top" HorizontalAlignment="Right"
-                    Margin="0,4,4,0" Padding="7,4" ZIndex="20"
+                    Grid.Column="1"
+                    VerticalAlignment="Top" HorizontalAlignment="Left"
+                    Margin="8,4,0,0" Padding="7,4" ZIndex="20"
                     Background="Transparent" BorderThickness="0"
                     Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
                     FontSize="15" CornerRadius="5"

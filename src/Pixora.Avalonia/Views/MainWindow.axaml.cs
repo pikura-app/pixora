@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -28,12 +29,14 @@ public partial class MainWindow : Window
         try
         {
             var settings = AppServices.Get<SettingsService>();
-            if (settings.Current.WindowWidth >= 800)
-                Width = settings.Current.WindowWidth;
-            if (settings.Current.WindowHeight >= 500)
-                Height = settings.Current.WindowHeight;
+            Width  = settings.Current.WindowWidth  >= 800 ? settings.Current.WindowWidth  : 1200;
+            Height = settings.Current.WindowHeight >= 500 ? settings.Current.WindowHeight : 800;
         }
-        catch { }
+        catch
+        {
+            Width  = 1200;
+            Height = 800;
+        }
 
         // Initialize services that need the window reference
         try
@@ -45,6 +48,21 @@ public partial class MainWindow : Window
             dialogService.Initialize(this);
         }
         catch { /* Services may not be available during design time */ }
+
+        // Subscribe to account switches so the chip refreshes
+        try
+        {
+            var accountService = AppServices.Get<AccountService>();
+            accountService.ActiveProfileChanged += (_, _) =>
+            {
+                var vm = DataContext as ViewModels.MainWindowViewModel;
+                Dispatcher.UIThread.Post(() =>
+                    vm?.GetType()
+                        .GetMethod("RefreshUserChip", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        ?.Invoke(vm, null));
+            };
+        }
+        catch { }
 
         // Subscribe to changelog notification from ViewModel
         if (DataContext is ViewModels.MainWindowViewModel mainVm)

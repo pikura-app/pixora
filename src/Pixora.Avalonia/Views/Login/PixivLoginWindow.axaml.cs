@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Linux;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Pixora.Avalonia.Services;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
@@ -43,7 +44,7 @@ public partial class PixivLoginWindow : Window
         // Only act once we're on pixiv.net (post-login redirect)
         if (!uri.Host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
 
-        StatusText.Text = "Detecting session…";
+        await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Detecting session…");
 
         try
         {
@@ -76,13 +77,12 @@ public partial class PixivLoginWindow : Window
 
             if (string.IsNullOrWhiteSpace(result))
             {
-                StatusText.Text = "Retrying session check…";
+                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Retrying session check…");
                 await Task.Delay(2000);
                 result = await webView.InvokeScript(script);
                 if (string.IsNullOrWhiteSpace(result))
                 {
-                    StatusText.Text = "Could not detect session. Try signing in again.";
-                    _completed = false;
+                    await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = "Could not detect session. Try signing in again."; _completed = false; });
                     return;
                 }
             }
@@ -101,8 +101,7 @@ public partial class PixivLoginWindow : Window
             {
                 var rawMsg = root.TryGetProperty("raw", out var rp) ? rp.GetString() :
                              root.TryGetProperty("err", out var ep) ? ep.GetString() : json;
-                StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}";
-                _completed = false;
+                await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}"; _completed = false; });
                 return;
             }
 
@@ -111,12 +110,12 @@ public partial class PixivLoginWindow : Window
 
             if (string.IsNullOrWhiteSpace(userId))
             {
-                StatusText.Text = "Session detected but user ID missing — try again.";
+                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session detected but user ID missing — try again.");
                 return;
             }
 
             _completed = true;
-            StatusText.Text = "Session confirmed — extracting cookie…";
+            await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session confirmed — extracting cookie…");
 
             // Now that we know we're logged in, get the PHPSESSID via WebView2 cookie manager
             var sid = await TryGetPhpSessIdViaCookieManagerAsync(webView);
@@ -134,8 +133,6 @@ public partial class PixivLoginWindow : Window
             }
             else
             {
-                // Cookie manager unavailable — store user info only and let validate fill the rest
-                // The session is confirmed active so save what we can; user will need to paste PHPSESSID once
                 settings.Update(s =>
                 {
                     s.UserId = userId;
@@ -149,15 +146,18 @@ public partial class PixivLoginWindow : Window
 
             AppServices.Get<AccountService>().UpsertFromCurrentSession();
 
-            LoginSucceeded = true;
-            StatusText.Text = $"Signed in as {settings.Current.UserName ?? settings.Current.UserId}";
-            await Task.Delay(800);
-            Close();
+            var displayName = settings.Current.UserName ?? settings.Current.UserId;
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                LoginSucceeded = true;
+                StatusText.Text = $"Signed in as {displayName}";
+                await Task.Delay(800);
+                Close();
+            });
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Error: {ex.Message}";
-            _completed = false;
+            await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = $"Error: {ex.Message}"; _completed = false; });
         }
     }
 
@@ -202,7 +202,7 @@ public partial class PixivLoginWindow : Window
         catch { /* non-fatal */ }
 
         // 3. Last resort: ask the user to paste it manually
-        StatusText.Text = "Session confirmed — paste your PHPSESSID below to complete sign-in.";
+        await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session confirmed — paste your PHPSESSID below to complete sign-in.");
         return await PromptForPhpSessIdAsync();
     }
 
