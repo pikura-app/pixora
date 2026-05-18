@@ -185,6 +185,21 @@ public sealed class UpdateCheckService
 
     private static void LaunchWindowsUpdater(string src, string dest)
     {
+        var srcName = Path.GetFileName(src).ToLowerInvariant();
+
+        // If the downloaded file is an Inno Setup installer, run it directly.
+        // The installer handles replacing the binary and can relaunch Pixora itself.
+        if (srcName.Contains("setup") || srcName.Contains("install"))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = src,
+                UseShellExecute = true,
+            });
+            return;
+        }
+
+        // Portable .exe — wait for process to exit then copy over and relaunch.
         var script = Path.Combine(Path.GetTempPath(), "pixora_update.bat");
         File.WriteAllText(script, $"""
             @echo off
