@@ -298,14 +298,15 @@ public sealed class UpdateCheckService
         if (srcLower.EndsWith(".dmg"))
         {
             // macOS DMG: mount, copy .app bundle to /Applications, unmount
-            installBlock = $"""
-                MOUNT=$(hdiutil attach "{src}" -nobrowse -noverify | awk 'END{{print $NF}}')
+            // $$""" allows both C# interpolation ({src}) and literal shell $ signs ($$MOUNT, $$NF)
+            installBlock = $$"""
+                MOUNT=$(hdiutil attach "{{src}}" -nobrowse -noverify | awk 'END{print $NF}')
                 if [ -d "$MOUNT/Pixora.app" ]; then
                   rm -rf /Applications/Pixora.app
                   cp -R "$MOUNT/Pixora.app" /Applications/
                   RELAUNCH=/Applications/Pixora.app/Contents/MacOS/Pixora
                 else
-                  RELAUNCH="{dest}"
+                  RELAUNCH="{{dest}}"
                 fi
                 hdiutil detach "$MOUNT" -quiet
                 """;
