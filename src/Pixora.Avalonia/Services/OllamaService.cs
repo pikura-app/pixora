@@ -1,3 +1,4 @@
+using SkiaSharp;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using Pixora.Core.Settings;
@@ -158,16 +159,27 @@ public sealed class OllamaService : IDisposable
     /// <summary>
     /// Downscales image bytes to a max dimension of 512px so Ollama vision models
     /// don't OOM on large Pixiv images (5000×7000px etc.).
+    /// Uses SkiaSharp directly — thread-safe, no UI thread required.
     /// </summary>
     private static byte[] ResizeForVision(byte[] src, int maxDim = 512)
     {
         try
         {
-            using var ms = new MemoryStream(src);
-            var bitmap = global::Avalonia.Media.Imaging.Bitmap.DecodeToWidth(ms, maxDim);
-            using var outMs = new MemoryStream();
-            bitmap.Save(outMs);
-            return outMs.ToArray();
+            using var skBitmap = SKBitmap.Decode(src);
+            if (skBitmap == null) return src;
+
+            int w = skBitmap.Width, h = skBitmap.Height;
+            if (w <= maxDim && h <= maxDim) return src;
+
+            float scale = (float)maxDim / Math.Max(w, h);
+            int newW = (int)(w * scale), newH = (int)(h * scale);
+
+            using var resized = skBitmap.Resize(new SKImageInfo(newW, newH), SKFilterQuality.Medium);
+            if (resized == null) return src;
+
+            using var image = SKImage.FromBitmap(resized);
+            using var data  = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+            return data.ToArray();
         }
         catch
         {
