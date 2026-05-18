@@ -224,9 +224,24 @@ public sealed class UpdateCheckService
     /// </summary>
     public void InstallAndRestart(string downloadedPath)
     {
-        var rawPath = Environment.ProcessPath
-                      ?? Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Pixora.exe" : "Pixora")
-                      ?? throw new InvalidOperationException("Cannot determine current executable path.");
+        // When running as an AppImage the process is the extracted squashfs binary,
+        // not the .AppImage file itself.  The AppImage runtime always sets $APPIMAGE
+        // to the real .AppImage path, so prefer that on Linux.
+        string rawPath;
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+        {
+            rawPath = Environment.GetEnvironmentVariable("APPIMAGE")
+                      ?? Environment.ProcessPath
+                      ?? Path.Combine(AppContext.BaseDirectory, "Pixora");
+        }
+        else
+        {
+            rawPath = Environment.ProcessPath
+                      ?? Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Pixora.exe" : "Pixora");
+        }
+
+        if (string.IsNullOrEmpty(rawPath))
+            throw new InvalidOperationException("Cannot determine current executable path.");
 
         // Environment.ProcessPath can return a \??\ kernel-style prefix on Windows
         // when running as a single-file executable — strip it so cmd.exe can use it.
