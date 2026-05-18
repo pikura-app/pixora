@@ -143,18 +143,36 @@ public sealed class OllamaService : IDisposable
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         EnsureReady();
-        // Use vision model for image analysis
         var visionModel = GetVisionModel();
         _client!.SelectedModel = visionModel;
         var visionChat = new Chat(_client);
-        var imageB64 = Convert.ToBase64String(imageBytes);
+        var imageB64 = Convert.ToBase64String(ResizeForVision(imageBytes));
         await foreach (var token in visionChat.SendAsync(userMessage, [imageB64], ct).ConfigureAwait(false))
         {
             if (!string.IsNullOrEmpty(token))
                 yield return token;
         }
-        // Restore default model
         _client!.SelectedModel = GetTextModel();
+    }
+
+    /// <summary>
+    /// Downscales image bytes to a max dimension of 512px so Ollama vision models
+    /// don't OOM on large Pixiv images (5000×7000px etc.).
+    /// </summary>
+    private static byte[] ResizeForVision(byte[] src, int maxDim = 512)
+    {
+        try
+        {
+            using var ms = new MemoryStream(src);
+            var bitmap = global::Avalonia.Media.Imaging.Bitmap.DecodeToWidth(ms, maxDim);
+            using var outMs = new MemoryStream();
+            bitmap.Save(outMs);
+            return outMs.ToArray();
+        }
+        catch
+        {
+            return src;
+        }
     }
 
     /// <summary>Clears the in-memory chat history (starts a fresh conversation).</summary>
