@@ -51,6 +51,11 @@ public sealed class DownloadCoordinator : IDisposable
     public event EventHandler<JobCompletedEventArgs>? JobCompleted;
 
     /// <summary>
+    /// Raises <see cref="JobStarted"/> for a job that was created externally (e.g. gallery/viewer single-download).
+    /// </summary>
+    public void NotifyJobStarted(DownloadJob job) => JobStarted?.Invoke(this, new JobCompletedEventArgs(job));
+
+    /// <summary>
     /// Raises <see cref="JobCompleted"/> for a job that was saved externally (e.g. gallery single-download).
     /// </summary>
     public void NotifyJobSaved(DownloadJob job) => JobCompleted?.Invoke(this, new JobCompletedEventArgs(job));

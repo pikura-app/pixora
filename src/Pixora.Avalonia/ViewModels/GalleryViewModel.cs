@@ -1506,6 +1506,15 @@ public partial class GalleryViewModel : ViewModelBase
             TargetId = c.Id, Name = c.Title, ThumbnailUrl = c.ThumbnailUrl, UserName = c.UserName, UserId = c.UserId, Type = TargetType.Artwork, Status = TargetStatus.Pending
         }).ToList();
 
+        var jobName = cards.Count == 1 ? cards[0].Title : $"{cards.Count} artworks";
+        var activeJob = new DownloadJob
+        {
+            Name = jobName, Type = DownloadJobType.ImageId,
+            Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
+            Targets = targets
+        };
+        _coordinator.NotifyJobStarted(activeJob);
+
         var tasks = cards.Select(async (card, idx) =>
         {
             await gate.WaitAsync();
@@ -1545,18 +1554,10 @@ public partial class GalleryViewModel : ViewModelBase
             ? $"Downloaded {done}/{total} artworks."
             : $"Done: {done} ok, {failed} failed.";
 
-        var jobName = cards.Count == 1 ? cards[0].Title : $"{cards.Count} artworks";
-        var job = new DownloadJob
-        {
-            Name = jobName,
-            Type = DownloadJobType.ImageId,
-            Status = failed == 0 ? JobStatus.Completed : JobStatus.Failed,
-            StartedAt = DateTime.UtcNow,
-            CompletedAt = DateTime.UtcNow,
-            OutputFolder = outputFolder,
-            Targets = targets
-        };
-        _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(job); _coordinator.NotifyJobSaved(job); });
+        activeJob.Status      = failed == 0 ? JobStatus.Completed : JobStatus.Failed;
+        activeJob.CompletedAt = DateTime.UtcNow;
+        activeJob.OutputFolder = outputFolder;
+        _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(activeJob); _coordinator.NotifyJobSaved(activeJob); });
     }
 
     public bool HasArtists => Artists.Count > 0;

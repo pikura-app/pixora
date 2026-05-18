@@ -431,8 +431,19 @@ public partial class InlineArtworkViewer : UserControl
 
     // ── Controls ─────────────────────────────────────────────────────────────
 
-    private void OnZoomIn(object? sender, RoutedEventArgs e) { _scale = Math.Min(_scale * 1.25, 10); ApplyTransform(); }
-    private void OnZoomOut(object? sender, RoutedEventArgs e) { _scale = Math.Max(_scale / 1.25, 0.1); ApplyTransform(); }
+    private void ZoomAroundCenter(double factor)
+    {
+        if (ImageCanvas == null) return;
+        var cx = ImageCanvas.Bounds.Width  / 2;
+        var cy = ImageCanvas.Bounds.Height / 2;
+        _translateX = cx - (cx - _translateX) * factor;
+        _translateY = cy - (cy - _translateY) * factor;
+        _scale = Math.Clamp(_scale * factor, 0.1, 10.0);
+        ApplyTransform();
+    }
+
+    private void OnZoomIn(object? sender, RoutedEventArgs e)  => ZoomAroundCenter(1.25);
+    private void OnZoomOut(object? sender, RoutedEventArgs e) => ZoomAroundCenter(1.0 / 1.25);
     private void OnZoomFit(object? sender, RoutedEventArgs e) => ResetZoom();
 
     private void OnPrevPage(object? sender, RoutedEventArgs e)

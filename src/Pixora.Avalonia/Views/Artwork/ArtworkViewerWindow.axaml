@@ -5,29 +5,52 @@
         x:Class="Pixora.Avalonia.Views.Artwork.ArtworkViewerWindow"
         x:DataType="vm:ArtworkViewerViewModel"
         Title="{Binding Title}"
-        Width="900" Height="700"
+        Width="1000" Height="750"
         MinWidth="500" MinHeight="400"
         WindowStartupLocation="CenterOwner"
         Background="{actipro:ThemeResource Container3BackgroundBrush}">
 
-    <Grid RowDefinitions="*,Auto">
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Zoom toolbar -->
+        <Border Grid.Row="0"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="8,5">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Name="PopupZoomOutBtn" Content="−" Padding="10,4" CornerRadius="4" FontSize="14"
+                        ToolTip.Tip="Zoom out"/>
+                <Button Name="PopupZoomFitBtn" Content="Fit" Padding="10,4" CornerRadius="4" FontSize="12"
+                        ToolTip.Tip="Reset zoom"/>
+                <Button Name="PopupZoomInBtn"  Content="+" Padding="10,4" CornerRadius="4" FontSize="14"
+                        ToolTip.Tip="Zoom in"/>
+                <TextBlock Name="PopupZoomLabel" Text="100%" VerticalAlignment="Center"
+                           Margin="8,0" FontSize="11"
+                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                <TextBlock Text="|" VerticalAlignment="Center" Margin="4,0"
+                           Foreground="{actipro:ThemeResource Container1BorderBrush}"/>
+                <TextBlock Name="PopupResLabel" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+            </StackPanel>
+        </Border>
 
         <!-- Image area with page navigation -->
-        <Grid Grid.Row="0">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto">
-                <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Image Source="{Binding CurrentPageBitmap}"
-                           Stretch="Uniform"
-                           MaxHeight="580"/>
-                    <!-- Loading spinner -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"
-                                IsVisible="{Binding IsLoadingPage}">
-                        <ProgressBar IsIndeterminate="True" Width="160"/>
-                        <TextBlock Text="Loading…" Foreground="#9CA3AF" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Panel>
-            </ScrollViewer>
+        <Grid Grid.Row="1">
+            <!-- Zoomable canvas -->
+            <Border Name="PopupCanvas" ClipToBounds="True"
+                    Background="{actipro:ThemeResource Container3BackgroundBrush}">
+                <Image Name="PopupImage"
+                       Stretch="None"
+                       HorizontalAlignment="Left" VerticalAlignment="Top"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
+            </Border>
+
+            <!-- Loading spinner -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"
+                        IsVisible="{Binding IsLoadingPage}">
+                <ProgressBar IsIndeterminate="True" Width="160"/>
+                <TextBlock Text="Loading…" Foreground="#9CA3AF" HorizontalAlignment="Center"/>
+            </StackPanel>
 
             <!-- Page navigation arrows -->
             <Button HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0"
@@ -50,7 +73,7 @@
         </Grid>
 
         <!-- Bottom panel: info + actions -->
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                 BorderThickness="0,1,0,0" Padding="16,12">

@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pixora.Avalonia.Services;
+using Pixora.Core.Data;
 using Pixora.Core.Models;
 using Pixora.Core.Services;
 using System;
@@ -22,6 +23,8 @@ public partial class ArtworkViewerViewModel : ObservableObject
     private readonly PixivClient _pixivClient;
     private readonly PixivImageLoader _imageLoader;
     private readonly PixivDownloadService _downloader;
+    private readonly DownloadCoordinator _coordinator;
+    private readonly DownloadJobRepository _jobRepository;
 
     private IReadOnlyList<ArtworkPage> _pages = [];
 
@@ -44,9 +47,11 @@ public partial class ArtworkViewerViewModel : ObservableObject
         _artwork = artwork;
         _gallery = gallery;
         _owner = owner;
-        _pixivClient = AppServices.Get<PixivClient>();
-        _imageLoader = AppServices.Get<PixivImageLoader>();
-        _downloader = AppServices.Get<PixivDownloadService>();
+        _pixivClient   = AppServices.Get<PixivClient>();
+        _imageLoader   = AppServices.Get<PixivImageLoader>();
+        _downloader    = AppServices.Get<PixivDownloadService>();
+        _coordinator   = AppServices.Get<DownloadCoordinator>();
+        _jobRepository = AppServices.Get<DownloadJobRepository>();
     }
 
     public async Task LoadFirstPageAsync()
@@ -75,9 +80,9 @@ public partial class ArtworkViewerViewModel : ObservableObject
         if (_pages.Count == 0 || index < 0 || index >= _pages.Count) return;
         IsLoadingPage = true;
 
-        var url = _pages[index].Urls.Regular
+        var url = _pages[index].Urls.Original
+               ?? _pages[index].Urls.Regular
                ?? _pages[index].Urls.Small
-               ?? _pages[index].Urls.Original
                ?? _pages[index].Urls.ThumbMini;
 
         if (!string.IsNullOrEmpty(url))
@@ -114,34 +119,16 @@ public partial class ArtworkViewerViewModel : ObservableObject
 
     [RelayCommand]
     private async Task DownloadCurrentPage()
-    {
-        IsDownloading = true;
-        try
-        {
-            var pages = new[] { CurrentPageIndex };
-            await _downloader.DownloadArtworkPagesAsync(_artwork, pages);
-        }
-        catch (Exception ex)
-        {
-            _ = ex;
-        }
-        finally { IsDownloading = false; }
-    }
+        => await DownloadWithJobAsync([CurrentPageIndex], $"{_artwork.Title} (p{CurrentPageIndex + 1})");
 
     [RelayCommand]
     private async Task DownloadAllPages()
-    {
-        IsDownloading = true;
-        try { await _downloader.DownloadArtworkAsync(_artwork); }
-        catch (Exception ex) { _ = ex; }
-        finally { IsDownloading = false; }
-    }
+        => await DownloadWithJobAsync(null, _artwork.Title);
 
     [RelayCommand]
     private async Task DownloadRange()
     {
         if (PageCount <= 1) { await DownloadAllPages(); return; }
-
         var dialog = new Views.Dialogs.RangePickerDialog(
             title: $"Page range — {_artwork.Title}",
             description: $"This artwork has {PageCount} pages (0-based indexes). " +
@@ -149,14 +136,47 @@ public partial class ArtworkViewerViewModel : ObservableObject
             maxInclusive: PageCount - 1,
             placeholder: $"0-{PageCount - 1}");
         dialog.ShowInTaskbar = false;
-
         await dialog.ShowDialog(_owner);
         if (dialog.SelectedIndexes.Count == 0) return;
+        await DownloadWithJobAsync(dialog.SelectedIndexes, $"{_artwork.Title} (range)");
+    }
 
+    private async Task DownloadWithJobAsync(IReadOnlyCollection<int>? pages, string jobName)
+    {
         IsDownloading = true;
-        try { await _downloader.DownloadArtworkPagesAsync(_artwork, dialog.SelectedIndexes); }
-        catch (Exception ex) { _ = ex; }
-        finally { IsDownloading = false; }
+        var target = new DownloadTarget
+        {
+            TargetId = _artwork.Id, Name = _artwork.Title,
+            ThumbnailUrl = _artwork.ThumbnailUrl, UserName = _artwork.UserName,
+            UserId = _artwork.UserId, Type = TargetType.Artwork, Status = TargetStatus.Running
+        };
+        var job = new DownloadJob
+        {
+            Name = jobName, Type = DownloadJobType.ImageId,
+            Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
+            Targets = [target]
+        };
+        _coordinator.NotifyJobStarted(job);
+        try
+        {
+            var files = await _downloader.DownloadArtworkPagesAsync(_artwork, pages);
+            target.Status = TargetStatus.Completed;
+            target.DownloadedItems = files.Count;
+            job.Status = JobStatus.Completed;
+            job.OutputFolder = files.Count > 0 ? Path.GetDirectoryName(files[0]) : null;
+        }
+        catch (Exception ex)
+        {
+            target.Status = TargetStatus.Failed;
+            target.ErrorMessage = ex.Message;
+            job.Status = JobStatus.Failed;
+        }
+        finally
+        {
+            job.CompletedAt = DateTime.UtcNow;
+            IsDownloading = false;
+            _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(job); _coordinator.NotifyJobSaved(job); });
+        }
     }
 
     [RelayCommand]

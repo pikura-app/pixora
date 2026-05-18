@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pixora.Core.Data;
@@ -31,9 +32,8 @@ public partial class HistoryViewModel : ViewModelBase
         _dialogService = dialogService;
         _imageLoader = imageLoader;
 
-        coordinator.JobStarted   += OnJobStarted;
-        coordinator.JobCompleted  += OnJobCompleted;
-        _coordinator.SubscribeToProgress(Guid.Empty, new Progress<JobProgress>(OnProgressReceived));
+        coordinator.JobStarted  += OnJobStarted;
+        coordinator.JobCompleted += OnJobCompleted;
 
         LoadJobs();
     }
@@ -109,25 +109,24 @@ public partial class HistoryViewModel : ViewModelBase
 
     private void OnJobStarted(object? sender, JobCompletedEventArgs e)
     {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        var jobVm = new DownloadJobViewModel(e.Job, _imageLoader);
+        var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
+        _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
+        Dispatcher.UIThread.Post(() =>
         {
             if (ActiveJobs.Any(j => j.Job.Id == e.Job.Id)) return;
-            ActiveJobs.Add(new DownloadJobViewModel(e.Job, _imageLoader));
+            ActiveJobs.Add(jobVm);
         });
     }
 
     private void OnJobCompleted(object? sender, JobCompletedEventArgs e)
     {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = LoadJobsAsync());
+        Dispatcher.UIThread.Post(() => _ = LoadJobsAsync());
     }
 
-    private void OnProgressReceived(JobProgress progress)
+    private void OnProgressReceived(JobProgress progress, DownloadJobViewModel jobVm)
     {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            var vm = ActiveJobs.FirstOrDefault(j => j.Job.Id == progress.JobId);
-            vm?.ApplyProgress(progress);
-        });
+        Dispatcher.UIThread.Post(() => jobVm.ApplyProgress(progress));
     }
 
     private void LoadJobs()
