@@ -508,7 +508,7 @@ public partial class SettingsViewModel : ViewModelBase
             await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
                 UpdateStatusMessage = info is null
-                    ? $"You're up to date! (v{UpdateCheckService.CurrentVersion})"
+                    ? "You're up to date — no newer release found."
                     : $"Update available: v{info.Version}";
             });
         }
