@@ -51,12 +51,17 @@ public sealed class UpdateCheckService
 
             if (s.UpdateChannel == "PreRelease")
             {
+                // List endpoint — pick first pre-release (or any release if none marked)
                 var list = await _http.GetFromJsonAsync<GitHubRelease[]>(url, ct).ConfigureAwait(false);
-                release  = list?.FirstOrDefault();
+                release  = list?.FirstOrDefault(r => r.Prerelease)
+                           ?? list?.FirstOrDefault();
             }
             else
             {
-                release = await _http.GetFromJsonAsync<GitHubRelease>(url, ct).ConfigureAwait(false);
+                // Latest endpoint returns the newest non-prerelease by default.
+                // Double-check the flag in case the API ever returns a pre-release.
+                var candidate = await _http.GetFromJsonAsync<GitHubRelease>(url, ct).ConfigureAwait(false);
+                release = candidate?.Prerelease == true ? null : candidate;
             }
 
             _settings.Update(s2 => s2.LastUpdateCheck = DateTime.UtcNow);
@@ -221,10 +226,11 @@ public sealed class UpdateCheckService
 
     private sealed class GitHubRelease
     {
-        [JsonPropertyName("tag_name")] public string?        TagName { get; init; }
-        [JsonPropertyName("name")]     public string?        Name    { get; init; }
-        [JsonPropertyName("body")]     public string?        Body    { get; init; }
-        [JsonPropertyName("assets")]   public GitHubAsset[]? Assets  { get; init; }
+        [JsonPropertyName("tag_name")]   public string?        TagName    { get; init; }
+        [JsonPropertyName("name")]       public string?        Name       { get; init; }
+        [JsonPropertyName("body")]       public string?        Body       { get; init; }
+        [JsonPropertyName("assets")]     public GitHubAsset[]? Assets     { get; init; }
+        [JsonPropertyName("prerelease")] public bool           Prerelease { get; init; }
     }
 
     private sealed class GitHubAsset
