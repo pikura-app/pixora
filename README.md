@@ -23,7 +23,6 @@
 ![Pixora Gallery screenshot](.github/screenshots/gallery.png)
 <div align="center">
   <br/><br/>
-  <img src=".github/screenshots/batch.png" width="49%" alt="Batch Download"/>
   <img src=".github/screenshots/settings.png" width="49%" alt="Settings"/>
 </div>
 
