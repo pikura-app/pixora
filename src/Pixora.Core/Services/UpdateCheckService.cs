@@ -164,9 +164,15 @@ public sealed class UpdateCheckService
     /// </summary>
     public void InstallAndRestart(string downloadedPath)
     {
-        var exePath = Environment.ProcessPath
+        var rawPath = Environment.ProcessPath
                       ?? System.Reflection.Assembly.GetEntryAssembly()?.Location
                       ?? throw new InvalidOperationException("Cannot determine current executable path.");
+
+        // Environment.ProcessPath can return a \??\ kernel-style prefix on Windows
+        // when running as a single-file executable — strip it so cmd.exe can use it.
+        var exePath = rawPath.StartsWith(@"\??\", StringComparison.Ordinal)
+            ? rawPath[4..]
+            : rawPath;
 
         if (OperatingSystem.IsWindows())
             LaunchWindowsUpdater(downloadedPath, exePath);
