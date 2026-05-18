@@ -21,8 +21,17 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty] private string _sidebarUserStatus  = "Not signed in";
     [ObservableProperty] private string _sidebarUserInitial = "G";
     [ObservableProperty] private bool   _updateAvailable;
-    [ObservableProperty] private string _updateVersion = string.Empty;
-    [ObservableProperty] private string _updateUrl     = string.Empty;
+    [ObservableProperty] private string _updateVersion      = string.Empty;
+    [ObservableProperty] private string _updateUrl          = string.Empty;
+    [ObservableProperty] private string? _updateDownloadUrl;
+    [ObservableProperty] private bool   _updateDownloading;
+    [ObservableProperty] private int    _updateDownloadProgress;
+    [ObservableProperty] private bool   _updateReadyToInstall;
+    [ObservableProperty] private string _updateStatusText   = string.Empty;
+
+    private UpdateInfo? _pendingUpdate;
+    private string?     _downloadedPath;
+    private System.Threading.CancellationTokenSource? _downloadCts;
 
     public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck)
     {
@@ -39,11 +48,23 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var info = await _updateCheck.CheckAsync().ConfigureAwait(false);
         if (info is null) return;
+
+        var settings = AppServices.Get<SettingsService>();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            UpdateVersion   = info.Version;
-            UpdateUrl       = info.ReleasePageUrl;
-            UpdateAvailable = true;
+            _pendingUpdate       = info;
+            UpdateVersion        = info.Version;
+            UpdateUrl            = info.ReleasePageUrl;
+            UpdateDownloadUrl    = info.DownloadUrl;
+            UpdateReadyToInstall = false;
+            UpdateDownloading    = false;
+            UpdateStatusText     = string.Empty;
+
+            if (settings.Current.NotifyOnUpdate)
+                UpdateAvailable = true;
+
+            if (settings.Current.AutoDownloadUpdates && !string.IsNullOrEmpty(info.DownloadUrl))
+                _ = Task.Run(StartDownloadAsync);
         });
     }
 
@@ -56,7 +77,76 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void DismissUpdate() => UpdateAvailable = false;
+    private void DismissUpdate()
+    {
+        UpdateAvailable      = false;
+        UpdateReadyToInstall = false;
+        UpdateDownloading    = false;
+        _downloadCts?.Cancel();
+    }
+
+    [RelayCommand]
+    private async Task DownloadUpdateAsync()
+    {
+        if (_pendingUpdate is null || string.IsNullOrWhiteSpace(_pendingUpdate.DownloadUrl)) return;
+        UpdateAvailable = false;
+        await StartDownloadAsync();
+    }
+
+    private async Task StartDownloadAsync()
+    {
+        if (_pendingUpdate is null) return;
+        _downloadCts = new System.Threading.CancellationTokenSource();
+        var progress = new Progress<int>(p => Dispatcher.UIThread.Post(() =>
+        {
+            UpdateDownloadProgress = p;
+            UpdateStatusText       = $"Downloading update... {p}%";
+        }));
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            UpdateDownloading    = true;
+            UpdateReadyToInstall = false;
+            UpdateStatusText     = "Starting download...";
+        });
+
+        try
+        {
+            _downloadedPath = await _updateCheck
+                .DownloadUpdateAsync(_pendingUpdate, progress, _downloadCts.Token)
+                .ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateDownloading    = false;
+                UpdateReadyToInstall = true;
+                UpdateStatusText     = $"v{_pendingUpdate.Version} ready to install";
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateDownloading = false;
+                UpdateStatusText  = "Download cancelled.";
+            });
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateDownloading = false;
+                UpdateStatusText  = $"Download failed: {ex.Message}";
+            });
+        }
+    }
+
+    [RelayCommand]
+    private void InstallAndRestartUpdate()
+    {
+        if (_downloadedPath is null) return;
+        _updateCheck.InstallAndRestart(_downloadedPath);
+    }
 
     private void RefreshUserChip()
     {

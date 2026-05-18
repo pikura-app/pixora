@@ -475,6 +475,25 @@ public sealed class AppSettings
 
     #endregion
 
+    #region Updates
+
+    /// <summary>When to check for updates: "Startup", "Daily", "Weekly", "Never".</summary>
+    public string UpdateCheckFrequency { get; set; } = "Startup";
+
+    /// <summary>When true, automatically download the update in the background.</summary>
+    public bool AutoDownloadUpdates { get; set; } = false;
+
+    /// <summary>When true, show a banner/notification when an update is available.</summary>
+    public bool NotifyOnUpdate { get; set; } = true;
+
+    /// <summary>Release channel: "Stable" or "PreRelease".</summary>
+    public string UpdateChannel { get; set; } = "Stable";
+
+    /// <summary>UTC timestamp of the last update check.</summary>
+    public DateTime? LastUpdateCheck { get; set; }
+
+    #endregion
+
     #region Window geometry
 
     /// <summary>Last saved window width (0 = use default).</summary>

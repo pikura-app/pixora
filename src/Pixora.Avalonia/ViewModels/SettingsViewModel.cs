@@ -211,6 +211,17 @@ public partial class SettingsViewModel : ViewModelBase
     // Diagnostics
     [ObservableProperty] private bool _verboseLogging;
 
+    // ── Update settings ───────────────────────────────────────────────────────
+    [ObservableProperty] private string _updateCheckFrequency = "Startup";
+    [ObservableProperty] private bool   _autoDownloadUpdates;
+    [ObservableProperty] private bool   _notifyOnUpdate = true;
+    [ObservableProperty] private string _updateChannel  = "Stable";
+    [ObservableProperty] private string _updateStatusMessage = string.Empty;
+    [ObservableProperty] private bool   _checkingForUpdates;
+
+    public static string[] UpdateFrequencyOptions { get; } = ["Startup", "Daily", "Weekly", "Never"];
+    public static string[] UpdateChannelOptions   { get; } = ["Stable", "PreRelease"];
+
     // ── Per-account settings ──────────────────────────────────────────────────
     [ObservableProperty] private bool   _useAccountSettings;
     [ObservableProperty] private string _acctDownloadRoot     = string.Empty;
@@ -453,10 +464,58 @@ public partial class SettingsViewModel : ViewModelBase
         // Diagnostics
         VerboseLogging = s.VerboseLogging;
 
+        // Updates
+        UpdateCheckFrequency = s.UpdateCheckFrequency;
+        AutoDownloadUpdates  = s.AutoDownloadUpdates;
+        NotifyOnUpdate       = s.NotifyOnUpdate;
+        UpdateChannel        = s.UpdateChannel;
+
         // Hoshi AI model preferences
         UseCustomHoshiModels = s.UseCustomHoshiModels;
         HoshiTextModel = s.HoshiTextModel;
         HoshiVisionModel = s.HoshiVisionModel;
+    }
+
+    [RelayCommand]
+    private void SaveUpdateSettings()
+    {
+        _settingsService.Update(s =>
+        {
+            s.UpdateCheckFrequency = UpdateCheckFrequency;
+            s.AutoDownloadUpdates  = AutoDownloadUpdates;
+            s.NotifyOnUpdate       = NotifyOnUpdate;
+            s.UpdateChannel        = UpdateChannel;
+        });
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdatesNowAsync()
+    {
+        CheckingForUpdates  = true;
+        UpdateStatusMessage = "Checking for updates...";
+        try
+        {
+            var svc  = AppServices.Get<UpdateCheckService>();
+            // Force a check regardless of frequency by temporarily clearing the last check time
+            _settingsService.Update(s => s.LastUpdateCheck = null);
+            var info = await svc.CheckAsync().ConfigureAwait(false);
+            await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateStatusMessage = info is null
+                    ? $"You're up to date! (v{UpdateCheckService.CurrentVersion})"
+                    : $"Update available: v{info.Version}";
+            });
+        }
+        catch (Exception ex)
+        {
+            await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                UpdateStatusMessage = $"Check failed: {ex.Message}");
+        }
+        finally
+        {
+            await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                CheckingForUpdates = false);
+        }
     }
 
     [RelayCommand]

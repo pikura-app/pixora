@@ -1087,6 +1087,127 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ====================== UPDATES ====================== -->
+            <TabItem Header="Updates">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="24" Margin="8" HorizontalAlignment="Center" MaxWidth="620">
+
+                        <!-- Current version + check now -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24">
+                            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="14">
+
+                                <!-- Version row -->
+                                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="3">
+                                        <TextBlock Text="Pixora" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                            <Run Text="Current version: "/>
+                                            <Run Text="1.0.3" FontWeight="SemiBold"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Check Now"
+                                            Command="{Binding CheckForUpdatesNowCommand}"
+                                            Classes="accent" CornerRadius="6" Padding="12,6"
+                                            IsEnabled="{Binding !CheckingForUpdates}"/>
+                                </Grid>
+
+                                <!-- Progress / status -->
+                                <ProgressBar Grid.Row="1"
+                                             IsVisible="{Binding CheckingForUpdates}"
+                                             IsIndeterminate="True" Height="4" CornerRadius="2"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Text="{Binding UpdateStatusMessage}"
+                                           FontSize="12" IsVisible="{Binding UpdateStatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Update preferences -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24">
+                            <StackPanel Spacing="18">
+
+                                <TextBlock Text="Update Preferences" FontWeight="SemiBold" FontSize="14"/>
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                <!-- Check frequency -->
+                                <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Check for updates" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="How often Pixora checks for new versions on startup"
+                                                   FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding UpdateFrequencyOptions}"
+                                              SelectedItem="{Binding UpdateCheckFrequency}"
+                                              Width="130" FontSize="12" CornerRadius="6"/>
+                                </Grid>
+
+                                <!-- Release channel -->
+                                <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Release channel" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Stable = tagged releases only; Pre-release includes betas"
+                                                   FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding UpdateChannelOptions}"
+                                              SelectedItem="{Binding UpdateChannel}"
+                                              Width="130" FontSize="12" CornerRadius="6"/>
+                                </Grid>
+
+                                <!-- Notify toggle -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Notify when update available" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Shows a banner at the top of the window"
+                                                   FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding NotifyOnUpdate}"
+                                                 OnContent="On" OffContent="Off" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- Auto-download toggle -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Auto-download updates" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Silently download in background; you still confirm install"
+                                                   FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoDownloadUpdates}"
+                                                 OnContent="On" OffContent="Off" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- Save -->
+                                <Button Content="Save Update Settings"
+                                        Command="{Binding SaveUpdateSettingsCommand}"
+                                        Classes="accent" CornerRadius="6" Padding="14,7"
+                                        HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Note: download progress and install banners appear at the top of the main window -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="16">
+                            <TextBlock FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"
+                                       Text="When an update is available, a banner will appear at the top of the window where you can download and install it."/>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ====================== ABOUT ====================== -->
             <TabItem Header="About">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
