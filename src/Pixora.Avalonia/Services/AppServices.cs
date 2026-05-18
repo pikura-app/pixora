@@ -119,7 +119,7 @@ public static class AppServices
                 services.AddSingleton<NotificationService>();
 
                 // ViewModels
-                services.AddTransient<MainWindowViewModel>();
+                services.AddSingleton<MainWindowViewModel>();
                 services.AddSingleton<GalleryViewModel>();
                 services.AddTransient<ArtworkDetailViewModel>();
                 services.AddTransient<RankingsViewModel>();

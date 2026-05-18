@@ -44,7 +44,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _ = Task.Run(CheckForUpdateAsync);
     }
 
-    private async Task CheckForUpdateAsync()
+    public async Task CheckForUpdateAsync()
     {
         var info = await _updateCheck.CheckAsync().ConfigureAwait(false);
         if (info is null) return;

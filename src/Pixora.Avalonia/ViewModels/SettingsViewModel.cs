@@ -501,15 +501,17 @@ public partial class SettingsViewModel : ViewModelBase
         UpdateStatusMessage = "Checking for updates...";
         try
         {
-            var svc  = AppServices.Get<UpdateCheckService>();
-            // Force a check regardless of frequency by temporarily clearing the last check time
+            // Force a check regardless of frequency
             _settingsService.Update(s => s.LastUpdateCheck = null);
-            var info = await svc.CheckAsync().ConfigureAwait(false);
+
+            var mainVm = AppServices.Get<MainWindowViewModel>();
+            await mainVm.CheckForUpdateAsync().ConfigureAwait(false);
+
             await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                UpdateStatusMessage = info is null
-                    ? "You're up to date — no newer release found."
-                    : $"Update available: v{info.Version}";
+                UpdateStatusMessage = mainVm.UpdateAvailable
+                    ? $"Update available: v{mainVm.UpdateVersion} — see the banner above."
+                    : "You're up to date — no newer release found.";
             });
         }
         catch (Exception ex)
