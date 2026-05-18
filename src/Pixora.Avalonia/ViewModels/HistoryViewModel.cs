@@ -266,27 +266,27 @@ public partial class DownloadJobViewModel : ObservableObject
     }
 
     /// <summary>
-    /// If <paramref name="outputFolder"/> is an artwork subfolder inside an artist folder,
-    /// return the artist folder (one level up). Walks up until the parent is the DownloadRoot
-    /// or no longer exists, so the deepest still-valid ancestor under DownloadRoot is opened.
+    /// If <paramref name="outputFolder"/> is an artwork subfolder, returns its parent
+    /// (the artist folder). Falls back to <paramref name="outputFolder"/> itself if the
+    /// parent doesn't exist or is a drive root.
     /// </summary>
     private static string ResolveArtistRootFolder(string outputFolder)
     {
-        var downloadRoot = AppServices.Get<Pixora.Core.Settings.SettingsService>().Current.DownloadRoot;
-        if (string.IsNullOrWhiteSpace(downloadRoot)) return outputFolder;
-
-        var candidate = outputFolder;
-        while (true)
+        try
         {
-            var parent = Path.GetDirectoryName(candidate);
-            if (parent == null || !Directory.Exists(parent)) break;
-            // Stop when parent IS the DownloadRoot — candidate is already the artist folder
-            if (string.Equals(Path.GetFullPath(parent), Path.GetFullPath(downloadRoot),
-                    StringComparison.OrdinalIgnoreCase))
-                break;
-            candidate = parent;
+            var full = Path.GetFullPath(outputFolder);
+            var folderName = Path.GetFileName(full);
+            // Artwork subfolders are named "{numericId}_title" — walk up to the artist folder
+            if (!string.IsNullOrEmpty(folderName) && char.IsDigit(folderName[0]))
+            {
+                var parent = Path.GetDirectoryName(full);
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent)
+                    && !string.IsNullOrEmpty(Path.GetDirectoryName(parent))) // not a drive root
+                    return parent;
+            }
         }
-        return candidate;
+        catch { }
+        return outputFolder;
     }
 
     public void ApplyProgress(JobProgress progress)
