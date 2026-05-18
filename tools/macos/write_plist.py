@@ -13,6 +13,7 @@ plist = f"""<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleExecutable</key><string>Pixora</string>
   <key>CFBundleIdentifier</key><string>com.pixora.app</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>Pixora</string>
   <key>CFBundleShortVersionString</key><string>{version}</string>
   <key>CFBundleVersion</key><string>{version}</string>
   <key>NSHighResolutionCapable</key><true/>
