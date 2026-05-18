@@ -19,7 +19,14 @@ public sealed record JobProgress(
     int TotalTargets,
     double PercentComplete,
     string? CurrentTargetName,
-    string? Message);
+    string? Message,
+    // Per-file detail (null when not a file-level update)
+    string? CurrentArtworkId = null,
+    string? CurrentThumbnailUrl = null,
+    int CurrentPageIndex = 0,
+    int CurrentPageTotal = 0,
+    long CurrentBytesSoFar = 0,
+    long? CurrentTotalBytes = null);
 
 /// <summary>
 /// Coordinates batch download operations.
@@ -261,6 +268,8 @@ public sealed class DownloadCoordinator : IDisposable
             }
         }
     }
+
+    public void ReportJobProgress(Guid jobId, JobProgress progress) => ReportProgress(jobId, progress);
 
     private void ReportProgress(Guid jobId, JobProgress progress)
     {

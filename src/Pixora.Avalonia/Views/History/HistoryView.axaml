@@ -52,20 +52,75 @@
                                 <DataTemplate DataType="vm:DownloadJobViewModel">
                                     <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
                                             BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                            BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,8">
-                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                                            <StackPanel Grid.Column="0" Grid.Row="0" Spacing="4">
-                                                <TextBlock Text="{Binding Job.Name}" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding Job.Type}" FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                            BorderThickness="1" CornerRadius="6" Margin="0,0,0,8"
+                                            ClipToBounds="True">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <!-- Thumbnail -->
+                                            <Border Grid.Column="0" Width="72" Height="72"
+                                                    CornerRadius="5,0,0,5" ClipToBounds="True"
+                                                    Background="{actipro:ThemeResource Container2BackgroundBrush}">
+                                                <Panel>
+                                                    <Image Source="{Binding Thumbnail}"
+                                                           Stretch="UniformToFill"
+                                                           IsVisible="{Binding HasThumbnail}"/>
+                                                    <ProgressBar IsIndeterminate="True" Height="3"
+                                                                 VerticalAlignment="Bottom"
+                                                                 IsVisible="{Binding !HasThumbnail}"/>
+                                                </Panel>
+                                            </Border>
+                                            <!-- Info -->
+                                            <Grid Grid.Column="1" ColumnDefinitions="Auto,*" Margin="12,8,12,8">
+                                                <!-- Live current-file thumbnail -->
+                                                <Border Grid.Column="0" Width="56" Height="56"
+                                                        CornerRadius="4" ClipToBounds="True" Margin="0,0,10,0"
+                                                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                        IsVisible="{Binding HasCurrentFile}">
+                                                    <Panel>
+                                                        <Image Source="{Binding CurrentFileThumbnail}"
+                                                               Stretch="UniformToFill"
+                                                               IsVisible="{Binding CurrentFileThumbnail, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                                        <ProgressBar IsIndeterminate="True" Height="3"
+                                                                     VerticalAlignment="Bottom"
+                                                                     IsVisible="{Binding CurrentFileThumbnail, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                                    </Panel>
+                                                </Border>
+                                                <!-- Text stack -->
+                                                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Job.Name}" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                    <TextBlock Text="{Binding CurrentArtist}" FontSize="11"
+                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                               IsVisible="{Binding CurrentArtist, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                               TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                    <!-- Current file: artwork ID + page -->
+                                                    <TextBlock Text="{Binding CurrentFileLabel}" FontSize="11"
+                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"
+                                                               IsVisible="{Binding HasCurrentFile}"
+                                                               TextTrimming="CharacterEllipsis" MaxLines="1"/>
+                                                    <!-- Overall progress bar -->
+                                                    <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
+                                                                 Height="4" CornerRadius="2" Margin="0,2,0,0"/>
+                                                    <!-- Per-file byte progress bar -->
+                                                    <ProgressBar Value="{Binding CurrentFilePct}" Maximum="100"
+                                                                 Height="3" CornerRadius="2"
+                                                                 IsVisible="{Binding HasCurrentFile}"
+                                                                 Opacity="0.6"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <!-- Status + count -->
+                                            <StackPanel Grid.Column="2" Spacing="4" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="12" HorizontalAlignment="Right"/>
+                                                <TextBlock FontSize="11" HorizontalAlignment="Right"
+                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                           IsVisible="{Binding TotalCount}">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding StringFormat="{}{0} / {1}">
+                                                            <Binding Path="CompletedCount"/>
+                                                            <Binding Path="TotalCount"/>
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
                                             </StackPanel>
-                                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding StatusText}"
-                                                       FontSize="12" VerticalAlignment="Center"/>
-                                            <ProgressBar Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1"
-                                                         Value="{Binding ProgressPercent}" Maximum="100"
-                                                         Margin="0,8"/>
-                                            <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="2"
-                                                       Text="{Binding ProgressText}"
-                                                       FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

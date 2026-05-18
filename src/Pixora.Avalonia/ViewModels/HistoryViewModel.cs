@@ -112,16 +112,31 @@ public partial class HistoryViewModel : ViewModelBase
         var jobVm = new DownloadJobViewModel(e.Job, _imageLoader);
         var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
         _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
-        Dispatcher.UIThread.Post(() =>
+        void AddToActive()
         {
             if (ActiveJobs.Any(j => j.Job.Id == e.Job.Id)) return;
             ActiveJobs.Add(jobVm);
-        });
+        }
+        if (Dispatcher.UIThread.CheckAccess())
+            AddToActive();
+        else
+            Dispatcher.UIThread.Post(AddToActive, global::Avalonia.Threading.DispatcherPriority.Send);
     }
 
     private void OnJobCompleted(object? sender, JobCompletedEventArgs e)
     {
-        Dispatcher.UIThread.Post(() => _ = LoadJobsAsync());
+        var completedJob = e.Job;
+        void MoveToCompleted()
+        {
+            var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == completedJob.Id);
+            if (active != null) ActiveJobs.Remove(active);
+            if (!CompletedJobs.Any(j => j.Job.Id == completedJob.Id))
+                CompletedJobs.Insert(0, new DownloadJobViewModel(completedJob, _imageLoader));
+        }
+        if (Dispatcher.UIThread.CheckAccess())
+            MoveToCompleted();
+        else
+            Dispatcher.UIThread.Post(MoveToCompleted, global::Avalonia.Threading.DispatcherPriority.Normal);
     }
 
     private void OnProgressReceived(JobProgress progress, DownloadJobViewModel jobVm)
@@ -167,6 +182,17 @@ public partial class DownloadJobViewModel : ObservableObject
     [ObservableProperty] private string _resultSummary = "";
     [ObservableProperty] private bool _hasFailedItems;
     [ObservableProperty] private Bitmap? _thumbnail;
+    [ObservableProperty] private string? _currentTargetName;
+    [ObservableProperty] private string? _currentArtist;
+    [ObservableProperty] private int _completedCount;
+    [ObservableProperty] private int _totalCount;
+    [ObservableProperty] private string? _currentFileLabel;
+    [ObservableProperty] private double _currentFilePct;
+    [ObservableProperty] private Bitmap? _currentFileThumbnail;
+    [ObservableProperty] private bool _hasCurrentFile;
+
+    private string? _lastThumbnailUrl;
+    private PixivImageLoader? _imageLoader;
 
     public bool HasOutputFolder => !string.IsNullOrWhiteSpace(Job.OutputFolder) && Directory.Exists(Job.OutputFolder);
     public bool HasThumbnail => Thumbnail != null;
@@ -198,8 +224,13 @@ public partial class DownloadJobViewModel : ObservableObject
     public DownloadJobViewModel(DownloadJob job, PixivImageLoader imageLoader)
     {
         Job = job;
+        _imageLoader = imageLoader;
         UpdateStatus();
-        var thumbUrl = job.Targets.FirstOrDefault(t => !string.IsNullOrEmpty(t.ThumbnailUrl))?.ThumbnailUrl;
+        var firstTarget = job.Targets.FirstOrDefault();
+        if (firstTarget != null && !string.IsNullOrEmpty(firstTarget.UserName))
+            CurrentArtist = firstTarget.UserName;
+        var thumbUrl = firstTarget?.ThumbnailUrl
+            ?? job.Targets.FirstOrDefault(t => !string.IsNullOrEmpty(t.ThumbnailUrl))?.ThumbnailUrl;
         if (thumbUrl != null)
             _ = LoadThumbnailAsync(thumbUrl, imageLoader);
     }
@@ -223,9 +254,10 @@ public partial class DownloadJobViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(Job.OutputFolder)) return;
         try
         {
+            var folder = ResolveArtistRootFolder(Job.OutputFolder);
             Process.Start(new ProcessStartInfo
             {
-                FileName = Job.OutputFolder,
+                FileName = folder,
                 UseShellExecute = true,
                 Verb = "open"
             });
@@ -233,14 +265,86 @@ public partial class DownloadJobViewModel : ObservableObject
         catch { }
     }
 
+    /// <summary>
+    /// If <paramref name="outputFolder"/> is an artwork subfolder inside an artist folder,
+    /// return the artist folder (one level up). Walks up until the parent is the DownloadRoot
+    /// or no longer exists, so the deepest still-valid ancestor under DownloadRoot is opened.
+    /// </summary>
+    private static string ResolveArtistRootFolder(string outputFolder)
+    {
+        var downloadRoot = AppServices.Get<Pixora.Core.Settings.SettingsService>().Current.DownloadRoot;
+        if (string.IsNullOrWhiteSpace(downloadRoot)) return outputFolder;
+
+        var candidate = outputFolder;
+        while (true)
+        {
+            var parent = Path.GetDirectoryName(candidate);
+            if (parent == null || !Directory.Exists(parent)) break;
+            // Stop when parent IS the DownloadRoot — candidate is already the artist folder
+            if (string.Equals(Path.GetFullPath(parent), Path.GetFullPath(downloadRoot),
+                    StringComparison.OrdinalIgnoreCase))
+                break;
+            candidate = parent;
+        }
+        return candidate;
+    }
+
     public void ApplyProgress(JobProgress progress)
     {
-        ProgressPercent = progress.PercentComplete;
-        StatusText      = "▶ Running";
-        ProgressText    = progress.Message
-            ?? (progress.TotalTargets > 0
-                ? $"{progress.CompletedTargets} of {progress.TotalTargets} completed"
-                : "Running…");
+        ProgressPercent   = progress.PercentComplete;
+        StatusText        = "▶ Running";
+        CompletedCount    = progress.CompletedTargets;
+        TotalCount        = progress.TotalTargets;
+        if (progress.CurrentTargetName != null)
+            CurrentTargetName = progress.CurrentTargetName;
+        ProgressText = progress.TotalTargets > 0
+            ? $"{progress.CompletedTargets} / {progress.TotalTargets}"
+            : "Running…";
+
+        var t = Job.Targets.FirstOrDefault();
+        if (t != null && !string.IsNullOrEmpty(t.UserName))
+            CurrentArtist = t.UserName;
+
+        // Per-file detail
+        if (progress.CurrentArtworkId != null)
+        {
+            var pageLabel = progress.CurrentPageTotal > 1
+                ? $"p{progress.CurrentPageIndex + 1}/{progress.CurrentPageTotal}"
+                : null;
+            var pct = progress.CurrentTotalBytes > 0
+                ? (int)(100 * progress.CurrentBytesSoFar / progress.CurrentTotalBytes.Value)
+                : 0;
+            var sizeLabel = progress.CurrentTotalBytes > 0
+                ? $"{progress.CurrentBytesSoFar / 1024} / {progress.CurrentTotalBytes.Value / 1024} KB"
+                : progress.CurrentBytesSoFar > 0 ? $"{progress.CurrentBytesSoFar / 1024} KB" : null;
+
+            CurrentFileLabel = string.Join("  ",
+                new[] { progress.CurrentArtworkId, pageLabel, sizeLabel }
+                    .Where(s => !string.IsNullOrEmpty(s)));
+            CurrentFilePct   = pct;
+            HasCurrentFile   = true;
+
+            // Swap live thumbnail when artwork changes
+            if (progress.CurrentThumbnailUrl != null && progress.CurrentThumbnailUrl != _lastThumbnailUrl)
+            {
+                _lastThumbnailUrl = progress.CurrentThumbnailUrl;
+                if (_imageLoader != null)
+                    _ = LoadCurrentThumbnailAsync(progress.CurrentThumbnailUrl);
+            }
+        }
+    }
+
+    private async Task LoadCurrentThumbnailAsync(string url)
+    {
+        try
+        {
+            var bytes = await _imageLoader!.FetchBytesAsync(url);
+            if (bytes is null && url.Contains("_master1200"))
+                bytes = await _imageLoader.FetchBytesAsync(url.Replace("_master1200", "_square1200"));
+            if (bytes != null)
+                CurrentFileThumbnail = new Bitmap(new System.IO.MemoryStream(bytes));
+        }
+        catch { }
     }
 
     private void UpdateStatus()

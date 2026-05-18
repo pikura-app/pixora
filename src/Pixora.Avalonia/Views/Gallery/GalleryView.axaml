@@ -796,14 +796,6 @@
                                                     </Panel.Height>
                                                     <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"
                                                             Margin="6,0,0,6" Padding="5,2" CornerRadius="4"
-                                                            Background="#BB000000">
-                                                        <StackPanel Orientation="Horizontal" Spacing="3">
-                                                            <TextBlock Text="☆" FontSize="9" Foreground="White"/>
-                                                            <TextBlock Text="{Binding BookmarkCount}" FontSize="9" Foreground="White"/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"
-                                                            Margin="6,0,0,6" Padding="5,2" CornerRadius="4"
                                                             Background="#BB000000" IsVisible="{Binding IsMultiPage}">
                                                         <TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}"
                                                                    FontSize="9" Foreground="White"/>

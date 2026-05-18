@@ -169,7 +169,7 @@ public static class AppServices
                         provider.GetRequiredService<DownloadBySearchViewModel>(),
                         provider.GetRequiredService<DownloadByFanboxViewModel>(),
                         provider.GetRequiredService<SchedulesViewModel>()));
-                services.AddTransient<HistoryViewModel>(provider =>
+                services.AddSingleton<HistoryViewModel>(provider =>
                     new HistoryViewModel(
                         provider.GetRequiredService<DownloadJobRepository>(),
                         provider.GetRequiredService<DownloadCoordinator>(),

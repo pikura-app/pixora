@@ -1515,6 +1515,10 @@ public partial class GalleryViewModel : ViewModelBase
         };
         _coordinator.NotifyJobStarted(activeJob);
 
+        // Yield so HistoryViewModel's Dispatcher.UIThread.Post can run and
+        // render the Active Downloads row before we start downloading.
+        await Task.Delay(50);
+
         var tasks = cards.Select(async (card, idx) =>
         {
             await gate.WaitAsync();
@@ -1522,10 +1526,27 @@ public partial class GalleryViewModel : ViewModelBase
             {
                 card.IsDownloading = true;
                 targets[idx].Status = TargetStatus.Running;
+                var localDone = done;
+                _coordinator.ReportJobProgress(activeJob.Id, new JobProgress(
+                    activeJob.Id, JobStatus.Running, localDone, total,
+                    total > 0 ? localDone * 100.0 / total : 0,
+                    card.Title, $"Downloading {card.Title}…",
+                    CurrentArtworkId: card.Id,
+                    CurrentThumbnailUrl: card.ThumbnailUrl));
                 var progress = new Progress<DownloadProgress>(p =>
                 {
                     var pct = p.TotalBytes > 0 ? (int)(100 * p.BytesSoFar / p.TotalBytes.Value) : 0;
                     StatusMessage = $"Downloading {p.ArtworkId} p{p.PageIndex + 1}/{p.TotalPages} ({pct}%) — {done}/{total}";
+                    _coordinator.ReportJobProgress(activeJob.Id, new JobProgress(
+                        activeJob.Id, JobStatus.Running, done, total,
+                        total > 0 ? done * 100.0 / total : 0,
+                        card.Title, null,
+                        CurrentArtworkId: p.ArtworkId,
+                        CurrentThumbnailUrl: card.ThumbnailUrl,
+                        CurrentPageIndex: p.PageIndex,
+                        CurrentPageTotal: p.TotalPages,
+                        CurrentBytesSoFar: p.BytesSoFar,
+                        CurrentTotalBytes: p.TotalBytes));
                 });
                 var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress);
                 Interlocked.Increment(ref done);

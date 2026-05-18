@@ -36,14 +36,15 @@
 
         <!-- Image area with page navigation -->
         <Grid Grid.Row="1">
-            <!-- Zoomable canvas -->
-            <Border Name="PopupCanvas" ClipToBounds="True"
+            <!-- Zoomable canvas: the Canvas is the clip region; Image sits inside and is repositioned by transforms -->
+            <Canvas Name="PopupCanvas" ClipToBounds="True"
                     Background="{actipro:ThemeResource Container3BackgroundBrush}">
                 <Image Name="PopupImage"
-                       Stretch="None"
-                       HorizontalAlignment="Left" VerticalAlignment="Top"
-                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
-            </Border>
+                       Source="{Binding CurrentPageBitmap}"
+                       Stretch="Uniform"
+                       RenderTransformOrigin="0,0"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>                
+            </Canvas>
 
             <!-- Loading spinner -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"

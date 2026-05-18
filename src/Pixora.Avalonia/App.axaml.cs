@@ -61,6 +61,11 @@ public partial class App : Application
 
             var accessibilityService = AppServices.Get<AccessibilityService>();
 
+            // Eagerly construct HistoryViewModel so it subscribes to coordinator
+            // events before any download is triggered — otherwise Active Downloads
+            // never appear if the user hasn't opened History yet.
+            _ = AppServices.Get<HistoryViewModel>();
+
             // Auto-validate existing session cookie in background (shared with WPF app)
             var settings = AppServices.Get<SettingsService>();
             if (settings.Current.IsConfigured)
