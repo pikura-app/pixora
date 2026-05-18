@@ -14,16 +14,14 @@
   [![Support me on Patreon](https://img.shields.io/badge/Patreon-Support-FF424D?style=flat-square&logo=patreon&logoColor=white)](https://www.patreon.com/mrplusultra/join)
 
   <br/>
-
-  ![Pixora Gallery screenshot](.github/screenshots/gallery.png)
 </div>
 
 ---
 
 ## Screenshots
 
+![Pixora Gallery screenshot](.github/screenshots/gallery.png)
 <div align="center">
-   ![Pixora Gallery screenshot](.github/screenshots/gallery.png)
   <img src=".github/screenshots/bookmarks.png" width="49%" alt="Bookmarks &amp; Side Panel"/>
   <br/><br/>
   <img src=".github/screenshots/batch.png" width="49%" alt="Batch Download"/>
