@@ -77,6 +77,15 @@ public partial class MainWindow : Window
             };
         }
 
+        // On macOS, move the hamburger to the right edge of the sidebar column
+        // (traffic lights occupy the left ~75px, so Column=0 right-aligned keeps it safe)
+        if (OperatingSystem.IsMacOS())
+        {
+            HamburgerBtn.SetValue(Grid.ColumnProperty, 0);
+            HamburgerBtn.HorizontalAlignment = HorizontalAlignment.Right;
+            HamburgerBtn.Margin = new Thickness(0, 4, 6, 0);
+        }
+
         LoadGalleryView();
     }
 
@@ -319,10 +328,12 @@ public partial class MainWindow : Window
                     Padding = new Thickness(6),
                     CornerRadius = new CornerRadius(4),
                 };
-                btn.Click += (_, _) =>
+                btn.Click += async (_, _) =>
                 {
                     AppServices.Get<AccountService>().SwitchTo(p.Id);
                     AccountChipBtn.Flyout?.Hide();
+                    RefreshUserChipFromView();
+                    await RefreshGalleryAsync();
                 };
                 AccountList.Items.Add(btn);
             }
@@ -335,15 +346,33 @@ public partial class MainWindow : Window
         AccountChipBtn.Flyout?.Hide();
         try
         {
-            var loginWindow = new Login.PixivLoginWindow();
+            var loginWindow = new Login.PixivLoginWindow(clearCookiesForNewAccount: true);
             await loginWindow.ShowDialog(this);
             if (loginWindow.LoginSucceeded)
             {
-                var vm = DataContext as ViewModels.MainWindowViewModel;
-                vm?.GetType().GetMethod("RefreshUserChip",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                    ?.Invoke(vm, null);
+                RefreshUserChipFromView();
+                await RefreshGalleryAsync();
             }
+        }
+        catch { /* non-fatal */ }
+    }
+
+    private void RefreshUserChipFromView()
+    {
+        var vm = DataContext as ViewModels.MainWindowViewModel;
+        vm?.GetType().GetMethod("RefreshUserChip",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.Invoke(vm, null);
+    }
+
+    private async Task RefreshGalleryAsync()
+    {
+        try
+        {
+            var galleryVm = AppServices.Get<ViewModels.GalleryViewModel>();
+            await galleryVm.RefreshFollowedArtistsCommand.ExecuteAsync(null);
+            // Make sure gallery view is visible
+            LoadGalleryView();
         }
         catch { /* non-fatal */ }
     }

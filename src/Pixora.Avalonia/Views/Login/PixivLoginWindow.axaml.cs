@@ -16,11 +16,13 @@ namespace Pixora.Avalonia.Views.Login;
 public partial class PixivLoginWindow : Window
 {
     private bool _completed;
+    private readonly bool _clearCookies;
 
     public bool LoginSucceeded { get; private set; }
 
-    public PixivLoginWindow()
+    public PixivLoginWindow(bool clearCookiesForNewAccount = false)
     {
+        _clearCookies = clearCookiesForNewAccount;
         InitializeComponent();
 
         if (OperatingSystem.IsLinux())
@@ -31,6 +33,38 @@ public partial class PixivLoginWindow : Window
                     wpe.PreferWebKitGtkInstead = true;
             };
         }
+
+        if (_clearCookies)
+        {
+            WebView.NavigationCompleted += ClearCookiesOnFirstLoad;
+        }
+    }
+
+    private async void ClearCookiesOnFirstLoad(object? sender, WebViewNavigationCompletedEventArgs e)
+    {
+        if (sender is not NativeWebView wv) return;
+        WebView.NavigationCompleted -= ClearCookiesOnFirstLoad;
+        try
+        {
+            // Clear all cookies via JS (covers all domains loaded so far)
+            const string clearScript = """
+                (function() {
+                    var cookies = document.cookie.split(';');
+                    for (var i = 0; i < cookies.length; i++) {
+                        var name = cookies[i].split('=')[0].trim();
+                        var domains = ['.pixiv.net', 'pixiv.net', '.accounts.pixiv.net', 'accounts.pixiv.net', window.location.hostname];
+                        var paths = ['/', '/api', ''];
+                        for (var d = 0; d < domains.length; d++)
+                            for (var p = 0; p < paths.length; p++)
+                                document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=' + domains[d] + ';path=' + paths[p];
+                    }
+                })()
+                """;
+            await wv.InvokeScript(clearScript);
+        }
+        catch { /* non-fatal */ }
+        // Navigate to Pixiv logout to invalidate server session, then to fresh login
+        wv.Source = new Uri("https://accounts.pixiv.net/login?lang=en&source=pc&view_type=page");
     }
 
     private async void WebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
@@ -44,16 +78,19 @@ public partial class PixivLoginWindow : Window
         // Only act once we're on pixiv.net (post-login redirect)
         if (!uri.Host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
 
-        await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Detecting session…");
+        // Run entirely on the UI thread to avoid cross-thread access on WebView objects
+        await Dispatcher.UIThread.InvokeAsync(async () => await HandleLoginAsync(webView));
+    }
+
+    private async Task HandleLoginAsync(NativeWebView webView)
+    {
+        StatusText.Text = "Detecting session…";
 
         try
         {
             // Give the page a moment to fully establish session cookies after redirect
             await Task.Delay(1500);
 
-            // Use synchronous XHR — InvokeScript may not await async/Promise returns.
-            // We call Pixiv's status endpoint synchronously from within the WebView
-            // so the browser sends all cookies (including HttpOnly) automatically.
             const string script = """
                 (function() {
                     try {
@@ -77,19 +114,17 @@ public partial class PixivLoginWindow : Window
 
             if (string.IsNullOrWhiteSpace(result))
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Retrying session check…");
+                StatusText.Text = "Retrying session check…";
                 await Task.Delay(2000);
                 result = await webView.InvokeScript(script);
                 if (string.IsNullOrWhiteSpace(result))
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = "Could not detect session. Try signing in again."; _completed = false; });
+                    StatusText.Text = "Could not detect session. Try signing in again.";
+                    _completed = false;
                     return;
                 }
             }
 
-            // InvokeScript returns the JS value serialized as a JSON string.
-            // If the script returns a string (JSON.stringify result), it comes back
-            // double-encoded: "\"{ ... }\"" — unwrap the outer string layer.
             var json = result;
             if (json.StartsWith("\"") && json.EndsWith("\""))
                 json = JsonSerializer.Deserialize<string>(json) ?? json;
@@ -101,63 +136,51 @@ public partial class PixivLoginWindow : Window
             {
                 var rawMsg = root.TryGetProperty("raw", out var rp) ? rp.GetString() :
                              root.TryGetProperty("err", out var ep) ? ep.GetString() : json;
-                await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}"; _completed = false; });
+                StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}";
+                _completed = false;
                 return;
             }
 
-            var userId = root.TryGetProperty("userId", out var uidProp) ? uidProp.GetString() : null;
-            var userName = root.TryGetProperty("userName", out var unProp) ? unProp.GetString() : null;
+            var userId   = root.TryGetProperty("userId",   out var uidProp) ? uidProp.GetString() : null;
+            var userName = root.TryGetProperty("userName", out var unProp)  ? unProp.GetString()  : null;
 
             if (string.IsNullOrWhiteSpace(userId))
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session detected but user ID missing — try again.");
+                StatusText.Text = "Session detected but user ID missing — try again.";
                 return;
             }
 
             _completed = true;
-            await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session confirmed — extracting cookie…");
+            StatusText.Text = "Session confirmed — extracting cookie…";
 
-            // Now that we know we're logged in, get the PHPSESSID via WebView2 cookie manager
             var sid = await TryGetPhpSessIdViaCookieManagerAsync(webView);
 
             var settings = AppServices.Get<SettingsService>();
-
-            if (!string.IsNullOrWhiteSpace(sid))
+            settings.Update(s =>
             {
-                settings.Update(s =>
-                {
-                    s.PhpSessId = sid;
-                    s.UserId = userId;
-                    s.UserName = userName ?? userId;
-                });
-            }
-            else
+                if (!string.IsNullOrWhiteSpace(sid)) s.PhpSessId = sid;
+                s.UserId   = userId;
+                s.UserName = userName ?? userId;
+            });
+
+            // Validation and account upsert can run off-thread; hop back to UI after
+            await Task.Run(async () =>
             {
-                settings.Update(s =>
-                {
-                    s.UserId = userId;
-                    s.UserName = userName ?? userId;
-                });
-            }
-
-            // Run full validation to fill in any remaining fields
-            var client = AppServices.Get<PixivClient>();
-            await client.ValidateSessionAsync();
-
-            AppServices.Get<AccountService>().UpsertFromCurrentSession();
+                var client = AppServices.Get<PixivClient>();
+                await client.ValidateSessionAsync();
+                AppServices.Get<AccountService>().UpsertFromCurrentSession();
+            });
 
             var displayName = settings.Current.UserName ?? settings.Current.UserId;
-            await Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                LoginSucceeded = true;
-                StatusText.Text = $"Signed in as {displayName}";
-                await Task.Delay(800);
-                Close();
-            });
+            LoginSucceeded  = true;
+            StatusText.Text = $"Signed in as {displayName}";
+            await Task.Delay(800);
+            Close();
         }
         catch (Exception ex)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => { StatusText.Text = $"Error: {ex.Message}"; _completed = false; });
+            StatusText.Text = $"Error: {ex.Message}";
+            _completed = false;
         }
     }
 

@@ -547,7 +547,15 @@ public partial class SettingsViewModel : ViewModelBase
             await loginWindow.ShowDialog(mainWindow);
 
             if (loginWindow.LoginSucceeded)
+            {
                 LoadSettings();
+                try
+                {
+                    var galleryVm = AppServices.Get<GalleryViewModel>();
+                    await galleryVm.RefreshFollowedArtistsCommand.ExecuteAsync(null);
+                }
+                catch { /* non-fatal */ }
+            }
         }
         catch (Exception ex)
         {
