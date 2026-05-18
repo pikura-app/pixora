@@ -15,7 +15,19 @@
 
   <br/>
 
-  ![Pixora Rankings screenshot](.github/screenshots/rankings.png)
+  ![Pixora Gallery screenshot](.github/screenshots/gallery.png)
+</div>
+
+---
+
+## Screenshots
+
+<div align="center">
+  <img src=".github/screenshots/rankings.png" width="49%" alt="Rankings"/>
+  <img src=".github/screenshots/bookmarks.png" width="49%" alt="Bookmarks &amp; Side Panel"/>
+  <br/><br/>
+  <img src=".github/screenshots/batch.png" width="49%" alt="Batch Download"/>
+  <img src=".github/screenshots/settings.png" width="49%" alt="Settings"/>
 </div>
 
 ---
@@ -23,6 +35,7 @@
 ## Features
 
 - **Gallery browser** — browse your Pixiv feed, bookmarks, and followed artists
+- **Side panel** — expand any artwork inline with metadata, tags, and quick actions (Prev/Next, Artist, Popup, Copy, Favorite, Hoshi)
 - **Rankings** — browse daily/weekly/AI/male/female Pixiv rankings with grid or list view
 - **Batch download** — download entire artist galleries or bookmark collections in one click
 - **Schedules** — set recurring auto-downloads with per-schedule content filters
@@ -31,6 +44,7 @@
 - **FANBOX support** — download FANBOX posts alongside Pixiv artwork
 - **Multi-account** — switch between multiple Pixiv accounts from the sidebar
 - **Per-account settings** — override download root, templates, and filters per account
+- **Hoshi AI** — ask questions about artworks using a local Ollama vision model
 - **Auto-updater** — checks for updates on startup, downloads and installs with one click
 - **System tray** — runs quietly in the background
 - **Themes** — light and dark mode
