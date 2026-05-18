@@ -59,8 +59,9 @@ jobs:
       - name: Free disk space
         run: |
           df -h
-          sudo rm -rf /Library/Developer/CoreSimulator /Applications/Xcode_14*.app /Applications/Xcode_15*.app || true
-          sudo rm -rf ~/Library/Caches /private/var/folders || true
+          sudo rm -rf /Library/Developer/CoreSimulator || true
+          sudo rm -rf /Applications/Xcode_14*.app /Applications/Xcode_15*.app || true
+          sudo rm -rf ~/Library/Caches || true
           df -h
 
       - name: Setup .NET
