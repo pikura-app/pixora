@@ -224,7 +224,7 @@ public sealed class UpdateCheckService
     public void InstallAndRestart(string downloadedPath)
     {
         var rawPath = Environment.ProcessPath
-                      ?? System.Reflection.Assembly.GetEntryAssembly()?.Location
+                      ?? Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Pixora.exe" : "Pixora")
                       ?? throw new InvalidOperationException("Cannot determine current executable path.");
 
         // Environment.ProcessPath can return a \??\ kernel-style prefix on Windows
