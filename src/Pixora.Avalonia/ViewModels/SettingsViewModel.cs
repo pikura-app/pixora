@@ -23,6 +23,7 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly DialogService _dialogService;
     private readonly PixivClient _pixivClient;
     private readonly FilePickerService _filePickerService;
+    private readonly AccountService _accountService;
 
     [ObservableProperty]
     private string _accountStatus = "Not signed in";
@@ -210,6 +211,71 @@ public partial class SettingsViewModel : ViewModelBase
     // Diagnostics
     [ObservableProperty] private bool _verboseLogging;
 
+    // ── Per-account settings ──────────────────────────────────────────────────
+    [ObservableProperty] private bool   _useAccountSettings;
+    [ObservableProperty] private string _acctDownloadRoot     = string.Empty;
+    [ObservableProperty] private string _acctFolderTemplate   = string.Empty;
+    [ObservableProperty] private string _acctFilenameTemplate = string.Empty;
+    [ObservableProperty] private bool   _acctFilterAiGenerated;
+    [ObservableProperty] private bool   _acctSkipR18;
+    [ObservableProperty] private bool   _acctSkipR18G;
+    [ObservableProperty] private bool   _acctSeparateR18Folder;
+    [ObservableProperty] private int    _acctMaxConcurrentDownloads = 3;
+    [ObservableProperty] private bool   _hasActiveProfile;
+    [ObservableProperty] private string _activeProfileLabel = string.Empty;
+
+    [RelayCommand]
+    private async Task BrowseAcctDownloadRootAsync()
+    {
+        var folder = await _filePickerService.PickFolderAsync();
+        if (!string.IsNullOrWhiteSpace(folder)) AcctDownloadRoot = folder;
+    }
+
+    [RelayCommand]
+    private void SaveAccountSettings()
+    {
+        var profile = _accountService.ActiveProfile;
+        if (profile is null) return;
+        _accountService.SaveAccountSettings(profile.Id, new AccountSettings
+        {
+            UseAccountSettings      = UseAccountSettings,
+            DownloadRoot            = string.IsNullOrWhiteSpace(AcctDownloadRoot) ? null : AcctDownloadRoot,
+            FolderTemplate          = string.IsNullOrWhiteSpace(AcctFolderTemplate) ? null : AcctFolderTemplate,
+            FilenameTemplate        = string.IsNullOrWhiteSpace(AcctFilenameTemplate) ? null : AcctFilenameTemplate,
+            FilterAiGenerated       = AcctFilterAiGenerated,
+            SkipR18                 = AcctSkipR18,
+            SkipR18G                = AcctSkipR18G,
+            SeparateR18Folder       = AcctSeparateR18Folder,
+            MaxConcurrentDownloads  = AcctMaxConcurrentDownloads,
+        });
+    }
+
+    private void LoadAccountSettings()
+    {
+        var profile = _accountService.ActiveProfile;
+        HasActiveProfile   = profile is not null;
+        ActiveProfileLabel = profile?.DisplayLabel ?? string.Empty;
+        if (profile?.Settings is { } s)
+        {
+            UseAccountSettings       = s.UseAccountSettings;
+            AcctDownloadRoot         = s.DownloadRoot         ?? string.Empty;
+            AcctFolderTemplate       = s.FolderTemplate       ?? string.Empty;
+            AcctFilenameTemplate     = s.FilenameTemplate     ?? string.Empty;
+            AcctFilterAiGenerated    = s.FilterAiGenerated    ?? false;
+            AcctSkipR18              = s.SkipR18              ?? false;
+            AcctSkipR18G             = s.SkipR18G             ?? false;
+            AcctSeparateR18Folder    = s.SeparateR18Folder    ?? false;
+            AcctMaxConcurrentDownloads = s.MaxConcurrentDownloads ?? 3;
+        }
+        else
+        {
+            UseAccountSettings = false;
+            AcctDownloadRoot = AcctFolderTemplate = AcctFilenameTemplate = string.Empty;
+            AcctFilterAiGenerated = AcctSkipR18 = AcctSkipR18G = AcctSeparateR18Folder = false;
+            AcctMaxConcurrentDownloads = 3;
+        }
+    }
+
     public static string AppDataFolder =>
         System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pixora");
 
@@ -255,16 +321,20 @@ public partial class SettingsViewModel : ViewModelBase
         DialogService dialogService,
         PixivClient pixivClient,
         FilePickerService filePickerService,
-        OllamaService ollama)
+        OllamaService ollama,
+        AccountService accountService)
     {
         _settingsService = settingsService;
         _dialogService = dialogService;
         _pixivClient = pixivClient;
         _filePickerService = filePickerService;
         _ollama = ollama;
+        _accountService = accountService;
 
         LoadSettings();
+        LoadAccountSettings();
         _settingsService.Changed += (_, _) => LoadSettings();
+        _accountService.ActiveProfileChanged += (_, _) => LoadAccountSettings();
         IsLightTheme = settingsService.Current.Theme == "Light";
 
         // Kick off an installed-models refresh in the background so the Hoshi AI

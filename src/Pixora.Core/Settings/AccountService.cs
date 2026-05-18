@@ -101,11 +101,59 @@ public sealed class AccountService
             s.RefreshToken = profile.RefreshToken;
             s.UserId       = profile.UserId;
             s.UserName     = profile.UserName;
-            if (!string.IsNullOrWhiteSpace(profile.DownloadRoot))
-                s.DownloadRoot = profile.DownloadRoot;
         });
 
         ActiveProfileChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Persists updated <see cref="AccountSettings"/> for the given profile.
+    /// </summary>
+    public void SaveAccountSettings(string profileId, AccountSettings accountSettings)
+    {
+        lock (_gate)
+        {
+            var profile = _profiles.FirstOrDefault(p => p.Id == profileId);
+            if (profile is null) return;
+            profile.Settings = accountSettings;
+            Save();
+        }
+        ProfilesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ── Effective-value resolvers ─────────────────────────────────────────────
+    // Each method returns the per-account override when enabled, else the global.
+
+    public string GetEffectiveDownloadRoot()       => Effective(s => s.DownloadRoot,    g => g.DownloadRoot);
+    public string GetEffectiveFolderTemplate()     => Effective(s => s.FolderTemplate,  g => g.FolderTemplate);
+    public string GetEffectiveFilenameTemplate()   => Effective(s => s.FilenameTemplate, g => g.FilenameTemplate);
+    public bool   GetEffectiveFilterAiGenerated()  => Effective(s => s.FilterAiGenerated, g => g.FilterAiGenerated);
+    public bool   GetEffectiveSkipR18()            => Effective(s => s.SkipR18,          g => g.R18Mode == R18Mode.Off);
+    public bool   GetEffectiveSkipR18G()           => Effective(s => s.SkipR18G,         g => g.R18Type == R18TypeFilter.R18);
+    public bool   GetEffectiveSeparateR18Folder()  => Effective(s => s.SeparateR18Folder, g => g.SeparateR18Folder);
+    public int    GetEffectiveMaxConcurrent()      => Effective(s => s.MaxConcurrentDownloads, g => g.MaxConcurrentDownloads);
+
+    private T Effective<T>(Func<AccountSettings, T?> pick, Func<AppSettings, T> fallback)
+        where T : struct
+    {
+        var acct = ActiveProfile?.Settings;
+        if (acct is { UseAccountSettings: true })
+        {
+            var v = pick(acct);
+            if (v.HasValue) return v.Value;
+        }
+        return fallback(_settings.Current);
+    }
+
+    private string Effective(Func<AccountSettings, string?> pick, Func<AppSettings, string> fallback)
+    {
+        var acct = ActiveProfile?.Settings;
+        if (acct is { UseAccountSettings: true })
+        {
+            var v = pick(acct);
+            if (!string.IsNullOrWhiteSpace(v)) return v;
+        }
+        return fallback(_settings.Current);
     }
 
     /// <summary>Removes a profile. If it was active, clears the current session.</summary>
@@ -160,7 +208,7 @@ public sealed class AccountService
             UserName     = p.UserName,
             PhpSessId    = CredentialStore.Protect(p.PhpSessId),
             RefreshToken = CredentialStore.Protect(p.RefreshToken),
-            DownloadRoot = p.DownloadRoot,
+            Settings     = p.Settings,
             CreatedAt    = p.CreatedAt,
             LastUsedAt   = p.LastUsedAt,
         }).ToList();

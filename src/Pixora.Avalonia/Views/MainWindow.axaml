@@ -124,7 +124,7 @@
                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                 Click="AccountChip_Click" x:Name="AccountChipBtn">
                             <Button.Flyout>
-                                <Flyout x:Name="AccountFlyout" Placement="Top">
+                                <Flyout Placement="Top">
                                     <Border MinWidth="200" MaxHeight="320" Padding="6">
                                         <StackPanel Spacing="4">
                                             <TextBlock Text="ACCOUNTS" FontSize="10" FontWeight="SemiBold"

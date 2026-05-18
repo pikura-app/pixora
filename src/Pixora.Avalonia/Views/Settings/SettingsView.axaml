@@ -1,4 +1,4 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
              xmlns:vm="using:Pixora.Avalonia.ViewModels"
@@ -992,6 +992,97 @@
                             </Grid>
                         </Border>
 
+                        <!-- Per-account download settings -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24"
+                                IsVisible="{Binding HasActiveProfile}">
+                            <StackPanel Spacing="18">
+
+                                <!-- Header row -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Per-Account Download Settings" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                            <Run Text="Overrides for "/>
+                                            <Run Text="{Binding ActiveProfileLabel}" FontWeight="SemiBold"/>
+                                            <Run Text=" — leave blank to use global settings"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseAccountSettings}"
+                                                 OnContent="Enabled" OffContent="Disabled"
+                                                 VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                <!-- Fields — only interactive when the toggle is on -->
+                                <StackPanel Spacing="14" IsEnabled="{Binding UseAccountSettings}">
+
+                                    <!-- Download root -->
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Download Root" FontSize="12" FontWeight="SemiBold"/>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding AcctDownloadRoot}"
+                                                     Watermark="Leave blank to use global root"
+                                                     FontSize="12" CornerRadius="6"/>
+                                            <Button Grid.Column="1" Content="Browse"
+                                                    Command="{Binding BrowseAcctDownloadRootCommand}"
+                                                    CornerRadius="6" FontSize="12" Padding="10,6"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Folder template -->
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Folder Template" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding AcctFolderTemplate}"
+                                                 Watermark="e.g. %artist% (%member_id%)"
+                                                 FontSize="12" CornerRadius="6"/>
+                                    </StackPanel>
+
+                                    <!-- Filename template -->
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Filename Template" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding AcctFilenameTemplate}"
+                                                 Watermark="e.g. %image_id%_p%page_index%"
+                                                 FontSize="12" CornerRadius="6"/>
+                                    </StackPanel>
+
+                                    <!-- Max concurrent downloads -->
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Max Concurrent Downloads" FontSize="12" FontWeight="SemiBold"/>
+                                        <NumericUpDown Value="{Binding AcctMaxConcurrentDownloads}"
+                                                       Minimum="1" Maximum="20"
+                                                       FontSize="12" CornerRadius="6" Width="120"
+                                                       HorizontalAlignment="Left"/>
+                                    </StackPanel>
+
+                                    <!-- Content filter toggles -->
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Content Filters" FontSize="12" FontWeight="SemiBold"/>
+                                        <CheckBox IsChecked="{Binding AcctFilterAiGenerated}"
+                                                  Content="Filter AI-generated artworks" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSkipR18}"
+                                                  Content="Skip R-18 content" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSkipR18G}"
+                                                  Content="Skip R-18G content" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSeparateR18Folder}"
+                                                  Content="Place R-18 in separate subfolder" FontSize="12"/>
+                                    </StackPanel>
+
+                                </StackPanel>
+
+                                <!-- Save button -->
+                                <Button Content="Save Account Settings"
+                                        Command="{Binding SaveAccountSettingsCommand}"
+                                        Classes="accent" CornerRadius="6" Padding="14,7"
+                                        HorizontalAlignment="Right"/>
+
+                            </StackPanel>
+                        </Border>
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -1020,7 +1111,7 @@
                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" HorizontalAlignment="Center">
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Version" FontSize="13"
                                                Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="1.0.0" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="1.0.1" FontSize="13" FontWeight="SemiBold"/>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Developer" FontSize="13"
                                                Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
                                     <TextBlock Grid.Row="1" Grid.Column="1" Text="mrplusultra" FontSize="13" FontWeight="SemiBold"/>
