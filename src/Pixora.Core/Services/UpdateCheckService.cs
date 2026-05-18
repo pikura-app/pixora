@@ -13,8 +13,9 @@ namespace Pixora.Core.Services;
 public sealed class UpdateCheckService
 {
     public static string CurrentVersion { get; } =
-        System.Reflection.Assembly.GetEntryAssembly()
-            ?.GetName().Version
+        (System.Reflection.Assembly.GetEntryAssembly()
+             ?? System.Reflection.Assembly.GetExecutingAssembly())
+            .GetName().Version
             ?.ToString(3)
         ?? "0.0.0";
     private const string Owner           = "pikura-app";
