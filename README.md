@@ -23,7 +23,6 @@
 ## Screenshots
 
 <div align="center">
-  <img src=".github/screenshots/rankings.png" width="49%" alt="Rankings"/>
   <img src=".github/screenshots/bookmarks.png" width="49%" alt="Bookmarks &amp; Side Panel"/>
   <br/><br/>
   <img src=".github/screenshots/batch.png" width="49%" alt="Batch Download"/>
