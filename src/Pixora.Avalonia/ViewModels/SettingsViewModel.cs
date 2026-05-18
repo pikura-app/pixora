@@ -40,6 +40,12 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string _settingsPathHint = string.Empty;
 
+    public static string AppVersion { get; } =
+        System.Reflection.Assembly.GetEntryAssembly()
+            ?.GetName().Version
+            ?.ToString(3)   // major.minor.patch
+        ?? "unknown";
+
     [ObservableProperty]
     private bool _isLightTheme;
 

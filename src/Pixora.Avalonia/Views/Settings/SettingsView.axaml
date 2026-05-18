@@ -1105,7 +1105,7 @@
                                         <TextBlock FontSize="12"
                                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
                                             <Run Text="Current version: "/>
-                                            <Run Text="1.0.3" FontWeight="SemiBold"/>
+                                            <Run Text="{Binding AppVersion}" FontWeight="SemiBold"/>
                                         </TextBlock>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check Now"
@@ -1232,7 +1232,7 @@
                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" HorizontalAlignment="Center">
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Version" FontSize="13"
                                                Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="1.0.1" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AppVersion}" FontSize="13" FontWeight="SemiBold"/>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Developer" FontSize="13"
                                                Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" Margin="0,0,20,6"/>
                                     <TextBlock Grid.Row="1" Grid.Column="1" Text="mrplusultra" FontSize="13" FontWeight="SemiBold"/>
