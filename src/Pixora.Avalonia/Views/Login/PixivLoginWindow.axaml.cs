@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.WebView;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
 using Pixora.Avalonia.Services;
@@ -20,6 +21,15 @@ public partial class PixivLoginWindow : Window
     public PixivLoginWindow()
     {
         InitializeComponent();
+
+        if (OperatingSystem.IsLinux())
+        {
+            WebView.EnvironmentRequested += (_, args) =>
+            {
+                if (args is LinuxWpeWebViewEnvironmentRequestedEventArgs wpe)
+                    wpe.PreferWebKitGtkInstead = true;
+            };
+        }
     }
 
     private async void WebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
