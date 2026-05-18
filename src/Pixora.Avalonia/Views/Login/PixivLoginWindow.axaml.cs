@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Controls.WebView;
+using Avalonia.Controls.Linux;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
 using Pixora.Avalonia.Services;
