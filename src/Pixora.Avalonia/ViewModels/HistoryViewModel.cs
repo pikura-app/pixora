@@ -24,6 +24,8 @@ public partial class HistoryViewModel : ViewModelBase
 
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _activeJobs = new();
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _completedJobs = new();
+    [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _failedJobs = new();
+    [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _cancelledJobs = new();
 
     public HistoryViewModel(DownloadJobRepository jobRepository, DownloadCoordinator coordinator, DialogService dialogService, PixivImageLoader imageLoader)
     {
@@ -34,8 +36,6 @@ public partial class HistoryViewModel : ViewModelBase
 
         coordinator.JobStarted  += OnJobStarted;
         coordinator.JobCompleted += OnJobCompleted;
-
-        LoadJobs();
     }
 
     [RelayCommand]
@@ -47,73 +47,97 @@ public partial class HistoryViewModel : ViewModelBase
     [RelayCommand]
     private async Task ClearCompletedAsync()
     {
-        var completedIds = CompletedJobs.Select(j => j.Job.Id).ToList();
-        foreach (var id in completedIds)
-        {
-            await _jobRepository.DeleteJobAsync(id);
-        }
-        await LoadJobsAsync();
+        var ids = CompletedJobs.Select(j => j.Job.Id).ToList();
+        foreach (var id in ids) await _jobRepository.DeleteJobAsync(id);
+        CompletedJobs.Clear();
+    }
+
+    [RelayCommand]
+    private async Task ClearFailedAsync()
+    {
+        var ids = FailedJobs.Select(j => j.Job.Id).ToList();
+        foreach (var id in ids) await _jobRepository.DeleteJobAsync(id);
+        FailedJobs.Clear();
+    }
+
+    [RelayCommand]
+    private async Task ClearCancelledAsync()
+    {
+        var ids = CancelledJobs.Select(j => j.Job.Id).ToList();
+        foreach (var id in ids) await _jobRepository.DeleteJobAsync(id);
+        CancelledJobs.Clear();
+    }
+
+    [RelayCommand]
+    private async Task RemoveJobAsync(DownloadJobViewModel jobVm)
+    {
+        await _jobRepository.DeleteJobAsync(jobVm.Job.Id);
+        CompletedJobs.Remove(jobVm);
+        FailedJobs.Remove(jobVm);
+        CancelledJobs.Remove(jobVm);
+    }
+
+    [RelayCommand]
+    private async Task CancelJobAsync(DownloadJobViewModel jobVm)
+    {
+        await _coordinator.CancelJobAsync(jobVm.Job.Id);
     }
 
     [RelayCommand]
     private async Task RetryJobAsync(DownloadJobViewModel jobVm)
     {
-        if (jobVm.Job.Status == JobStatus.Failed || jobVm.HasFailedItems)
+        var retryable = jobVm.Job.Status == JobStatus.Failed
+                     || jobVm.Job.Status == JobStatus.Cancelled
+                     || jobVm.HasFailedItems;
+        if (!retryable) return;
+        try
         {
-            try
+            jobVm.Job.Status = JobStatus.Pending;
+            jobVm.Job.LastRetriedAt = DateTime.UtcNow;
+            jobVm.Job.RetryCount++;
+
+            foreach (var target in jobVm.Job.Targets.Where(
+                t => t.Status == TargetStatus.Failed || t.Status == TargetStatus.Cancelled))
             {
-                // Update job status and timestamps
-                jobVm.Job.Status = JobStatus.Pending;
-                jobVm.Job.LastRetriedAt = DateTime.UtcNow;
-                jobVm.Job.RetryCount++;
-                
-                // Reset failed targets to pending
-                foreach (var target in jobVm.Job.Targets.Where(t => t.Status == TargetStatus.Failed))
-                {
-                    target.Status = TargetStatus.Pending;
-                    target.ErrorMessage = null;
-                }
-                
-                // Save changes
-                await _jobRepository.SaveJobAsync(jobVm.Job);
-                
-                // Start the job via coordinator
-                await _coordinator.StartJobAsync(jobVm.Job.Id);
-                
-                await LoadJobsAsync();
+                target.Status = TargetStatus.Pending;
+                target.ErrorMessage = null;
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Retry failed: {ex.Message}");
-            }
+
+            await _jobRepository.SaveJobAsync(jobVm.Job);
+            FailedJobs.Remove(jobVm);
+            CancelledJobs.Remove(jobVm);
+            await _coordinator.StartJobAsync(jobVm.Job.Id);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Retry failed: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private async Task RetryAllFailedAsync()
     {
-        var failedJobs = CompletedJobs.Where(j => j.HasFailedItems).ToList();
-        if (failedJobs.Count == 0) return;
-        
+        var jobs = FailedJobs.ToList();
+        if (jobs.Count == 0) return;
+
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Retry All Failed",
-            $"Retry {failedJobs.Count} failed jobs?");
-        
+            $"Retry {jobs.Count} failed jobs?");
         if (!confirmed) return;
-        
-        foreach (var jobVm in failedJobs)
-        {
+
+        foreach (var jobVm in jobs)
             await RetryJobAsync(jobVm);
-        }
     }
 
     private void OnJobStarted(object? sender, JobCompletedEventArgs e)
     {
-        var jobVm = new DownloadJobViewModel(e.Job, _imageLoader);
+        Console.Error.WriteLine($"[History] OnJobStarted: {e.Job.Id} '{e.Job.Name}'");
+        var jobVm = new DownloadJobViewModel(e.Job, _imageLoader, _coordinator);
         var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
         _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
         void AddToActive()
         {
+            Console.Error.WriteLine($"[History] AddToActive: {e.Job.Id} — already: {ActiveJobs.Any(j => j.Job.Id == e.Job.Id)}");
             if (ActiveJobs.Any(j => j.Job.Id == e.Job.Id)) return;
             ActiveJobs.Add(jobVm);
         }
@@ -125,24 +149,51 @@ public partial class HistoryViewModel : ViewModelBase
 
     private void OnJobCompleted(object? sender, JobCompletedEventArgs e)
     {
-        var completedJob = e.Job;
-        void MoveToCompleted()
+        Console.Error.WriteLine($"[History] OnJobCompleted: {e.Job.Id} '{e.Job.Name}' status={e.Job.Status}");
+        var job = e.Job;
+        void Route()
         {
-            var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == completedJob.Id);
+            Console.Error.WriteLine($"[History] Route: status={job.Status} activeCount={ActiveJobs.Count}");
+            var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == job.Id);
             if (active != null) ActiveJobs.Remove(active);
-            if (!CompletedJobs.Any(j => j.Job.Id == completedJob.Id))
-                CompletedJobs.Insert(0, new DownloadJobViewModel(completedJob, _imageLoader));
+            var vm = new DownloadJobViewModel(job, _imageLoader);
+            switch (job.Status)
+            {
+                case JobStatus.Completed:
+                    if (!CompletedJobs.Any(j => j.Job.Id == job.Id))  CompletedJobs.Insert(0, vm);  break;
+                case JobStatus.Failed:
+                    if (!FailedJobs.Any(j => j.Job.Id == job.Id))     FailedJobs.Insert(0, vm);     break;
+                case JobStatus.Cancelled:
+                    if (!CancelledJobs.Any(j => j.Job.Id == job.Id))  CancelledJobs.Insert(0, vm);  break;
+            }
+            Console.Error.WriteLine($"[History] After Route: completed={CompletedJobs.Count} failed={FailedJobs.Count}");
         }
-        if (Dispatcher.UIThread.CheckAccess())
-            MoveToCompleted();
-        else
-            Dispatcher.UIThread.Post(MoveToCompleted, global::Avalonia.Threading.DispatcherPriority.Normal);
+        if (Dispatcher.UIThread.CheckAccess()) Route();
+        else Dispatcher.UIThread.Post(Route, global::Avalonia.Threading.DispatcherPriority.Normal);
     }
 
     private void OnProgressReceived(JobProgress progress, DownloadJobViewModel jobVm)
     {
-        Dispatcher.UIThread.Post(() => jobVm.ApplyProgress(progress));
+        Dispatcher.UIThread.Post(() =>
+        {
+            jobVm.ApplyProgress(progress);
+
+            // Immediately move cancelled jobs from Active to Cancelled
+            if (progress.Status == JobStatus.Cancelled)
+            {
+                var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == progress.JobId);
+                if (active != null)
+                {
+                    ActiveJobs.Remove(active);
+                    active.Job.Status = JobStatus.Cancelled;
+                    if (!CancelledJobs.Any(j => j.Job.Id == active.Job.Id))
+                        CancelledJobs.Insert(0, active);
+                }
+            }
+        });
     }
+
+    public Task ReloadAsync() => LoadJobsAsync();
 
     private void LoadJobs()
     {
@@ -151,23 +202,32 @@ public partial class HistoryViewModel : ViewModelBase
 
     private async Task LoadJobsAsync()
     {
-        var jobs = await _jobRepository.GetJobsAsync();
+        var activeJobs    = await _jobRepository.GetAllActiveJobsAsync();
+        var completedJobs = await _jobRepository.GetJobsAsync();
 
         ActiveJobs.Clear();
         CompletedJobs.Clear();
 
-        foreach (var job in jobs.Where(j => j.Status == JobStatus.Pending ||
-                                            j.Status == JobStatus.Running))
+        foreach (var job in activeJobs)
         {
-            ActiveJobs.Add(new DownloadJobViewModel(job, _imageLoader));
+            var jobVm = new DownloadJobViewModel(job, _imageLoader, _coordinator);
+            var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
+            _coordinator.SubscribeToProgress(job.Id, progressHandler);
+            ActiveJobs.Add(jobVm);
         }
 
-        foreach (var job in jobs.Where(j => j.Status == JobStatus.Completed ||
-                                            j.Status == JobStatus.Failed ||
-                                            j.Status == JobStatus.Cancelled)
-                                .OrderByDescending(j => j.CompletedAt))
+        FailedJobs.Clear();
+        CancelledJobs.Clear();
+
+        foreach (var job in completedJobs.OrderByDescending(j => j.CompletedAt))
         {
-            CompletedJobs.Add(new DownloadJobViewModel(job, _imageLoader));
+            var vm = new DownloadJobViewModel(job, _imageLoader);
+            switch (job.Status)
+            {
+                case JobStatus.Completed:  CompletedJobs.Add(vm);  break;
+                case JobStatus.Failed:     FailedJobs.Add(vm);     break;
+                case JobStatus.Cancelled:  CancelledJobs.Add(vm);  break;
+            }
         }
     }
 }
@@ -193,9 +253,14 @@ public partial class DownloadJobViewModel : ObservableObject
 
     private string? _lastThumbnailUrl;
     private PixivImageLoader? _imageLoader;
+    private DownloadCoordinator? _coordinator;
+
+    [ObservableProperty] private bool _isCancellable;
 
     public bool HasOutputFolder => !string.IsNullOrWhiteSpace(Job.OutputFolder) && Directory.Exists(Job.OutputFolder);
     public bool HasThumbnail => Thumbnail != null;
+
+    partial void OnThumbnailChanged(Bitmap? value) => OnPropertyChanged(nameof(HasThumbnail));
 
     public string TypeLabel => Job.Type switch
     {
@@ -221,11 +286,13 @@ public partial class DownloadJobViewModel : ObservableObject
     }
     public bool HasArtistInfo => !string.IsNullOrEmpty(ArtistInfo);
 
-    public DownloadJobViewModel(DownloadJob job, PixivImageLoader imageLoader)
+    public DownloadJobViewModel(DownloadJob job, PixivImageLoader imageLoader, DownloadCoordinator? coordinator = null)
     {
         Job = job;
         _imageLoader = imageLoader;
+        _coordinator = coordinator;
         UpdateStatus();
+        IsCancellable = job.Status == JobStatus.Running || job.Status == JobStatus.Pending;
         var firstTarget = job.Targets.FirstOrDefault();
         if (firstTarget != null && !string.IsNullOrEmpty(firstTarget.UserName))
             CurrentArtist = firstTarget.UserName;
@@ -233,6 +300,14 @@ public partial class DownloadJobViewModel : ObservableObject
             ?? job.Targets.FirstOrDefault(t => !string.IsNullOrEmpty(t.ThumbnailUrl))?.ThumbnailUrl;
         if (thumbUrl != null)
             _ = LoadThumbnailAsync(thumbUrl, imageLoader);
+    }
+
+    [RelayCommand]
+    private async Task CancelAsync()
+    {
+        if (_coordinator == null) return;
+        await _coordinator.CancelJobAsync(Job.Id);
+        IsCancellable = false;
     }
 
     private async Task LoadThumbnailAsync(string url, PixivImageLoader loader)
@@ -243,7 +318,11 @@ public partial class DownloadJobViewModel : ObservableObject
             if (bytes is null && url.Contains("_master1200"))
                 bytes = await loader.FetchBytesAsync(url.Replace("_master1200", "_square1200"));
             if (bytes != null)
-                Thumbnail = new Bitmap(new System.IO.MemoryStream(bytes));
+            {
+                // Decode on background thread to avoid UI-thread jank
+                var bmp = await Task.Run(() => new Bitmap(new System.IO.MemoryStream(bytes)));
+                await Dispatcher.UIThread.InvokeAsync(() => Thumbnail = bmp);
+            }
         }
         catch { }
     }
@@ -292,7 +371,14 @@ public partial class DownloadJobViewModel : ObservableObject
     public void ApplyProgress(JobProgress progress)
     {
         ProgressPercent   = progress.PercentComplete;
-        StatusText        = "▶ Running";
+        StatusText        = progress.Status switch
+        {
+            JobStatus.Running => "▶ Running",
+            JobStatus.Cancelled => "🚫 Cancelling…",
+            JobStatus.Paused => "⏸ Paused",
+            _ => progress.Status.ToString()
+        };
+        IsCancellable     = progress.Status == JobStatus.Running || progress.Status == JobStatus.Pending;
         CompletedCount    = progress.CompletedTargets;
         TotalCount        = progress.TotalTargets;
         if (progress.CurrentTargetName != null)
@@ -342,7 +428,11 @@ public partial class DownloadJobViewModel : ObservableObject
             if (bytes is null && url.Contains("_master1200"))
                 bytes = await _imageLoader.FetchBytesAsync(url.Replace("_master1200", "_square1200"));
             if (bytes != null)
-                CurrentFileThumbnail = new Bitmap(new System.IO.MemoryStream(bytes));
+            {
+                // Decode on background thread, then assign on UI thread
+                var bmp = await Task.Run(() => new Bitmap(new System.IO.MemoryStream(bytes)));
+                await Dispatcher.UIThread.InvokeAsync(() => CurrentFileThumbnail = bmp);
+            }
         }
         catch { }
     }
@@ -359,6 +449,8 @@ public partial class DownloadJobViewModel : ObservableObject
             JobStatus.Cancelled => "🚫 Cancelled",
             _ => Job.Status.ToString()
         };
+
+        IsCancellable = Job.Status == JobStatus.Running || Job.Status == JobStatus.Pending;
 
         if (Job.Status == JobStatus.Completed ||
             Job.Status == JobStatus.Failed)

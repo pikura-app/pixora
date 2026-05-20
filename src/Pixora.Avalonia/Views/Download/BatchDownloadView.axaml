@@ -904,368 +904,364 @@
             </TabItem>
             <!-- ====================== SCHEDULES ====================== -->
             <TabItem Header="⏰ Schedules">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16" Margin="20">
-
-                        <!-- Existing Schedules -->
-                        <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
-                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
-                                BorderThickness="1" CornerRadius="8" Padding="16">
-                            <StackPanel Spacing="12">
-                                <DockPanel LastChildFill="False">
-                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <TextBlock Text="Scheduled Downloads" FontSize="15" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding SchedulesViewModel.Schedules.Count, StringFormat='{}{0} schedules'}"
-                                                   FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                    <Button DockPanel.Dock="Right" Content="↺ Refresh"
+                <Grid RowDefinitions="*">
+                    <!-- Single unified view: List or Editor based on IsEditing -->
+                    <Grid RowDefinitions="Auto,*">
+                        <!-- Toolbar -->
+                        <Border Grid.Row="0" Padding="16,10"
+                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}" BorderThickness="0,0,0,1">
+                            <DockPanel LastChildFill="False">
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SchedulesViewModel.Schedules.Count, StringFormat='{}{0} schedules'}"
+                                               FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding !SchedulesViewModel.IsEditing}"/>
+                                    <TextBlock Text="{Binding SchedulesViewModel.StatusMessage}"
+                                               FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding SchedulesViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                                    <!-- Show when NOT editing -->
+                                    <Button Content="+ New Schedule"
+                                            Command="{Binding SchedulesViewModel.AddNewCommand}"
+                                            IsVisible="{Binding !SchedulesViewModel.IsEditing}"
+                                            Classes="accent"
+                                            CornerRadius="6" Padding="12,6" FontSize="12"/>
+                                    <Button Content="↺ Refresh"
                                             Command="{Binding SchedulesViewModel.RefreshCommand}"
+                                            IsVisible="{Binding !SchedulesViewModel.IsEditing}"
                                             CornerRadius="6" Padding="10,4" FontSize="12"/>
-                                </DockPanel>
-
-                                <!-- Schedule list -->
-                                <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                        BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                        BorderThickness="1" CornerRadius="6"
-                                        MinHeight="80" MaxHeight="320">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding SchedulesViewModel.Schedules}" Margin="8">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate DataType="vm:ScheduleRowViewModel">
-                                                    <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
-                                                            BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
-                                                            BorderThickness="1" CornerRadius="6"
-                                                            Padding="12,8" Margin="0,0,0,6">
-                                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                            <!-- Enable toggle -->
-                                                            <CheckBox Grid.Column="0"
-                                                                      IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                                                      VerticalAlignment="Center" Margin="0,0,10,0"
-                                                                      Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.ToggleEnabledCommand}"
-                                                                      CommandParameter="{Binding}"/>
-
-                                                            <!-- Info -->
-                                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
-                                                                    <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                                                            CornerRadius="3" Padding="5,1">
-                                                                        <TextBlock Text="{Binding TypeLabel}" FontSize="10"
-                                                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                                                    </Border>
-                                                                </StackPanel>
-                                                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                                                    <TextBlock Text="{Binding TriggerLabel}" FontSize="11"
-                                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                                                    <TextBlock Text="{Binding ArtistsSummary}" FontSize="11"
-                                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
-                                                                               IsVisible="{Binding HasArtists}"
-                                                                               TextTrimming="CharacterEllipsis" MaxWidth="200"/>
-                                                                </StackPanel>
-                                                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                                                    <TextBlock Text="{Binding LastRun, StringFormat='Last: {0}'}" FontSize="10"
-                                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
-                                                                    <TextBlock Text="{Binding NextRun, StringFormat='Next: {0}'}" FontSize="10"
-                                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
-                                                                </StackPanel>
-                                                                <TextBlock Text="{Binding LastError, StringFormat='⚠ {0}'}" FontSize="10"
-                                                                           Foreground="OrangeRed" IsVisible="{Binding HasError}"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </StackPanel>
-
-                                                            <!-- Run Now -->
-                                                            <Button Grid.Column="2" Content="▶ Run"
-                                                                    FontSize="11" CornerRadius="4" Padding="8,4" Margin="6,0,0,0"
-                                                                    ToolTip.Tip="Run this schedule immediately"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.RunNowCommand}"
-                                                                    CommandParameter="{Binding}"/>
-
-                                                            <!-- Delete -->
-                                                            <Button Grid.Column="3" Content="🗑"
-                                                                    FontSize="11" CornerRadius="4" Padding="6,4" Margin="4,0,0,0"
-                                                                    ToolTip.Tip="Delete this schedule"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.DeleteScheduleCommand}"
-                                                                    CommandParameter="{Binding}"/>
-                                                        </Grid>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Border>
-
-                                <!-- Status message -->
-                                <TextBlock Text="{Binding SchedulesViewModel.StatusMessage}"
-                                           FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
-                                           IsVisible="{Binding SchedulesViewModel.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            </StackPanel>
+                                    <!-- Show when editing -->
+                                    <Button Content="← Back to Schedules"
+                                            Command="{Binding SchedulesViewModel.CancelEditCommand}"
+                                            IsVisible="{Binding SchedulesViewModel.IsEditing}"
+                                            CornerRadius="6" Padding="10,6" FontSize="12"/>
+                                </StackPanel>
+                            </DockPanel>
                         </Border>
 
-                        <!-- Add New Schedule -->
-                        <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
-                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
-                                BorderThickness="1" CornerRadius="8" Padding="16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Add Schedule" FontSize="15" FontWeight="SemiBold"/>
-
-                                <!-- Schedule name -->
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Schedule Name" FontSize="12"/>
-                                    <TextBox Text="{Binding SchedulesViewModel.NewScheduleName, Mode=TwoWay}"
-                                             Watermark="e.g. My Fav Artists Daily (auto-generated if blank)"
-                                             CornerRadius="6" FontSize="12"/>
-                                </StackPanel>
-
-                                <!-- Artists in this schedule -->
-                                <StackPanel Spacing="8">
-                                    <DockPanel LastChildFill="False">
-                                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <TextBlock Text="Artists" FontSize="12" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding SchedulesViewModel.StagedArtists.Count, StringFormat='{}{0} added'}"
-                                                       FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <Button DockPanel.Dock="Right" Content="✕ Clear all"
-                                                Command="{Binding SchedulesViewModel.ClearStagedArtistsCommand}"
-                                                IsVisible="{Binding SchedulesViewModel.HasStagedArtists}"
-                                                CornerRadius="4" Padding="8,3" FontSize="11"/>
-                                    </DockPanel>
-
-                                    <!-- Staged artist chips -->
-                                    <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                            BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                            BorderThickness="1" CornerRadius="6" MinHeight="40" Padding="6">
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="120">
-                                            <ItemsControl ItemsSource="{Binding SchedulesViewModel.StagedArtists}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate DataType="vm:StagedArtist">
-                                                        <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
-                                                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
-                                                                BorderThickness="1" CornerRadius="5"
-                                                                Padding="8,3" Margin="0,0,5,5">
-                                                            <DockPanel LastChildFill="False">
-                                                                <Button DockPanel.Dock="Right" Content="✕"
-                                                                        FontSize="9" CornerRadius="2" Padding="3,0" Margin="5,0,0,0"
-                                                                        Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.RemoveArtistFromStagingCommand}"
-                                                                        CommandParameter="{Binding}"/>
-                                                                <TextBlock Text="{Binding DisplayLabel}" FontSize="11" VerticalAlignment="Center"/>
-                                                            </DockPanel>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </ScrollViewer>
-                                    </Border>
-
-                                    <!-- Add artist input row -->
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
-                                        <TextBox Grid.Column="0"
-                                                 Text="{Binding SchedulesViewModel.NewArtistId, Mode=TwoWay}"
-                                                 Watermark="Artist ID or pixiv.net/en/users/123…"
-                                                 CornerRadius="6" FontSize="12"/>
-                                        <TextBox Grid.Column="1" Width="80"
-                                                 Text="{Binding SchedulesViewModel.PageRange, Mode=TwoWay}"
-                                                 Watermark="Pages"
-                                                 ToolTip.Tip="Page range for this artist, e.g. 0 = all, 1-5 = range"
-                                                 CornerRadius="6" FontSize="12"/>
-                                        <Button Grid.Column="2" Content="+ Add"
-                                                Command="{Binding SchedulesViewModel.AddArtistToStagingCommand}"
-                                                IsEnabled="{Binding !SchedulesViewModel.IsResolvingArtist}"
-                                                CornerRadius="6" Padding="10,6" FontSize="12"
-                                                ToolTip.Tip="Resolve artist name and add to list"/>
-                                    </Grid>
-                                    <TextBlock Text="{Binding SchedulesViewModel.ResolveError}"
-                                               FontSize="11" Foreground="OrangeRed"
-                                               IsVisible="{Binding SchedulesViewModel.ResolveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                </StackPanel>
-
-                                <!-- Trigger: When to Run -->
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="When to Run" FontSize="12" FontWeight="SemiBold"/>
-
-                                    <!-- Trigger type radio buttons -->
-                                    <StackPanel Spacing="6">
-                                        <RadioButton Content="Daily / recurring"
-                                                     GroupName="TriggerType"
-                                                     IsChecked="{Binding SchedulesViewModel.IsTriggerDaily, Mode=TwoWay}"
-                                                     FontSize="12"/>
-                                        <RadioButton Content="Run on app startup"
-                                                     GroupName="TriggerType"
-                                                     IsChecked="{Binding SchedulesViewModel.IsTriggerStartup, Mode=TwoWay}"
-                                                     FontSize="12"/>
-                                        <RadioButton Content="Run once at a specific date &amp; time"
-                                                     GroupName="TriggerType"
-                                                     IsChecked="{Binding SchedulesViewModel.IsTriggerOnce, Mode=TwoWay}"
-                                                     FontSize="12"/>
-                                    </StackPanel>
-
-                                    <!-- Daily / recurring options -->
-                                    <Border IsVisible="{Binding SchedulesViewModel.IsTriggerDaily}"
-                                            Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                            BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                            BorderThickness="1" CornerRadius="6" Padding="12,10">
-                                        <StackPanel Spacing="8">
-
-                                            <!-- 12-hour time picker row -->
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <TextBlock Text="Time:" FontSize="12" VerticalAlignment="Center"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.Hour12Options}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerHour12, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"
-                                                          ToolTip.Tip="Hour (1–12)"/>
-                                                <TextBlock Text=":" FontSize="14" VerticalAlignment="Center"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.MinuteOptions}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerMinute, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"
-                                                          ToolTip.Tip="Minute"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.AmPmOptions}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerAmPm, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"/>
-                                                <TextBlock Text="Checks/day:" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                                <ComboBox Width="55"
-                                                          SelectedItem="{Binding SchedulesViewModel.ChecksPerDay, Mode=TwoWay}"
-                                                          FontSize="12"
-                                                          ToolTip.Tip="1 = once daily, 2 = twice (every 12 h), 3 = three times (every 8 h)">
-                                                    <ComboBoxItem Content="1"/>
-                                                    <ComboBoxItem Content="2"/>
-                                                    <ComboBoxItem Content="3"/>
-                                                </ComboBox>
-                                            </StackPanel>
-                                            <TextBlock FontSize="11"
-                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
-                                                       Text="2× = every 12 h  ·  3× = every 8 h, spread from the selected time"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- Once: date + time picker -->
-                                    <Border IsVisible="{Binding SchedulesViewModel.IsTriggerOnce}"
-                                            Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                            BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                            BorderThickness="1" CornerRadius="6" Padding="12,10">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="Run once on:" FontSize="12"/>
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <CalendarDatePicker
-                                                    SelectedDate="{Binding SchedulesViewModel.OnceDateTime, Mode=TwoWay}"
-                                                    FontSize="12" Width="160"
-                                                    ToolTip.Tip="Pick the date"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.Hour12Options}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerHour12, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"
-                                                          ToolTip.Tip="Hour"/>
-                                                <TextBlock Text=":" FontSize="14" VerticalAlignment="Center"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.MinuteOptions}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerMinute, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"
-                                                          ToolTip.Tip="Minute"/>
-                                                <ComboBox ItemsSource="{Binding SchedulesViewModel.AmPmOptions}"
-                                                          SelectedItem="{Binding SchedulesViewModel.TriggerAmPm, Mode=TwoWay}"
-                                                          FontSize="12" Width="65"/>
-                                            </StackPanel>
-                                            <TextBlock FontSize="11"
-                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
-                                                       Text="The schedule will run exactly once and then be marked expired."/>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-
-                                <!-- Content Filters -->
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Content Filters" FontSize="12" FontWeight="SemiBold"/>
-                                    <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
-                                            BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
-                                            BorderThickness="1" CornerRadius="6" Padding="12,10">
-                                        <StackPanel Spacing="10">
-
-                                            <!-- Skip content types -->
-                                            <TextBlock Text="Skip content types:" FontSize="11"
-                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                            <WrapPanel>
-                                                <CheckBox Content="AI-generated" Margin="0,0,16,4"
-                                                          IsChecked="{Binding SchedulesViewModel.FilterSkipAi, Mode=TwoWay}"
-                                                          FontSize="12"/>
-                                                <CheckBox Content="Manga" Margin="0,0,16,4"
-                                                          IsChecked="{Binding SchedulesViewModel.FilterSkipManga, Mode=TwoWay}"
-                                                          FontSize="12"/>
-                                                <CheckBox Content="Ugoira" Margin="0,0,16,4"
-                                                          IsChecked="{Binding SchedulesViewModel.FilterSkipUgoira, Mode=TwoWay}"
-                                                          FontSize="12"/>
-                                                <CheckBox Content="R-18" Margin="0,0,16,4"
-                                                          IsChecked="{Binding SchedulesViewModel.FilterSkipR18, Mode=TwoWay}"
-                                                          FontSize="12"/>
-                                                <CheckBox Content="R-18G only" Margin="0,0,0,4"
-                                                          IsChecked="{Binding SchedulesViewModel.FilterSkipR18G, Mode=TwoWay}"
-                                                          FontSize="12"
-                                                          ToolTip.Tip="Skip grotesque/violent R-18G but still download regular R-18"/>
-                                            </WrapPanel>
-
-                                            <!-- Only new -->
-                                            <CheckBox Content="Only download artworks posted since this schedule last ran"
-                                                      IsChecked="{Binding SchedulesViewModel.FilterOnlyNew, Mode=TwoWay}"
-                                                      FontSize="12"/>
-
-                                            <!-- Tag filters -->
-                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                                <StackPanel Grid.Column="0" Spacing="4">
-                                                    <TextBlock Text="Must include tag(s)" FontSize="11"/>
-                                                    <TextBox Text="{Binding SchedulesViewModel.FilterIncludeTags, Mode=TwoWay}"
-                                                             Watermark="e.g. original, fantasy"
-                                                             CornerRadius="4" FontSize="12"
-                                                             ToolTip.Tip="Comma-separated. Artwork must match at least one."/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Spacing="4">
-                                                    <TextBlock Text="Exclude tag(s)" FontSize="11"/>
-                                                    <TextBox Text="{Binding SchedulesViewModel.FilterExcludeTags, Mode=TwoWay}"
-                                                             Watermark="e.g. guro, furry"
-                                                             CornerRadius="4" FontSize="12"
-                                                             ToolTip.Tip="Comma-separated. Artwork is skipped if it has any of these."/>
-                                                </StackPanel>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-
-                                <!-- Naming Overrides (optional) -->
-                                <Expander Header="📁 Naming Overrides (optional)" FontSize="12">
-                                    <StackPanel Spacing="10" Margin="0,8,0,0">
-                                        <CheckBox Content="Override global folder / filename templates for this schedule"
-                                                  IsChecked="{Binding SchedulesViewModel.UseCustomNaming, Mode=TwoWay}"
-                                                  FontSize="12"/>
-                                        <StackPanel IsVisible="{Binding SchedulesViewModel.UseCustomNaming}" Spacing="8">
-                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                                <StackPanel Grid.Column="0" Spacing="4">
-                                                    <TextBlock Text="Folder Template" FontSize="12"/>
-                                                    <TextBox Text="{Binding SchedulesViewModel.CustomFolderTemplate, Mode=TwoWay}"
-                                                             Watermark="Leave blank for global"
-                                                             CornerRadius="4" FontSize="12"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Spacing="4">
-                                                    <TextBlock Text="Filename Template" FontSize="12"/>
-                                                    <TextBox Text="{Binding SchedulesViewModel.CustomFilenameTemplate, Mode=TwoWay}"
-                                                             Watermark="Leave blank for global"
-                                                             CornerRadius="4" FontSize="12"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            <CheckBox Content="Separate R-18 into subfolder"
-                                                      IsChecked="{Binding SchedulesViewModel.CustomSeparateR18, Mode=TwoWay}"
-                                                      FontSize="12"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Expander>
-
-                                <Button Content="+ Add Schedule"
-                                        Command="{Binding SchedulesViewModel.AddScheduleCommand}"
-                                        Classes="accent"
-                                        HorizontalAlignment="Right"
-                                        CornerRadius="6" Padding="16,8" FontSize="13" FontWeight="SemiBold"/>
+                        <!-- Content area -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="0">
+                                <!-- Schedule LIST (visible when not editing) -->
+                                <StackPanel Spacing="0" Margin="16,12"
+                                            IsVisible="{Binding !SchedulesViewModel.IsEditing}">
+                                <ItemsControl ItemsSource="{Binding SchedulesViewModel.Schedules}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:ScheduleRowViewModel">
+                                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6"
+                                                    Padding="12,10" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                    <!-- Enable toggle -->
+                                                    <CheckBox Grid.Column="0"
+                                                              IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                              VerticalAlignment="Center" Margin="0,0,12,0"
+                                                              Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.ToggleEnabledCommand}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <!-- Info -->
+                                                    <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
+                                                            <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                                    CornerRadius="3" Padding="5,1">
+                                                                <TextBlock Text="{Binding TypeLabel}" FontSize="10"
+                                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                            </Border>
+                                                            <Border Background="#1A7F37" CornerRadius="3" Padding="5,1"
+                                                                    IsVisible="{Binding IsRunning}">
+                                                                <TextBlock Text="● Running" FontSize="10" Foreground="#3FB950"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                                            <TextBlock Text="{Binding TriggerLabel}" FontSize="11"
+                                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                            <TextBlock Text="{Binding ArtistsSummary}" FontSize="11"
+                                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                                       IsVisible="{Binding HasArtists}"
+                                                                       TextTrimming="CharacterEllipsis" MaxWidth="200"/>
+                                                        </StackPanel>
+                                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                                            <TextBlock Text="{Binding LastRun, StringFormat='Last: {0}'}" FontSize="10"
+                                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                                            <TextBlock Text="{Binding NextRun, StringFormat='Next: {0}'}" FontSize="10"
+                                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding LastError, StringFormat='⚠ {0}'}" FontSize="10"
+                                                                   Foreground="OrangeRed" IsVisible="{Binding HasError}"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <!-- Edit -->
+                                                    <Button Grid.Column="2" Content="✏ Edit"
+                                                            FontSize="11" CornerRadius="4" Padding="8,4" Margin="6,0,0,0"
+                                                            ToolTip.Tip="Edit this schedule"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.BeginEditCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <!-- Run Now -->
+                                                    <Button Grid.Column="3" Content="▶ Run"
+                                                            FontSize="11" CornerRadius="4" Padding="8,4" Margin="4,0,0,0"
+                                                            ToolTip.Tip="Run this schedule immediately"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.RunNowCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <!-- Delete -->
+                                                    <Button Grid.Column="4" Content="🗑"
+                                                            FontSize="11" CornerRadius="4" Padding="6,4" Margin="4,0,0,0"
+                                                            ToolTip.Tip="Delete this schedule"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.DeleteScheduleCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="No schedules yet. Click '+ New Schedule' to create one."
+                                           FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           IsVisible="{Binding !SchedulesViewModel.Schedules.Count}"
+                                           Margin="0,8"/>
                             </StackPanel>
-                        </Border>
 
-                    </StackPanel>
-                </ScrollViewer>
+                            <!-- Schedule EDITOR (visible when editing) -->
+                            <StackPanel Spacing="16" Margin="20"
+                                        IsVisible="{Binding SchedulesViewModel.IsEditing}">
+
+                                    <!-- Schedule name -->
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Schedule Name" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding SchedulesViewModel.NewScheduleName, Mode=TwoWay}"
+                                                 Watermark="e.g. My Fav Artists Daily (auto-generated if blank)"
+                                                 CornerRadius="6" FontSize="12"/>
+                                    </StackPanel>
+
+                                    <!-- Artists in this schedule -->
+                                    <StackPanel Spacing="8">
+                                        <DockPanel LastChildFill="False">
+                                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock Text="Artists" FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding SchedulesViewModel.StagedArtists.Count, StringFormat='{}{0} added'}"
+                                                           FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <Button DockPanel.Dock="Right" Content="✕ Clear all"
+                                                    Command="{Binding SchedulesViewModel.ClearStagedArtistsCommand}"
+                                                    IsVisible="{Binding SchedulesViewModel.HasStagedArtists}"
+                                                    CornerRadius="4" Padding="8,3" FontSize="11"/>
+                                        </DockPanel>
+                                        <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                                BorderThickness="1" CornerRadius="6" MinHeight="40" Padding="6">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="120">
+                                                <ItemsControl ItemsSource="{Binding SchedulesViewModel.StagedArtists}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="vm:StagedArtist">
+                                                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                                    BorderThickness="1" CornerRadius="5"
+                                                                    Padding="8,3" Margin="0,0,5,5">
+                                                                <DockPanel LastChildFill="False">
+                                                                    <Button DockPanel.Dock="Right" Content="✕"
+                                                                            FontSize="9" CornerRadius="2" Padding="3,0" Margin="5,0,0,0"
+                                                                            Command="{Binding $parent[ItemsControl].DataContext.SchedulesViewModel.RemoveArtistFromStagingCommand}"
+                                                                            CommandParameter="{Binding}"/>
+                                                                    <TextBlock Text="{Binding DisplayLabel}" FontSize="11" VerticalAlignment="Center"/>
+                                                                </DockPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Border>
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding SchedulesViewModel.NewArtistId, Mode=TwoWay}"
+                                                     Watermark="Artist ID or pixiv.net/en/users/123…"
+                                                     CornerRadius="6" FontSize="12"/>
+                                            <TextBox Grid.Column="1" Width="80"
+                                                     Text="{Binding SchedulesViewModel.PageRange, Mode=TwoWay}"
+                                                     Watermark="Pages"
+                                                     ToolTip.Tip="Page range for this artist, e.g. 0 = all, 1-5 = range"
+                                                     CornerRadius="6" FontSize="12"/>
+                                            <Button Grid.Column="2" Content="+ Add"
+                                                    Command="{Binding SchedulesViewModel.AddArtistToStagingCommand}"
+                                                    IsEnabled="{Binding !SchedulesViewModel.IsResolvingArtist}"
+                                                    CornerRadius="6" Padding="10,6" FontSize="12"
+                                                    ToolTip.Tip="Resolve artist name and add to list"/>
+                                        </Grid>
+                                        <TextBlock Text="{Binding SchedulesViewModel.ResolveError}"
+                                                   FontSize="11" Foreground="OrangeRed"
+                                                   IsVisible="{Binding SchedulesViewModel.ResolveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    </StackPanel>
+
+                                    <!-- When to Run -->
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="When to Run" FontSize="12" FontWeight="SemiBold"/>
+                                        <StackPanel Spacing="6">
+                                            <RadioButton Content="Daily / recurring" GroupName="TriggerType"
+                                                         IsChecked="{Binding SchedulesViewModel.IsTriggerDaily, Mode=TwoWay}" FontSize="12"/>
+                                            <RadioButton Content="Run on app startup" GroupName="TriggerType"
+                                                         IsChecked="{Binding SchedulesViewModel.IsTriggerStartup, Mode=TwoWay}" FontSize="12"/>
+                                            <RadioButton Content="Run once at a specific date &amp; time" GroupName="TriggerType"
+                                                         IsChecked="{Binding SchedulesViewModel.IsTriggerOnce, Mode=TwoWay}" FontSize="12"/>
+                                        </StackPanel>
+                                        <Border IsVisible="{Binding SchedulesViewModel.IsTriggerDaily}"
+                                                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                                BorderThickness="1" CornerRadius="6" Padding="12,10">
+                                            <StackPanel Spacing="8">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                    <TextBlock Text="Time:" FontSize="12" VerticalAlignment="Center"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.Hour12Options}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerHour12, Mode=TwoWay}"
+                                                              FontSize="12" Width="65" ToolTip.Tip="Hour (1–12)"/>
+                                                    <TextBlock Text=":" FontSize="14" VerticalAlignment="Center"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.MinuteOptions}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerMinute, Mode=TwoWay}"
+                                                              FontSize="12" Width="65" ToolTip.Tip="Minute"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.AmPmOptions}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerAmPm, Mode=TwoWay}"
+                                                              FontSize="12" Width="65"/>
+                                                    <TextBlock Text="Checks/day:" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <ComboBox Width="55" SelectedItem="{Binding SchedulesViewModel.ChecksPerDay, Mode=TwoWay}"
+                                                              FontSize="12" ToolTip.Tip="1 = once daily, 2 = twice (every 12 h), 3 = three times (every 8 h)">
+                                                        <ComboBoxItem Content="1"/>
+                                                        <ComboBoxItem Content="2"/>
+                                                        <ComboBoxItem Content="3"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <TextBlock FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                                           Text="2× = every 12 h  ·  3× = every 8 h, spread from the selected time"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border IsVisible="{Binding SchedulesViewModel.IsTriggerOnce}"
+                                                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                                BorderThickness="1" CornerRadius="6" Padding="12,10">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Run once on:" FontSize="12"/>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <CalendarDatePicker SelectedDate="{Binding SchedulesViewModel.OnceDateTime, Mode=TwoWay}"
+                                                                        FontSize="12" Width="160" ToolTip.Tip="Pick the date"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.Hour12Options}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerHour12, Mode=TwoWay}"
+                                                              FontSize="12" Width="65" ToolTip.Tip="Hour"/>
+                                                    <TextBlock Text=":" FontSize="14" VerticalAlignment="Center"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.MinuteOptions}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerMinute, Mode=TwoWay}"
+                                                              FontSize="12" Width="65" ToolTip.Tip="Minute"/>
+                                                    <ComboBox ItemsSource="{Binding SchedulesViewModel.AmPmOptions}"
+                                                              SelectedItem="{Binding SchedulesViewModel.TriggerAmPm, Mode=TwoWay}"
+                                                              FontSize="12" Width="65"/>
+                                                </StackPanel>
+                                                <TextBlock FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                                           Text="The schedule will run exactly once and then be marked expired."/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Content Filters -->
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Content Filters" FontSize="12" FontWeight="SemiBold"/>
+                                        <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                                BorderThickness="1" CornerRadius="6" Padding="12,10">
+                                            <StackPanel Spacing="10">
+                                                <TextBlock Text="Skip content types:" FontSize="11"
+                                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                <WrapPanel>
+                                                    <CheckBox Content="AI-generated" Margin="0,0,16,4"
+                                                              IsChecked="{Binding SchedulesViewModel.FilterSkipAi, Mode=TwoWay}" FontSize="12"/>
+                                                    <CheckBox Content="Manga" Margin="0,0,16,4"
+                                                              IsChecked="{Binding SchedulesViewModel.FilterSkipManga, Mode=TwoWay}" FontSize="12"/>
+                                                    <CheckBox Content="Ugoira" Margin="0,0,16,4"
+                                                              IsChecked="{Binding SchedulesViewModel.FilterSkipUgoira, Mode=TwoWay}" FontSize="12"/>
+                                                    <CheckBox Content="R-18" Margin="0,0,16,4"
+                                                              IsChecked="{Binding SchedulesViewModel.FilterSkipR18, Mode=TwoWay}" FontSize="12"/>
+                                                    <CheckBox Content="R-18G only" Margin="0,0,0,4"
+                                                              IsChecked="{Binding SchedulesViewModel.FilterSkipR18G, Mode=TwoWay}" FontSize="12"
+                                                              ToolTip.Tip="Skip grotesque/violent R-18G but still download regular R-18"/>
+                                                </WrapPanel>
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="Only download artworks posted:" FontSize="11"
+                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                    <ComboBox SelectedIndex="{Binding SchedulesViewModel.FilterDateLimitMode, Mode=TwoWay}"
+                                                              CornerRadius="4" FontSize="12" HorizontalAlignment="Left" MinWidth="180">
+                                                        <ComboBoxItem Content="All time"/>
+                                                        <ComboBoxItem Content="Since last run"/>
+                                                        <ComboBoxItem Content="Within the last 24 hours"/>
+                                                        <ComboBoxItem Content="Within the last 7 days"/>
+                                                        <ComboBoxItem Content="Within the last 30 days"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="Max artworks per artist:" FontSize="11"
+                                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                                    <TextBox Text="{Binding SchedulesViewModel.FilterMaxArtworks, Mode=TwoWay}"
+                                                             Watermark="e.g. 10  (leave blank for all)"
+                                                             CornerRadius="4" FontSize="12" HorizontalAlignment="Left" MinWidth="180"
+                                                             ToolTip.Tip="Only fetch the N most-recent artworks per artist. Leave blank or 0 for no limit."/>
+                                                </StackPanel>
+                                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <TextBlock Text="Must include tag(s)" FontSize="11"/>
+                                                        <TextBox Text="{Binding SchedulesViewModel.FilterIncludeTags, Mode=TwoWay}"
+                                                                 Watermark="e.g. original, fantasy" CornerRadius="4" FontSize="12"
+                                                                 ToolTip.Tip="Comma-separated. Artwork must match at least one."/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="4">
+                                                        <TextBlock Text="Exclude tag(s)" FontSize="11"/>
+                                                        <TextBox Text="{Binding SchedulesViewModel.FilterExcludeTags, Mode=TwoWay}"
+                                                                 Watermark="e.g. guro, furry" CornerRadius="4" FontSize="12"
+                                                                 ToolTip.Tip="Comma-separated. Artwork is skipped if it has any of these."/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Naming Overrides -->
+                                    <Expander Header="📁 Naming Overrides (optional)" FontSize="12">
+                                        <StackPanel Spacing="10" Margin="0,8,0,0">
+                                            <CheckBox Content="Override global folder / filename templates for this schedule"
+                                                      IsChecked="{Binding SchedulesViewModel.UseCustomNaming, Mode=TwoWay}" FontSize="12"/>
+                                            <StackPanel IsVisible="{Binding SchedulesViewModel.UseCustomNaming}" Spacing="8">
+                                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <TextBlock Text="Folder Template" FontSize="12"/>
+                                                        <TextBox Text="{Binding SchedulesViewModel.CustomFolderTemplate, Mode=TwoWay}"
+                                                                 Watermark="Leave blank for global" CornerRadius="4" FontSize="12"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="4">
+                                                        <TextBlock Text="Filename Template" FontSize="12"/>
+                                                        <TextBox Text="{Binding SchedulesViewModel.CustomFilenameTemplate, Mode=TwoWay}"
+                                                                 Watermark="Leave blank for global" CornerRadius="4" FontSize="12"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <CheckBox Content="Separate R-18 into subfolder"
+                                                          IsChecked="{Binding SchedulesViewModel.CustomSeparateR18, Mode=TwoWay}" FontSize="12"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Save / Cancel -->
+                                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                        <Button Content="← Back to Schedules"
+                                                Command="{Binding SchedulesViewModel.CancelEditCommand}"
+                                                CornerRadius="6" Padding="12,8" FontSize="13"/>
+                                        <Button Content="{Binding SchedulesViewModel.AddButtonLabel}"
+                                                Command="{Binding SchedulesViewModel.AddScheduleCommand}"
+                                                Classes="accent"
+                                                CornerRadius="6" Padding="16,8" FontSize="13" FontWeight="SemiBold"/>
+                                    </StackPanel>
+
+                                </StackPanel>
+                            </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
             </TabItem>
 
         </TabControl>

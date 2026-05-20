@@ -19,6 +19,7 @@ public sealed class AccountService
 
     private readonly string _path;
     private readonly SettingsService _settings;
+    private readonly Pixora.Core.Services.LocalFavoritesService? _favoritesService;
     private readonly Lock _gate = new();
 
     private List<AccountProfile> _profiles = new();
@@ -29,12 +30,17 @@ public sealed class AccountService
     public event EventHandler? ProfilesChanged;
     public event EventHandler? ActiveProfileChanged;
 
-    public AccountService(SettingsService settings, string? overridePath = null)
+    public AccountService(SettingsService settings, Pixora.Core.Services.LocalFavoritesService? favoritesService = null, string? overridePath = null)
     {
         _settings = settings;
+        _favoritesService = favoritesService;
         _path = overridePath ?? DefaultPath();
         Load();
         SyncFromSettings();
+        // Ensure LocalFavoritesService points to the active profile's file on startup,
+        // even when the profile already existed in accounts.json (SyncFromSettings returns early).
+        if (ActiveProfile != null)
+            _favoritesService?.SwitchUser(ActiveProfile.UserId);
     }
 
     public static string DefaultPath() =>
@@ -103,6 +109,7 @@ public sealed class AccountService
             s.UserName     = profile.UserName;
         });
 
+        _favoritesService?.SwitchUser(profile.UserId);
         ActiveProfileChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -194,6 +201,10 @@ public sealed class AccountService
                     p.RefreshToken = CredentialStore.Unprotect(p.RefreshToken);
                 }
                 _profiles = loaded;
+                // Restore the active profile to the most recently used one
+                ActiveProfile = _profiles
+                    .OrderByDescending(p => p.LastUsedAt ?? DateTime.MinValue)
+                    .FirstOrDefault();
             }
             catch { _profiles = new(); }
         }
@@ -241,5 +252,6 @@ public sealed class AccountService
             ActiveProfile = profile;
             Save();
         }
+        _favoritesService?.SwitchUser(profile.UserId);
     }
 }

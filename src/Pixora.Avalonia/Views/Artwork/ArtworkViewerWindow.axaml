@@ -4,7 +4,7 @@
         xmlns:vm="using:Pixora.Avalonia.ViewModels"
         x:Class="Pixora.Avalonia.Views.Artwork.ArtworkViewerWindow"
         x:DataType="vm:ArtworkViewerViewModel"
-        Title="{Binding Title}"
+        Title="{Binding Title, StringFormat='Pixora — {0}'}"
         Width="1000" Height="750"
         MinWidth="500" MinHeight="400"
         WindowStartupLocation="CenterOwner"

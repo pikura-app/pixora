@@ -91,30 +91,45 @@ public partial class BookmarksViewModel : ViewModelBase
     public bool ShowFixedGrid => IsFixedHeight && IsGridView;
     public bool ShowNaturalGrid => IsNaturalHeight && IsGridView;
 
-    // ── Selection mode (Local Favorites) ──────────────────────────────────
+    // ── Selection mode (all tabs) ──────────────────────────────────────────
     [ObservableProperty] private bool _isSelectionMode;
-    public int SelectedFavoritesCount => FilteredFavorites.Count(c => c.IsSelected);
-    public bool HasSelection => SelectedFavoritesCount > 0;
 
-    public void NotifyFavoritesSelectionChanged()
+    // Unified selection helpers — works across all three tabs
+    private ObservableCollection<ArtworkCardViewModel> ActiveCollection => SelectedTabIndex switch
     {
+        0 => FilteredPublic,
+        1 => FilteredPrivate,
+        _ => FilteredFavorites
+    };
+
+    public int SelectedCount => ActiveCollection.Count(c => c.IsSelected);
+    public bool HasSelection => SelectedCount > 0;
+
+    // Legacy alias kept for Favorites-specific XAML bindings
+    public int SelectedFavoritesCount => FilteredFavorites.Count(c => c.IsSelected);
+
+    public void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedCount));
         OnPropertyChanged(nameof(SelectedFavoritesCount));
         OnPropertyChanged(nameof(HasSelection));
     }
 
+    public void NotifyFavoritesSelectionChanged() => NotifySelectionChanged();
+
     [RelayCommand]
     public void SelectAllFavorites()
     {
-        foreach (var c in FilteredFavorites) c.IsSelected = true;
-        NotifyFavoritesSelectionChanged();
+        foreach (var c in ActiveCollection) c.IsSelected = true;
+        NotifySelectionChanged();
     }
 
     [RelayCommand]
     public void ClearFavoritesSelection()
     {
-        foreach (var c in FilteredFavorites) c.IsSelected = false;
+        foreach (var c in ActiveCollection) c.IsSelected = false;
         IsSelectionMode = false;
-        NotifyFavoritesSelectionChanged();
+        NotifySelectionChanged();
     }
 
     [RelayCommand]
@@ -122,7 +137,7 @@ public partial class BookmarksViewModel : ViewModelBase
     {
         var selected = FilteredFavorites.Where(c => c.IsSelected).ToList();
         foreach (var c in selected) _favoritesService.Remove(c.Id);
-        NotifyFavoritesSelectionChanged();
+        NotifySelectionChanged();
     }
 
     public void SetFolderForSelected(string? folder)
@@ -162,13 +177,25 @@ public partial class BookmarksViewModel : ViewModelBase
         _isNaturalHeight = s.BookmarksCardHeightMode == "Natural";
         _isGridView      = s.BookmarksViewMode != "List";
         _isListView      = s.BookmarksViewMode == "List";
-        _cardSize        = s.BookmarksCardSize;
+        _cardSize        = s.CardSize;
         _showTags        = s.BookmarksShowTags;
         _showInfo        = s.BookmarksShowInfo;
         _showR18         = s.BookmarksShowR18;
         _browsePanelWidth = s.BrowsePanelWidth >= 200 ? s.BrowsePanelWidth : 480;
 
-        _favoritesService.Changed += (_, _) => ReloadLocalFavorites();
+        _favoritesService.Changed += (_, _) =>
+        {
+            if (global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                ReloadLocalFavorites();
+            else
+                global::Avalonia.Threading.Dispatcher.UIThread.Post(ReloadLocalFavorites);
+        };
+
+        _settingsService.Changed += (_, _) =>
+        {
+            var shared = _settingsService.Current.CardSize;
+            if (CardSize != shared) CardSize = shared;
+        };
 
         void NotifyViewerState()
         {
@@ -333,7 +360,7 @@ public partial class BookmarksViewModel : ViewModelBase
                 IsLocalFavorite = _favoritesService.IsFavorite(work.Id),
             };
             collection.Add(vm);
-            _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+            _ = vm.LoadThumbnailAsync(_imageLoader, ct: ct);
         }
 
         StatusMessage = CanLoadMore
@@ -343,6 +370,7 @@ public partial class BookmarksViewModel : ViewModelBase
     }
 
     // ── Local favorites ────────────────────────────────────────────────────
+    public void ReloadLocalFavoritesPublic() => ReloadLocalFavorites();
     private void ReloadLocalFavorites()
     {
         LocalFavorites.Clear();
@@ -456,7 +484,8 @@ public partial class BookmarksViewModel : ViewModelBase
     partial void OnCardSizeChanged(int v)
     {
         OnPropertyChanged(nameof(FixedCardTotalHeight));
-        _settingsService.Update(s => s.BookmarksCardSize = v);
+        if (_settingsService.Current.CardSize != v)
+            _settingsService.Update(s => s.CardSize = v);
     }
     partial void OnIsFixedHeightChanged(bool v)
     {
@@ -503,88 +532,39 @@ public partial class BookmarksViewModel : ViewModelBase
     [RelayCommand]
     private async Task DownloadSelectedAsync()
     {
-        var selected = FilteredFavorites.Where(c => c.IsSelected).ToList();
+        var selected = ActiveCollection.Where(c => c.IsSelected).ToList();
         if (selected.Count == 0)
         {
-            await _dialogService.ShowMessageAsync("No Selection", "Please select bookmarks to download.");
+            await _dialogService.ShowMessageAsync("No Selection", "Select one or more bookmarks first.");
             return;
         }
 
+        var tabName = SelectedTabIndex switch { 0 => "public", 1 => "private", _ => "favorites" };
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Download Selected",
-            $"Download {selected.Count} selected bookmarks?");
-        
+            $"Download {selected.Count} selected {tabName} bookmarks?");
         if (!confirmed) return;
 
-        try
-        {
-            // TODO: Implement actual download logic using DownloadCoordinator
-            await _dialogService.ShowMessageAsync("Coming Soon", "Download feature is being implemented.");
-        }
-        catch (Exception ex)
-        {
-            await _dialogService.ShowMessageAsync("Error", $"Failed to start download: {ex.Message}");
-        }
+        await QueueArtworksAsync(selected, $"Selected {selected.Count} {tabName} bookmarks");
     }
 
     [RelayCommand]
     private async Task DownloadAllAsync()
     {
-        var currentList = SelectedTabIndex switch
+        var list = ActiveCollection;
+        if (list.Count == 0)
         {
-            0 => FilteredPublic,
-            1 => FilteredPrivate,
-            2 => FilteredFavorites,
-            _ => null
-        };
-
-        if (currentList == null || currentList.Count == 0)
-        {
-            await _dialogService.ShowMessageAsync("No Items", "No bookmarks to download in current tab.");
+            await _dialogService.ShowMessageAsync("No Items", "No bookmarks to download in the current tab.");
             return;
         }
 
-        // For local favorites, show folder selection dialog
-        if (SelectedTabIndex == 2)
-        {
-            var useCustomSettings = await _dialogService.ShowConfirmationAsync(
-                "Download Settings",
-                "Use custom download settings? (No = use global settings)");
-            
-            // For now, just download all
-            var downloadConfirmed = await _dialogService.ShowConfirmationAsync(
-                "Download All Favorites",
-                $"Download all {currentList.Count} local favorites?");
-            
-            if (!downloadConfirmed) return;
-
-            try
-            {
-                // TODO: Implement actual download logic using DownloadCoordinator
-                await _dialogService.ShowMessageAsync("Coming Soon", "Download feature is being implemented.");
-            }
-            catch (Exception ex)
-            {
-                await _dialogService.ShowMessageAsync("Error", $"Failed to start download: {ex.Message}");
-            }
-            return;
-        }
-
+        var tabName = SelectedTabIndex switch { 0 => "public", 1 => "private", _ => "favorites" };
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Download All",
-            $"Download all {currentList.Count} bookmarks in current tab?");
-        
+            $"Download all {list.Count} {tabName} bookmarks?");
         if (!confirmed) return;
 
-        try
-        {
-            // TODO: Implement actual download logic using DownloadCoordinator
-            await _dialogService.ShowMessageAsync("Coming Soon", "Download feature is being implemented.");
-        }
-        catch (Exception ex)
-        {
-            await _dialogService.ShowMessageAsync("Error", $"Failed to start download: {ex.Message}");
-        }
+        await QueueArtworksAsync(list.ToList(), $"All {tabName} bookmarks ({list.Count})");
     }
 
     [RelayCommand]
@@ -592,83 +572,66 @@ public partial class BookmarksViewModel : ViewModelBase
     {
         if (SelectedTabIndex != 2)
         {
-            await _dialogService.ShowMessageAsync("Not Available", "Folder download is only available for Local Favorites tab.");
+            await _dialogService.ShowMessageAsync("Not Available", "Folder download is only available on the Local Favorites tab.");
             return;
         }
-
         if (AvailableFolders.Count == 0)
         {
             await _dialogService.ShowMessageAsync("No Folders", "No custom folders found in local favorites.");
             return;
         }
 
-        // Ask if user wants to select multiple folders
-        var selectMultiple = await _dialogService.ShowConfirmationAsync(
-            "Folder Selection",
-            "Select multiple folders? (No = select single folder)");
-
-        List<string> selectedFolders = new List<string>();
-
-        if (selectMultiple)
+        var folder = string.IsNullOrWhiteSpace(FolderFilter) ? null : FolderFilter;
+        if (folder == null)
         {
-            // For multi-select, show a dialog with checkboxes (simplified for now - just ask for comma-separated)
-            var folderInput = await _dialogService.ShowInputDialogAsync(
-                "Select Folders",
-                "Enter folder names (comma-separated):",
-                string.Join(", ", AvailableFolders.Take(5)));
-            
-            if (string.IsNullOrWhiteSpace(folderInput)) return;
-
-            selectedFolders = folderInput.Split(',')
-                .Select(f => f.Trim())
-                .Where(f => !string.IsNullOrWhiteSpace(f) && AvailableFolders.Contains(f))
-                .ToList();
-        }
-        else
-        {
-            // Single folder selection
-            var folder = await _dialogService.ShowInputDialogAsync(
-                "Download to Folder",
-                "Enter folder name:",
-                FolderFilter);
-            
-            if (string.IsNullOrWhiteSpace(folder)) return;
-            selectedFolders.Add(folder);
-        }
-
-        if (selectedFolders.Count == 0)
-        {
-            await _dialogService.ShowMessageAsync("No Selection", "No valid folders selected.");
+            await _dialogService.ShowMessageAsync("No Folder Selected", "Use the folder sidebar to select a folder first.");
             return;
         }
 
-        // Ask about settings
-        var useCustomSettings = await _dialogService.ShowConfirmationAsync(
-            "Download Settings",
-            "Use custom download settings? (No = use global settings)");
+        var items = FilteredFavorites
+            .Where(c => string.Equals(_favoritesService.GetFolder(c.Id), folder, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        var favoritesInFolders = FilteredFavorites.Where(c => 
-            selectedFolders.Contains(GetFolderForCard(c.Id), StringComparer.OrdinalIgnoreCase)).ToList();
-
-        if (favoritesInFolders.Count == 0)
+        if (items.Count == 0)
         {
-            await _dialogService.ShowMessageAsync("No Items", "No bookmarks found in selected folders.");
+            await _dialogService.ShowMessageAsync("No Items", $"No favorites found in folder '{folder}'.");
             return;
         }
 
         var confirmed = await _dialogService.ShowConfirmationAsync(
-            "Download Folders",
-            $"Download {favoritesInFolders.Count} bookmarks from {selectedFolders.Count} folder(s)?");
-        
+            "Download Folder",
+            $"Download {items.Count} favorites from folder '{folder}'?");
         if (!confirmed) return;
 
+        await QueueArtworksAsync(items, $"Favorites — {folder}");
+    }
+
+    private async Task QueueArtworksAsync(List<ArtworkCardViewModel> cards, string jobName)
+    {
         try
         {
-            // TODO: Implement actual download logic using DownloadCoordinator
-            await _dialogService.ShowMessageAsync("Coming Soon", "Download feature is being implemented.");
+            var targets = cards.Select(c => new DownloadTarget
+            {
+                TargetId     = c.Id,
+                Name         = c.Title,
+                ThumbnailUrl = c.ThumbnailUrl,
+                UserName     = c.UserName,
+                UserId       = c.UserId,
+                Type         = TargetType.Artwork,
+            }).ToList();
+
+            await _downloadCoordinator.CreateJobAsync(
+                DownloadJobType.BookmarkImage,
+                jobName,
+                targets,
+                settingsOverride: null,
+                startImmediately: true);
+
+            StatusMessage = $"Queued {cards.Count} artworks — check History for progress.";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to queue bookmark download");
             await _dialogService.ShowMessageAsync("Error", $"Failed to start download: {ex.Message}");
         }
     }

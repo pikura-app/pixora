@@ -3,10 +3,12 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pixora.Avalonia.Services;
 using Pixora.Core.Models;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -53,6 +55,11 @@ public partial class DiscoverViewModel : ViewModelBase
     [ObservableProperty] private int _recommendedOffset;
 
     public bool HasRecommendedWorks => RecommendedWorks.Count > 0;
+
+    // Selection tracking for multi-select download
+    [ObservableProperty] private int _selectedCount;
+    public bool HasSelection => SelectedCount > 0;
+    partial void OnSelectedCountChanged(int value) => OnPropertyChanged(nameof(HasSelection));
 
     // Filtered view (tag filter applied)
     public ObservableCollection<ArtworkCardViewModel> FilteredWorks { get; } = [];
@@ -137,10 +144,51 @@ public partial class DiscoverViewModel : ViewModelBase
     [RelayCommand] public void SetGridView()  { IsGridView = true;  IsListView = false; }
     [RelayCommand] public void SetListView()  { IsGridView = false; IsListView = true; }
 
+    // ── Selection & Download ───────────────────────────────────────────────
+
+    public void NotifySelectionChanged()
+        => SelectedCount = RecommendedWorks.Count(c => c.IsSelected) + ArtistWorks.Count(c => c.IsSelected);
+
+    [RelayCommand]
+    public void SelectAll()
+    {
+        var works = IsWorksTab ? RecommendedWorks : ArtistWorks;
+        foreach (var c in works) c.IsSelected = true;
+        NotifySelectionChanged();
+    }
+
+    [RelayCommand]
+    public void ClearSelection()
+    {
+        var works = IsWorksTab ? RecommendedWorks : ArtistWorks;
+        foreach (var c in works) c.IsSelected = false;
+        SelectedCount = 0;
+    }
+
+    [RelayCommand]
+    public Task DownloadSelectedAsync()
+    {
+        var works = IsWorksTab ? RecommendedWorks : ArtistWorks;
+        var previews = works.Where(c => c.IsSelected).Select(c => c.Artwork).ToList();
+        if (previews.Count == 0) return Task.CompletedTask;
+        return GalleryVm.DownloadPreviewsAsync(previews);
+    }
+
+    [RelayCommand]
+    public Task DownloadVisibleAsync()
+    {
+        var previews = IsWorksTab
+            ? FilteredWorks.Select(c => c.Artwork).ToList()
+            : FilteredArtistWorks.Select(c => c.Artwork).ToList();
+        if (previews.Count == 0) return Task.CompletedTask;
+        return GalleryVm.DownloadPreviewsAsync(previews);
+    }
+
     partial void OnCardSizeChanged(int value)
     {
         OnPropertyChanged(nameof(FixedCardTotalHeight));
-        _settingsService?.Update(s => s.DiscoverCardSize = value);
+        if (_settingsService != null && _settingsService.Current.CardSize != value)
+            _settingsService.Update(s => s.CardSize = value);
     }
     partial void OnIsFixedHeightChanged(bool value) => _settingsService?.Update(s => s.DiscoverCardHeightMode = value ? "Fixed" : "Natural");
     partial void OnIsGridViewChanged(bool value)    => _settingsService?.Update(s => s.DiscoverViewMode = value ? "Grid" : "List");
@@ -180,7 +228,12 @@ public partial class DiscoverViewModel : ViewModelBase
         _isNaturalHeight  = s.DiscoverCardHeightMode == "Natural";
         _isGridView       = s.DiscoverViewMode != "List";
         _isListView       = s.DiscoverViewMode == "List";
-        _cardSize         = s.DiscoverCardSize;
+        _cardSize         = s.CardSize;
+        _settingsService.Changed += (_, _) =>
+        {
+            var shared = _settingsService.Current.CardSize;
+            if (CardSize != shared) CardSize = shared;
+        };
         _showTags         = s.DiscoverShowTags;
         _showInfo         = s.DiscoverShowInfo;
         _showPreview      = s.DiscoverShowPreview;
@@ -274,12 +327,13 @@ public partial class DiscoverViewModel : ViewModelBase
                     IsBlurred = _settingsService.Current.BlurR18Content && artwork.IsR18
                 };
                 RecommendedWorks.Add(vm);
-                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct: ct);
             }
 
             RecommendedOffset += response.Thumbnails.Illust.Count;
-            // Pixiv discovery returns exactly 48 per call — assume more are available
-            CanLoadMoreRecommended = response.Thumbnails.Illust.Count >= 48;
+            // Endpoint returns fresh randomized recommendations per call regardless of
+            // batch size, so always allow load-more.
+            CanLoadMoreRecommended = true;
             StatusMessage = $"{RecommendedWorks.Count} recommended works";
             _lastLoaded = DateTime.UtcNow;
             OnPropertyChanged(nameof(HasRecommendedWorks));
@@ -310,23 +364,44 @@ public partial class DiscoverViewModel : ViewModelBase
         try
         {
             var response = await _pixivClient.GetDiscoveryArtworksAsync(RecommendedOffset, 48, ct);
-            if (response?.Thumbnails?.Illust == null) return;
+            if (response?.Thumbnails?.Illust == null || response.Thumbnails.Illust.Count == 0)
+            {
+                // Pixiv exhausted this round of recommendations; allow user to retry later
+                // but do not permanently disable load-more — the endpoint produces fresh
+                // recommendations on subsequent visits.
+                StatusMessage = "No more new works right now — try refreshing.";
+                return;
+            }
 
+            // Pixiv's /ajax/discovery/artworks returns fresh randomized recommendations
+            // on each call (the offset parameter is ignored server-side). Track seen IDs
+            // so we only append genuinely new items and keep load-more available.
+            var existingIds = new HashSet<string>(
+                RecommendedWorks.Select(w => w.Artwork.Id),
+                StringComparer.OrdinalIgnoreCase);
+
+            int added = 0;
             foreach (var illust in response.Thumbnails.Illust)
             {
                 if (ct.IsCancellationRequested) break;
                 var artwork = illust.ToArtworkPreview();
+                if (!existingIds.Add(artwork.Id)) continue; // duplicate
                 var vm = new ArtworkCardViewModel(artwork)
                 {
                     IsBlurred = _settingsService.Current.BlurR18Content && artwork.IsR18
                 };
                 RecommendedWorks.Add(vm);
-                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct: ct);
+                added++;
             }
 
             RecommendedOffset += response.Thumbnails.Illust.Count;
-            CanLoadMoreRecommended = response.Thumbnails.Illust.Count >= 48;
-            StatusMessage = $"{RecommendedWorks.Count} recommended works";
+            // Keep allowing load-more as long as the API responds with anything — Pixiv
+            // returns more recommendations over time even after returning < 48 items.
+            CanLoadMoreRecommended = true;
+            StatusMessage = added > 0
+                ? $"{RecommendedWorks.Count} recommended works"
+                : "No new recommendations this round — try again.";
             OnPropertyChanged(nameof(HasRecommendedWorks));
             UpdateFilteredWorks();
         }
@@ -427,7 +502,7 @@ public partial class DiscoverViewModel : ViewModelBase
                     IsBlurred = _settingsService.Current.BlurR18Content && preview.IsR18
                 };
                 ArtistWorks.Add(vm);
-                _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+                _ = vm.LoadThumbnailAsync(_imageLoader, ct: ct);
             }
 
             UpdateFilteredWorks();
@@ -435,6 +510,38 @@ public partial class DiscoverViewModel : ViewModelBase
         catch (OperationCanceledException) { }
         catch (Exception ex) { Logger.LogError(ex, "Failed to load artist works for {UserId}", userId); }
         finally { IsLoadingArtistWorks = false; }
+    }
+
+    // ── Download with Preset ───────────────────────────────────────────────
+
+    [RelayCommand]
+    private async Task DownloadWithPresetAsync()
+    {
+        var artworks = ArtistWorks.Where(a => !string.IsNullOrEmpty(a.ThumbnailUrl)).ToList();
+        if (artworks.Count == 0)
+        {
+            StatusMessage = "No artworks available to download.";
+            return;
+        }
+
+        // Get first artwork for preview
+        var first = artworks.First();
+        var dialogService = Pixora.Avalonia.Services.AppServices.Get<DialogService>();
+        var preset = await dialogService.ShowDownloadPresetDialogAsync(first.Artwork);
+
+        if (preset == null)
+        {
+            StatusMessage = "Download with preset cancelled.";
+            return;
+        }
+
+        // Use GalleryVm to download artworks with preset
+        foreach (var artwork in artworks)
+        {
+            await GalleryVm.DownloadWithPresetAsync(artwork, preset);
+        }
+
+        StatusMessage = $"Queued {artworks.Count} artworks for download with preset: {preset.Name}";
     }
 
     // ── Refresh ──────────────────────────────────────────────────────────────

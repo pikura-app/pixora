@@ -8,8 +8,9 @@
         x:DataType="vm:MainWindowViewModel"
         x:Class="Pixora.Avalonia.Views.MainWindow"
         Icon="/Assets/pixora-logo.png"
-        Title=""
+        Title="Pixora"
         MinWidth="1000" MinHeight="600"
+        SystemDecorations="None"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="-1">
 
@@ -37,8 +38,37 @@
             <Setter Property="Background" Value="{actipro:ThemeResource ControlBackgroundBrushSoftAccent}"/>
             <Setter Property="Foreground" Value="{actipro:ThemeResource ControlForegroundBrushOutlineAccent}"/>
         </Style>
+        <!-- Caption button base style -->
+        <Style Selector="Button.caption">
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons,Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
+        </Style>
+        <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1AFFFFFF"/>
+        </Style>
+        <Style Selector="Button.caption:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33FFFFFF"/>
+        </Style>
+        <Style Selector="Button#CloseBtn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#C42B1C"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button#CloseBtn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#9D1B12"/>
+        </Style>
     </Window.Styles>
 
+    <Border x:Name="WindowBorder"
+            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+            BorderThickness="1"
+            PointerPressed="ResizeBorder_PointerPressed">
     <Grid x:Name="RootGrid" ColumnDefinitions="220,*">
 
             <!-- Sidebar with box shadow for depth -->
@@ -244,7 +274,7 @@
                 </Grid>
             </Border>
 
-            <!-- Title bar background — sidebar half matches sidebar, content half matches gallery top bar -->
+            <!-- Title bar background — covers full width to hide OS-rendered title text -->
             <Border Grid.Column="0" Height="32" VerticalAlignment="Top" ZIndex="9"
                     Background="{actipro:ThemeResource Container1BackgroundBrush}"
                     BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
@@ -254,12 +284,29 @@
                     Background="{actipro:ThemeResource Container1BackgroundBrush}"
                     IsHitTestVisible="False"/>
 
-            <!-- Draggable title bar strip — spans full width, transparent, ZIndex=10 -->
+            <!-- Draggable title bar strip — spans full width -->
             <Panel Grid.Column="0" Grid.ColumnSpan="2"
                    Height="32" VerticalAlignment="Top" ZIndex="10"
                    Background="Transparent"
                    IsHitTestVisible="True"
                    PointerPressed="TitleBar_PointerPressed"/>
+
+            <!-- Window caption buttons — ZIndex=20 sits above the draggable panel -->
+            <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Orientation="Horizontal" ZIndex="20" Height="32">
+                <!-- Fullscreen toggle: E1D9 = full screen arrows, E1D8 = exit fullscreen -->
+                <Button x:Name="FullscreenBtn" Classes="caption" Content="&#xE1D9;"
+                        ToolTip.Tip="Fullscreen" Click="FullscreenBtn_Click"/>
+                <!-- Minimize -->
+                <Button x:Name="MinimizeBtn" Classes="caption" Content="&#xE921;"
+                        ToolTip.Tip="Minimize" Click="MinimizeBtn_Click"/>
+                <!-- Maximize/Restore -->
+                <Button x:Name="MaximizeBtn" Classes="caption" Content="&#xE922;"
+                        ToolTip.Tip="Maximize" Click="MaximizeBtn_Click"/>
+                <!-- Close -->
+                <Button x:Name="CloseBtn" Classes="caption" Content="&#xE8BB;"
+                        ToolTip.Tip="Close" Click="CloseBtn_Click"/>
+            </StackPanel>
 
             <!-- Hamburger button — always in column 1 so it survives sidebar collapse -->
             <Button x:Name="HamburgerBtn"
@@ -273,5 +320,6 @@
                     Click="HamburgerBtn_Click"
                     ToolTip.Tip="Toggle sidebar">☰</Button>
     </Grid>
+    </Border>
 
 </Window>

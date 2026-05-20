@@ -89,21 +89,27 @@ public partial class RankingCardViewModel : ObservableObject
                   .Replace("/250x250_80_a2/", "/540x540_70/");
     }
 
-    public async Task LoadThumbnailAsync(PixivImageLoader loader, CancellationToken ct = default)
+    public async Task LoadThumbnailAsync(PixivImageLoader loader, ThumbnailSize size = ThumbnailSize.Medium, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(ThumbnailUrl)) return;
         try
         {
-            var bytes = await loader.FetchBytesAsync(ThumbnailUrl, ct);
-            if (bytes is null && ThumbnailUrl.Contains("_master1200"))
+            // Use the decoded bitmap cache with size hint
+            var skBitmap = await loader.FetchBitmapAsync(ThumbnailUrl, size, ct);
+            if (skBitmap is null || ct.IsCancellationRequested) return;
+
+            // Convert SKBitmap to Avalonia Bitmap off the UI thread
+            var bmp = await Task.Run(() =>
             {
-                var fallback = ThumbnailUrl.Replace("_master1200", "_square1200")
-                                           .Replace("/540x540_70/", "/250x250_80_a2/");
-                bytes = await loader.FetchBytesAsync(fallback, ct);
-            }
-            if (bytes is null || ct.IsCancellationRequested) return;
-            var bmp = await Task.Run(() => { using var ms = new MemoryStream(bytes); return new Bitmap(ms); }, ct);
-            if (!ct.IsCancellationRequested)
+                using var data = skBitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+                if (data is null) return null;
+                using var ms = new MemoryStream(data.ToArray());
+                return new Bitmap(ms);
+            }, ct);
+
+            skBitmap.Dispose(); // Dispose the copy we received
+
+            if (bmp is not null && !ct.IsCancellationRequested)
                 await Dispatcher.UIThread.InvokeAsync(() => Thumbnail = bmp);
         }
         catch (OperationCanceledException) { }

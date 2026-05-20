@@ -124,15 +124,25 @@
                                 Command="{Binding DownloadVisibleCommand}"
                                 IsEnabled="{Binding !IsBulkDownloading}"
                                 ToolTip.Tip="Download only the artworks currently shown in the grid"/>
-                        <Button Content="↓ Download Selected" CornerRadius="6" Padding="10,6" FontSize="11"
+                        <Button CornerRadius="6" Padding="10,6" FontSize="11"
                                 Command="{Binding DownloadSelectedCommand}"
                                 IsEnabled="{Binding !IsBulkDownloading}"
                                 IsVisible="{Binding SelectedCount}"
-                                ToolTip.Tip="Download only the checked artworks"/>
+                                ToolTip.Tip="Download only the checked artworks">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <TextBlock Text="↓" FontSize="12"/>
+                                <TextBlock Text="{Binding SelectedCount, StringFormat='Download Selected ({0})'}" />
+                            </StackPanel>
+                        </Button>
                         <Button Content="↓ Download Range…" CornerRadius="6" Padding="10,6" FontSize="11"
                                 Click="OnDownloadRangeClicked"
                                 IsEnabled="{Binding !IsBulkDownloading}"
                                 ToolTip.Tip="Choose a numbered range to download (e.g. 1-20)"/>
+                        <Button Content="🎨 Download Preset" CornerRadius="6" Padding="10,6" FontSize="11"
+                                Classes="accent"
+                                Click="OnDownloadPresetClicked"
+                                IsEnabled="{Binding !IsBulkDownloading}"
+                                ToolTip.Tip="Download with image processing preset"/>
                     </StackPanel>
 
                     <Rectangle Width="1" Height="20" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"
@@ -529,26 +539,27 @@
 
                 <!-- Custom splitter (Border with pointer events) — avoids GridSplitter's direct column manipulation -->
                 <Border Grid.Column="1" Width="4" Name="GallerySplitter"
-                        IsVisible="{Binding ShowPreview}"
                         Cursor="SizeWestEast"
                         Background="{actipro:ThemeResource Container1BorderBrush}"
+                        IsVisible="{Binding ShowPreview}"
                         PointerPressed="OnSplitterPointerPressed"
                         PointerMoved="OnSplitterPointerMoved"
                         PointerReleased="OnSplitterPointerReleased"/>
 
                 <!-- Side preview panel -->
                 <Border Grid.Column="2"
-                        IsVisible="{Binding ShowPreview}"
+                        IsVisible="{Binding ShowPreview}">
+                    <Border
                         Width="{Binding BrowsePanelWidth}"
                         MinWidth="320"
                         ClipToBounds="True"
                         Background="{actipro:ThemeResource Container1BackgroundBrush}"
                         BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                         BorderThickness="1,0,0,0">
-                    <local:InlineArtworkViewer x:Name="GallerySideViewer"
-                                               DataContext="{Binding}"
-                                               IsExpanded="{Binding IsViewerExpanded}"
-                                               IsVisible="{Binding HasTabs}"/>
+                        <local:InlineArtworkViewer x:Name="GallerySideViewer"
+                                                   DataContext="{Binding}"
+                                                   IsExpanded="{Binding IsViewerExpanded}"/>
+                    </Border>
                 </Border>
 
 
@@ -592,14 +603,14 @@
                                 <ItemsPanelTemplate>
                                     <local:MasonryPanel x:Name="ArtworksPanel"
                                                         ColumnWidth="{Binding $parent[UserControl].((vm:GalleryViewModel)DataContext).CardSize}"
-                                                        ItemSpacing="6"/>
+                                                        ItemSpacing="2"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ArtworkCardViewModel">
                                     <Panel>
                                         <!-- FIXED HEIGHT MODE: Seamless cropped images, clean layout -->
-                                        <Border Margin="0,0,6,6"
+                                        <Border Margin="0,0,2,2"
                                                 IsVisible="{Binding $parent[UserControl].((vm:GalleryViewModel)DataContext).IsFixedHeight}"
                                                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
@@ -722,7 +733,8 @@
                                         </Border>
 
                                         <!-- NATURAL HEIGHT MODE: Full images with aspect ratio preservation -->
-                                        <Border Margin="0,0,6,6"
+                                        <Border Margin="0,0,2,2"
+                                                Width="{Binding $parent[UserControl].((vm:GalleryViewModel)DataContext).CardSize}"
                                                 IsVisible="{Binding $parent[UserControl].((vm:GalleryViewModel)DataContext).IsNaturalHeight}"
                                                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"

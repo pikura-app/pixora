@@ -15,6 +15,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(_ => new SettingsService());
         services.TryAddSingleton<PixivHttpClientFactory>();
         services.TryAddSingleton<PixivClient>();
+        services.TryAddSingleton<ImageResizeService>();
         services.TryAddSingleton<PixivDownloadService>();
         services.TryAddSingleton<PixivImageLoader>();
         return services;

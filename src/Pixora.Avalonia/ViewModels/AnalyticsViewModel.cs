@@ -36,6 +36,8 @@ public partial class AnalyticsViewModel : ViewModelBase
         LoadAnalyticsAsync();
     }
 
+    public Task ReloadAsync() => LoadAnalyticsAsync();
+
     [RelayCommand]
     private async Task LoadAnalyticsAsync()
     {

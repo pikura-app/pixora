@@ -139,6 +139,29 @@
                     <Button CornerRadius="6" Padding="8,4" FontSize="11"
                             Command="{Binding SetListViewCommand}" IsEnabled="{Binding !IsListView}"
                             ToolTip.Tip="List view">≡ List</Button>
+                    <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"/>
+                    <Button CornerRadius="6" Padding="10,6" FontSize="11"
+                            Classes.accent="{Binding HasSelection}"
+                            IsEnabled="{Binding HasSelection}"
+                            Command="{Binding DownloadSelectedCommand}"
+                            ToolTip.Tip="Download selected artworks">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="↓" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedCount, StringFormat='Download Selected ({0})'}" />
+                        </StackPanel>
+                    </Button>
+                    <Button CornerRadius="6" Padding="10,6" FontSize="11"
+                            Command="{Binding DownloadVisibleCommand}"
+                            ToolTip.Tip="Download all visible artworks">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="⊞" FontSize="12"/>
+                            <TextBlock Text="Download Visible"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Content="🎨 Download Preset" CornerRadius="6" Padding="10,6" FontSize="11"
+                            Click="OnDownloadPresetClicked"
+                            IsEnabled="{Binding !IsLoading}"
+                            ToolTip.Tip="Download with image processing preset"/>
                 </StackPanel>
 
             </DockPanel>
@@ -184,23 +207,22 @@
 
                     <!-- Splitter -->
                     <Border Grid.Column="1" Width="5" Name="DiscoverSplitter"
-                            IsVisible="{Binding ShowPreview}"
                             Cursor="SizeWestEast"
                             Background="{actipro:ThemeResource Container1BorderBrush}"
+                            IsVisible="{Binding ShowPreview}"
                             PointerPressed="OnSplitterPointerPressed"/>
 
                     <!-- Inline viewer side panel -->
                     <Border Grid.Column="2"
-                            IsVisible="{Binding ShowPreview}"
                             Width="{Binding BrowsePanelWidth}"
                             MinWidth="320"
                             Background="{actipro:ThemeResource Container1BackgroundBrush}"
                             BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                            BorderThickness="1,0,0,0">
+                            BorderThickness="1,0,0,0"
+                            IsVisible="{Binding ShowPreview}">
                         <local:InlineArtworkViewer x:Name="DiscoverSidePanelViewer" 
                                                    DataContext="{Binding GalleryVm}"
-                                                   IsExpanded="{Binding $parent[UserControl].((vm:DiscoverViewModel)DataContext).IsViewerExpanded}"
-                                                   IsVisible="{Binding HasTabs}"/>
+                                                   IsExpanded="{Binding $parent[UserControl].((vm:DiscoverViewModel)DataContext).IsViewerExpanded}"/>
                     </Border>
 
                     <!-- ── Grid view ── -->
@@ -214,7 +236,7 @@
                                   ScrollChanged="OnWorksScrollChanged">
                         <StackPanel>
                             <!-- Fixed height grid -->
-                            <ItemsControl ItemsSource="{Binding FilteredWorks}" Margin="10,10,4,4"
+                            <ItemsControl ItemsSource="{Binding FilteredWorks}" Margin="10,10,4,10"
                                           IsVisible="{Binding IsFixedHeight}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -227,13 +249,14 @@
                                                 Margin="0,0,6,6"
                                                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                                                BorderThickness="1" CornerRadius="8"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
                                                 BoxShadow="0 1 4 0 #28000000" Cursor="Hand"
+                                                PointerPressed="OnArtworkCardPressed"
                                                 ContextMenu="{StaticResource ArtworkCardContextMenu}">
                                             <Border.Styles>
                                                 <Style Selector="Border:pointerover">
                                                     <Setter Property="BoxShadow" Value="0 6 20 0 #55000000"/>
-                                                    <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
                                                 </Style>
                                             </Border.Styles>
                                             <Grid RowDefinitions="*,Auto">
@@ -250,15 +273,24 @@
                                                         </Image>
                                                     </Panel>
                                                 </Border>
-                                                <Panel Grid.Row="0" ZIndex="5" IsHitTestVisible="False">
+                                                <Panel Grid.Row="0" ZIndex="5">
+                                                    <!-- Selection checkbox -->
+                                                    <CheckBox VerticalAlignment="Top" HorizontalAlignment="Left"
+                                                              Margin="6,6,0,0"
+                                                              IsChecked="{Binding IsSelected}"
+                                                              Click="OnCardCheckboxClicked"/>
+                                                    <!-- Page count badge -->
                                                     <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"
                                                             Margin="6,0,0,6" Padding="5,2" CornerRadius="4"
-                                                            Background="#BB000000" IsVisible="{Binding IsMultiPage}">
+                                                            Background="#BB000000" IsVisible="{Binding IsMultiPage}"
+                                                            IsHitTestVisible="False">
                                                         <TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/>
                                                     </Border>
+                                                    <!-- R-18 badge -->
                                                     <Border VerticalAlignment="Top" HorizontalAlignment="Right"
                                                             Margin="0,6,6,0" Padding="5,2" CornerRadius="4"
-                                                            Background="#CCDC2626" IsVisible="{Binding IsR18}">
+                                                            Background="#CCDC2626" IsVisible="{Binding IsR18}"
+                                                            IsHitTestVisible="False">
                                                         <TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/>
                                                     </Border>
                                                 </Panel>
@@ -303,7 +335,7 @@
                             </ItemsControl>
 
                             <!-- Natural height masonry grid -->
-                            <ItemsControl ItemsSource="{Binding FilteredWorks}" Margin="10,10,4,4"
+                            <ItemsControl ItemsSource="{Binding FilteredWorks}" Margin="10,10,4,10"
                                           IsVisible="{Binding IsNaturalHeight}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -319,11 +351,11 @@
                                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                                                 BorderThickness="1" CornerRadius="8"
                                                 BoxShadow="0 1 4 0 #28000000" Cursor="Hand"
+                                                PointerPressed="OnArtworkCardPressed"
                                                 ContextMenu="{StaticResource ArtworkCardContextMenu}">
                                             <Border.Styles>
                                                 <Style Selector="Border:pointerover">
                                                     <Setter Property="BoxShadow" Value="0 6 20 0 #55000000"/>
-                                                    <Setter Property="BorderBrush" Value="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"/>
                                                 </Style>
                                             </Border.Styles>
                                             <Grid RowDefinitions="*,Auto">
@@ -344,21 +376,30 @@
                                                         </Image>
                                                     </Panel>
                                                 </Border>
-                                                <Panel Grid.Row="0" ZIndex="5" IsHitTestVisible="False">
+                                                <Panel Grid.Row="0" ZIndex="5">
                                                     <Panel.Height>
                                                         <MultiBinding Converter="{x:Static conv:MultiplyByAspectRatioConverter.Instance}">
                                                             <Binding Path="$parent[UserControl].((vm:DiscoverViewModel)DataContext).CardSize"/>
                                                             <Binding Path="ClampedAspectRatio"/>
                                                         </MultiBinding>
                                                     </Panel.Height>
+                                                    <!-- Selection checkbox -->
+                                                    <CheckBox VerticalAlignment="Top" HorizontalAlignment="Left"
+                                                              Margin="6,6,0,0"
+                                                              IsChecked="{Binding IsSelected}"
+                                                              Click="OnCardCheckboxClicked"/>
+                                                    <!-- Page count badge -->
                                                     <Border VerticalAlignment="Bottom" HorizontalAlignment="Left"
                                                             Margin="6,0,0,6" Padding="5,2" CornerRadius="4"
-                                                            Background="#BB000000" IsVisible="{Binding IsMultiPage}">
+                                                            Background="#BB000000" IsVisible="{Binding IsMultiPage}"
+                                                            IsHitTestVisible="False">
                                                         <TextBlock Text="{Binding PageCount, StringFormat='1/{0}'}" FontSize="9" Foreground="White"/>
                                                     </Border>
+                                                    <!-- R-18 badge -->
                                                     <Border VerticalAlignment="Top" HorizontalAlignment="Right"
                                                             Margin="0,6,6,0" Padding="5,2" CornerRadius="4"
-                                                            Background="#CCDC2626" IsVisible="{Binding IsR18}">
+                                                            Background="#CCDC2626" IsVisible="{Binding IsR18}"
+                                                            IsHitTestVisible="False">
                                                         <TextBlock Text="R-18" FontSize="8" Foreground="White" FontWeight="Bold"/>
                                                     </Border>
                                                 </Panel>
@@ -580,19 +621,19 @@
 
                             <!-- Splitter -->
                             <Border Grid.Column="1" Width="5"
-                                    IsVisible="{Binding ShowPreview}"
                                     Cursor="SizeWestEast"
                                     Background="{actipro:ThemeResource Container1BorderBrush}"
+                                    IsVisible="{Binding ShowPreview}"
                                     PointerPressed="OnSplitterPointerPressed"/>
 
                             <!-- Inline viewer side panel -->
                             <Border Grid.Column="2"
-                                    IsVisible="{Binding ShowPreview}"
                                     Width="{Binding BrowsePanelWidth}"
                                     MinWidth="320"
                                     Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                     BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                                    BorderThickness="1,0,0,0">
+                                    BorderThickness="1,0,0,0"
+                                    IsVisible="{Binding ShowPreview}">
                                 <local:InlineArtworkViewer x:Name="ArtistWorksSidePanelViewer"
                                                            DataContext="{Binding GalleryVm}"
                                                            IsExpanded="{Binding $parent[UserControl].((vm:DiscoverViewModel)DataContext).IsViewerExpanded}"/>

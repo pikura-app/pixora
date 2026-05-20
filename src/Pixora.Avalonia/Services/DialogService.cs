@@ -2,11 +2,20 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.Styling;
 using Microsoft.Extensions.Logging;
+using Pixora.Core.Data;
+using Pixora.Core.Http;
+using Pixora.Core.Models;
+using Pixora.Core.Services;
+using Pixora.Core.Settings;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 namespace Pixora.Avalonia.Services;
 
@@ -137,6 +146,63 @@ public class DialogService
             return null;
         }
     }
+
+    public async Task<ImageEditPreset?> ShowDownloadPresetDialogAsync(
+        ArtworkPreview artwork,
+        List<ArtworkPreview>? additionalArtworks = null)
+    {
+        try
+        {
+            if (_ownerWindow == null) return null;
+
+            // Convert Core.Models.ArtworkPreview to Dialogs.ArtworkPreview
+            var selectedArtworks = new List<Views.Dialogs.ArtworkPreview>
+            {
+                new Views.Dialogs.ArtworkPreview
+                {
+                    ArtworkId = artwork.Id ?? "",
+                    Title = artwork.Title ?? "",
+                    ArtistName = artwork.UserName ?? "",
+                    ThumbnailUrl = artwork.ThumbnailUrl,
+                    PageCount = artwork.PageCount
+                }
+            };
+
+            if (additionalArtworks != null)
+            {
+                selectedArtworks.AddRange(additionalArtworks.Select(a => new Views.Dialogs.ArtworkPreview
+                {
+                    ArtworkId = a.Id ?? "",
+                    Title = a.Title ?? "",
+                    ArtistName = a.UserName ?? "",
+                    ThumbnailUrl = a.ThumbnailUrl,
+                    PageCount = a.PageCount
+                }));
+            }
+
+            var imageResizeService = AppServices.Get<ImageResizeService>();
+            var imageLoader = AppServices.Get<PixivImageLoader>();
+            var pixivClient = AppServices.Get<PixivClient>();
+            var presetsRepo = AppServices.Get<UserPresetsRepository>();
+            var customPresets = presetsRepo != null ? await presetsRepo.GetAllAsync() : new List<ImageEditPreset>();
+
+            var window = new Views.Dialogs.DownloadPresetWindow(
+                imageResizeService,
+                this,
+                imageLoader,
+                pixivClient,
+                selectedArtworks,
+                customPresets);
+
+            var result = await window.ShowDialog<ImageEditPreset?>(_ownerWindow);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to show download preset dialog");
+            return null;
+        }
+    }
 }
 
 // Simple ContentDialog implementation for Avalonia
@@ -236,4 +302,104 @@ public enum ContentDialogResult
     None,
     Primary,
     Secondary
+}
+
+public enum RedownloadChoice { Yes, YesToAll, No, NoToAll }
+
+public static class RedownloadConfirmDialog
+{
+    /// <summary>
+    /// Shows a modal dialog asking whether to re-download an artwork that already
+    /// exists on disk.  The dialog displays the artwork thumbnail (if available),
+    /// the title, and four action buttons.
+    /// </summary>
+    public static async Task<RedownloadChoice> ShowAsync(
+        Window parent,
+        string title,
+        Bitmap? thumbnail)
+    {
+        var choice = RedownloadChoice.No;
+
+        var dialog = new Window
+        {
+            Title = "File already exists",
+            SizeToContent = SizeToContent.Height,
+            Width = 520,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            RequestedThemeVariant = parent.RequestedThemeVariant
+                ?? global::Avalonia.Application.Current?.RequestedThemeVariant,
+        };
+
+        var outer = new StackPanel { Spacing = 16, Margin = new Thickness(24, 20, 24, 20) };
+
+        // Header
+        outer.Children.Add(new TextBlock
+        {
+            Text = "File already exists",
+            FontSize = 15,
+            FontWeight = FontWeight.SemiBold
+        });
+
+        // Thumbnail + title row
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        if (thumbnail != null)
+        {
+            row.Children.Add(new Border
+            {
+                Width = 160, Height = 160,
+                CornerRadius = new CornerRadius(4),
+                ClipToBounds = true,
+                Child = new Image
+                {
+                    Source = thumbnail,
+                    Stretch = Stretch.UniformToFill
+                }
+            });
+        }
+        row.Children.Add(new TextBlock
+        {
+            Text = $"\"{title}\" is already downloaded.\nDo you want to re-download it?",
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = thumbnail != null ? 310 : 460,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 13
+        });
+        outer.Children.Add(row);
+
+        // Buttons
+        var btnPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 8
+        };
+
+        Button MakeBtn(string label, RedownloadChoice c, bool isAccent = false)
+        {
+            var b = new Button
+            {
+                Content = label,
+                Padding = new Thickness(16, 7),
+                MinWidth = 80
+            };
+            if (isAccent)
+            {
+                b.Classes.Add("accent");
+            }
+            b.Click += (_, _) => { choice = c; dialog.Close(); };
+            return b;
+        }
+
+        btnPanel.Children.Add(MakeBtn("No to all",  RedownloadChoice.NoToAll));
+        btnPanel.Children.Add(MakeBtn("No",          RedownloadChoice.No));
+        btnPanel.Children.Add(MakeBtn("Yes",         RedownloadChoice.Yes, isAccent: true));
+        btnPanel.Children.Add(MakeBtn("Yes to all",  RedownloadChoice.YesToAll, isAccent: true));
+
+        outer.Children.Add(btnPanel);
+        dialog.Content = outer;
+
+        await dialog.ShowDialog(parent);
+        return choice;
+    }
 }

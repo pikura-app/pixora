@@ -21,6 +21,9 @@ public sealed class AccountSettings
 
     // Control
     public int? MaxConcurrentDownloads { get; set; }
+
+    // Download behavior
+    public bool? AllowRedownload { get; set; }
 }
 
 /// <summary>

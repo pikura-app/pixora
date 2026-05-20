@@ -15,6 +15,7 @@ public sealed class DownloadJobRepository : IDisposable
     private readonly string _connectionString;
     private readonly ILogger<DownloadJobRepository> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
+    private string? _activeUserId;
 
     public DownloadJobRepository(string dbPath, ILogger<DownloadJobRepository> logger)
     {
@@ -93,6 +94,7 @@ public sealed class DownloadJobRepository : IDisposable
             "ALTER TABLE download_targets ADD COLUMN thumbnail_url TEXT",
             "ALTER TABLE download_targets ADD COLUMN user_name TEXT",
             "ALTER TABLE download_targets ADD COLUMN user_id TEXT",
+            "ALTER TABLE download_jobs ADD COLUMN owner_user_id TEXT",
         };
         foreach (var migration in migrations)
         {
@@ -109,6 +111,9 @@ public sealed class DownloadJobRepository : IDisposable
 
         _logger.LogDebug("Database initialized at {Path}", _connectionString);
     }
+
+    /// <summary>Restricts all subsequent queries to the given Pixiv user ID.</summary>
+    public void SetActiveUser(string? userId) => _activeUserId = userId;
 
     private SqliteConnection CreateConnection() => new(_connectionString);
 
@@ -136,6 +141,30 @@ public sealed class DownloadJobRepository : IDisposable
         return job;
     }
 
+    /// <summary>Returns all running/pending jobs regardless of which account owns them.</summary>
+    public async Task<List<DownloadJob>> GetAllActiveJobsAsync(CancellationToken ct = default)
+    {
+        using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+
+        var sql = @"
+            SELECT id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder
+            FROM download_jobs
+            WHERE status IN (0, 1)
+            ORDER BY created_at DESC";
+
+        using var cmd = new SqliteCommand(sql, connection);
+        var jobs = new List<DownloadJob>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            jobs.Add(ReadJobFromReader(reader));
+
+        foreach (var job in jobs)
+            job.Targets = await GetTargetsForJobAsync(job.Id, connection, ct);
+
+        return jobs;
+    }
+
     public async Task<List<DownloadJob>> GetJobsAsync(
         JobStatus? status = null,
         int? limit = null,
@@ -147,7 +176,7 @@ public sealed class DownloadJobRepository : IDisposable
         var sql = @"
             SELECT id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder
             FROM download_jobs
-            WHERE 1=1";
+            WHERE (owner_user_id = @uid OR owner_user_id IS NULL)";
 
         if (status.HasValue)
             sql += " AND status = @status";
@@ -158,6 +187,7 @@ public sealed class DownloadJobRepository : IDisposable
             sql += " LIMIT @limit";
 
         using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@uid", _activeUserId ?? (object)DBNull.Value);
 
         if (status.HasValue)
             cmd.Parameters.AddWithValue("@status", (int)status.Value);
@@ -193,8 +223,8 @@ public sealed class DownloadJobRepository : IDisposable
         {
             // Upsert job
             var upsertJob = @"
-                INSERT INTO download_jobs (id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder)
-                VALUES (@id, @name, @type, @status, @settings, @createdAt, @startedAt, @completedAt, @lastRetriedAt, @error, @retryCount, @outputFolder)
+                INSERT INTO download_jobs (id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder, owner_user_id)
+                VALUES (@id, @name, @type, @status, @settings, @createdAt, @startedAt, @completedAt, @lastRetriedAt, @error, @retryCount, @outputFolder, @ownerUserId)
                 ON CONFLICT(id) DO UPDATE SET
                     name = @name,
                     type = @type,
@@ -221,6 +251,7 @@ public sealed class DownloadJobRepository : IDisposable
                 cmd.Parameters.AddWithValue("@error", job.ErrorMessage ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@retryCount", job.RetryCount);
                 cmd.Parameters.AddWithValue("@outputFolder", job.OutputFolder ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@ownerUserId", _activeUserId ?? (object)DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -306,6 +337,37 @@ public sealed class DownloadJobRepository : IDisposable
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Marks all jobs that were left in Running/Pending state from a previous app session
+    /// as Cancelled. Downloads happen in-process and cannot survive an app restart, so any
+    /// such jobs are zombies. Should be called once on startup.
+    /// </summary>
+    public async Task<int> MarkOrphanedJobsAsCancelledAsync(CancellationToken ct = default)
+    {
+        using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+
+        var sql = @"
+            UPDATE download_jobs
+            SET status = @cancelled,
+                completed_at = @now,
+                error_message = COALESCE(error_message, 'Abandoned: app restarted while running')
+            WHERE status IN (@running, @pending)";
+
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@cancelled", (int)JobStatus.Cancelled);
+        cmd.Parameters.AddWithValue("@running", (int)JobStatus.Running);
+        cmd.Parameters.AddWithValue("@pending", (int)JobStatus.Pending);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+
+        var rows = await cmd.ExecuteNonQueryAsync(ct);
+        if (rows > 0)
+        {
+            _logger.LogInformation("Marked {Count} orphaned (Running/Pending) jobs as Cancelled on startup", rows);
+        }
+        return rows;
     }
 
     #endregion

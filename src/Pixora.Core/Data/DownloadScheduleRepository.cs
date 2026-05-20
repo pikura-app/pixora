@@ -17,6 +17,7 @@ public sealed class DownloadScheduleRepository : IDisposable
     private readonly string _connectionString;
     private readonly ILogger<DownloadScheduleRepository> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
+    private string? _activeUserId;
 
     public DownloadScheduleRepository(string dbPath, ILogger<DownloadScheduleRepository> logger)
     {
@@ -67,7 +68,18 @@ public sealed class DownloadScheduleRepository : IDisposable
 
         using var cmd = new SqliteCommand(createTable, connection);
         cmd.ExecuteNonQuery();
+
+        // Migrations
+        var migrations = new[] { "ALTER TABLE download_schedules ADD COLUMN owner_user_id TEXT" };
+        foreach (var m in migrations)
+        {
+            try { using var mc = new SqliteCommand(m, connection); mc.ExecuteNonQuery(); }
+            catch (SqliteException) { }
+        }
     }
+
+    /// <summary>Restricts all subsequent queries to the given Pixiv user ID.</summary>
+    public void SetActiveUser(string? userId) => _activeUserId = userId;
 
     private SqliteConnection CreateConnection() => new(_connectionString);
 
@@ -86,7 +98,9 @@ public sealed class DownloadScheduleRepository : IDisposable
                    ranking_date, artist_limit, artists_json, settings_json, created_at,
                    last_run_at, next_run_at, run_count, last_error
             FROM download_schedules
+            WHERE (owner_user_id = @uid OR owner_user_id IS NULL)
             ORDER BY created_at DESC", connection);
+        cmd.Parameters.AddWithValue("@uid", _activeUserId ?? (object)DBNull.Value);
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -113,9 +127,11 @@ public sealed class DownloadScheduleRepository : IDisposable
                    last_run_at, next_run_at, run_count, last_error
             FROM download_schedules
             WHERE is_enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= @before
+              AND (owner_user_id = @uid OR owner_user_id IS NULL)
             ORDER BY next_run_at ASC", connection);
 
         cmd.Parameters.AddWithValue("@before", before);
+        cmd.Parameters.AddWithValue("@uid", _activeUserId ?? (object)DBNull.Value);
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -142,9 +158,11 @@ public sealed class DownloadScheduleRepository : IDisposable
                    last_run_at, next_run_at, run_count, last_error
             FROM download_schedules
             WHERE is_enabled = 1 AND trigger_type = @triggerType
+              AND (owner_user_id = @uid OR owner_user_id IS NULL)
             ORDER BY created_at ASC", connection);
 
         cmd.Parameters.AddWithValue("@triggerType", (int)ScheduleTrigger.OnStartup);
+        cmd.Parameters.AddWithValue("@uid", _activeUserId ?? (object)DBNull.Value);
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -198,12 +216,12 @@ public sealed class DownloadScheduleRepository : IDisposable
                 id, name, is_enabled, type, trigger_type, trigger_hour, trigger_minute,
                 trigger_datetime, interval_minutes, page_range, ranking_mode, ranking_content,
                 ranking_date, artist_limit, artists_json, settings_json, created_at,
-                last_run_at, next_run_at, run_count, last_error
+                last_run_at, next_run_at, run_count, last_error, owner_user_id
             ) VALUES (
                 @id, @name, @isEnabled, @type, @triggerType, @triggerHour, @triggerMinute,
                 @triggerDateTime, @intervalMinutes, @pageRange, @rankingMode, @rankingContent,
                 @rankingDate, @artistLimit, @artistsJson, @settingsJson, @createdAt,
-                @lastRunAt, @nextRunAt, @runCount, @lastError
+                @lastRunAt, @nextRunAt, @runCount, @lastError, @ownerUserId
             )
             ON CONFLICT(id) DO UPDATE SET
                 name = @name,
@@ -249,6 +267,9 @@ public sealed class DownloadScheduleRepository : IDisposable
         cmd.Parameters.AddWithValue("@nextRunAt", (object?)schedule.NextRunAt ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@runCount", schedule.RunCount);
         cmd.Parameters.AddWithValue("@lastError", (object?)schedule.LastError ?? DBNull.Value);
+
+        // Set owner on insert (not overwritten on update so existing rows keep their owner)
+        cmd.Parameters.AddWithValue("@ownerUserId", _activeUserId ?? (object)DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
         _logger.LogDebug("Saved schedule {ScheduleId}: {ScheduleName}", schedule.Id, schedule.Name);

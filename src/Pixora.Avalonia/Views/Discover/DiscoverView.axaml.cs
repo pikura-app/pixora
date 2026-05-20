@@ -8,8 +8,11 @@ using Avalonia.LogicalTree;
 using Pixora.Avalonia.Services;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Avalonia.Views.Artwork;
+using Pixora.Avalonia.Views.Dialogs;
 using Pixora.Avalonia.Views.Gallery;
+using Pixora.Core.Models;
 using Pixora.Core.Settings;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 
@@ -342,6 +345,48 @@ public partial class DiscoverView : UserControl
         _ = VM.GalleryVm.DownloadSingleAsync(card);
     }
 
+    private async void OnDownloadPresetClicked(object? sender, RoutedEventArgs e)
+    {
+        var vm = VM;
+        if (vm == null) return;
+        var window = TopLevel.GetTopLevel(this) as Window;
+        if (window == null) return;
+
+        // Priority: 1) selected artworks  2) currently viewed (inline viewer)  3) error
+        var works = vm.IsWorksTab ? vm.RecommendedWorks : vm.ArtistWorks;
+        var picked = works.Where(a => a.IsSelected).ToList();
+        if (picked.Count == 0 && vm.GalleryVm.InlineViewerCard != null)
+        {
+            // Find inline viewer card in current tab's list, else use it directly
+            var inlineId = vm.GalleryVm.InlineViewerCard.Id;
+            var match = works.FirstOrDefault(c => c.Id == inlineId);
+            picked = new List<ArtworkCardViewModel> { match ?? vm.GalleryVm.InlineViewerCard };
+        }
+
+        if (picked.Count == 0)
+        {
+            vm.StatusMessage = "No artwork selected or open. Click an artwork or select multiple first.";
+            return;
+        }
+
+        // Use DialogService to show preset dialog
+        var dialogService = AppServices.Get<DialogService>();
+        var firstArtwork = picked[0].Artwork;
+        var additionalArtworks = picked.Skip(1).Select(c => c.Artwork).ToList();
+
+        var result = await dialogService.ShowDownloadPresetDialogAsync(firstArtwork, additionalArtworks);
+
+        if (result != null)
+        {
+            // Download all selected artworks with the preset using cards
+            foreach (var card in picked)
+            {
+                await vm.GalleryVm.DownloadWithPresetAsync(card, result);
+            }
+            vm.StatusMessage = $"Queued {picked.Count} artwork(s) for download with preset: {result.Name}";
+        }
+    }
+
     private void OnContextOpenArtistGallery(object? sender, RoutedEventArgs e)
     {
         if (GetCardFromMenu(sender) is not { } card) return;
@@ -412,6 +457,26 @@ public partial class DiscoverView : UserControl
     {
         if (GetUserFromMenu(sender) is not { } user) return;
         CopyToClipboard(user.UserId);
+    }
+
+    private void OnCardCheckboxClicked(object? sender, RoutedEventArgs e)
+    {
+        // Notify ViewModel that selection changed
+        VM?.NotifySelectionChanged();
+    }
+
+    private void OnArtworkCardPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // Don't select if clicking on the checkbox directly (it handles its own toggle)
+        if (e.Source is CheckBox) return;
+
+        // Get the card DataContext
+        if (sender is Border border && border.DataContext is ArtworkCardViewModel card)
+        {
+            // Toggle selection
+            card.IsSelected = !card.IsSelected;
+            VM?.NotifySelectionChanged();
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

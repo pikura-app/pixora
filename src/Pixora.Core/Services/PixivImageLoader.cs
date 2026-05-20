@@ -3,22 +3,38 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Pixora.Core.Http;
+using SkiaSharp;
 
 namespace Pixora.Core.Services;
 
 /// <summary>
+/// Thumbnail size hint for optimizing download speed vs quality.
+/// </summary>
+public enum ThumbnailSize
+{
+    /// <summary>250px square crop (fastest, good for dense grids).</summary>
+    Small,
+    /// <summary>540px on long edge (default, keeps aspect ratio).</summary>
+    Medium,
+    /// <summary>Full original (slowest, best quality).</summary>
+    Original
+}
+
+/// <summary>
 /// Downloads Pixiv CDN image bytes with the mandatory
-/// <c>Referer: https://www.pixiv.net/</c> header. Uses a 3-tier cache:
-/// (1) in-memory deduplicated tasks (instant for in-flight + recent fetches),
-/// (2) on-disk byte cache under <c>%LOCALAPPDATA%\PixivUtil\imgcache</c>
-/// so thumbnails survive app restarts, and (3) a network fallback when
-/// neither cache hits. A semaphore caps concurrent network fetches so
+/// <c>Referer: https://www.pixiv.net/</c> header. Uses a 4-tier cache:
+/// (1) in-memory decoded bitmap cache (instant for already-decoded images),
+/// (2) in-memory deduplicated tasks (instant for in-flight + recent fetches),
+/// (3) on-disk byte cache under <c>%LOCALAPPDATA%\PixivUtil\imgcache</c>
+/// so thumbnails survive app restarts, and (4) a network fallback when
+/// none of the caches hit. A semaphore caps concurrent network fetches so
 /// scrolling a large gallery doesn't open hundreds of sockets at once.
 /// </summary>
-public sealed class PixivImageLoader
+public sealed class PixivImageLoader : IDisposable
 {
     private const string Referer = "https://www.pixiv.net/";
     private const int MaxMemoryEntries = 1024;
+    private const int MaxBitmapEntries = 256; // ~256 decoded bitmaps max (~50-100MB depending on size)
     private const int MaxConcurrentFetches = 24;
     // 14 days on disk before re-fetching (Pixiv URLs are content-hashed so
     // anything we cached under a given URL is still valid as long as the
@@ -32,7 +48,9 @@ public sealed class PixivImageLoader
     private readonly PixivHttpClientFactory _factory;
     private readonly ILogger<PixivImageLoader> _logger;
     private readonly ConcurrentDictionary<string, Task<byte[]?>> _memoryCache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SKBitmap> _bitmapCache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(MaxConcurrentFetches, MaxConcurrentFetches);
+    private readonly SemaphoreSlim _bitmapGate = new(1, 1); // Protects bitmap cache eviction
 
     public PixivImageLoader(PixivHttpClientFactory factory, ILogger<PixivImageLoader> logger)
     {
@@ -144,5 +162,98 @@ public sealed class PixivImageLoader
         var name = Convert.ToHexString(hash);
         // Two-char shard prevents any single dir from exploding to 100k+ files.
         return Path.Combine(DiskCacheRoot, name[..2], name);
+    }
+
+    /// <summary>
+    /// Fetches and decodes an image into an SKBitmap, with a decoded-bitmap memory cache.
+    /// This is useful when the same image is shown in multiple views (e.g., Gallery + History).
+    /// The bitmap cache is separate from the byte cache - it stores decoded SKBitmap objects
+    /// to avoid repeated JPEG/PNG decoding overhead.
+    /// </summary>
+    /// <param name="url">Image URL to fetch.</param>
+    /// <param name="size">Thumbnail size hint (modifies Pixiv URLs to request smaller/larger versions).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<SKBitmap?> FetchBitmapAsync(string url, ThumbnailSize size = ThumbnailSize.Medium, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+
+        // Apply thumbnail size transformation
+        var sizedUrl = ConvertUrlForThumbnailSize(url, size);
+
+        // Check bitmap cache first (fastest - already decoded)
+        if (_bitmapCache.TryGetValue(sizedUrl, out var cachedBitmap))
+        {
+            // Return a copy so callers can dispose without affecting cache
+            return cachedBitmap.Copy();
+        }
+
+        // Not in bitmap cache - fetch bytes and decode
+        var bytes = await FetchBytesAsync(sizedUrl, ct).ConfigureAwait(false);
+        if (bytes is null || ct.IsCancellationRequested) return null;
+
+        // Decode off-thread to avoid blocking
+        var bitmap = await Task.Run(() =>
+        {
+            try { return SKBitmap.Decode(bytes); }
+            catch { return null; }
+        }, ct).ConfigureAwait(false);
+
+        if (bitmap is null) return null;
+
+        // Add to bitmap cache (with eviction if needed)
+        await _bitmapGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_bitmapCache.Count >= MaxBitmapEntries)
+            {
+                // Evict oldest entries (simple strategy: remove first 32)
+                var toRemove = _bitmapCache.Take(32).ToList();
+                foreach (var kv in toRemove)
+                {
+                    _bitmapCache.TryRemove(kv.Key, out var oldBmp);
+                    oldBmp?.Dispose();
+                }
+            }
+            _bitmapCache.TryAdd(sizedUrl, bitmap.Copy());
+        }
+        finally { _bitmapGate.Release(); }
+
+        return bitmap;
+    }
+
+    /// <summary>
+    /// Converts a Pixiv thumbnail URL to request a specific size.
+    /// Pixiv uses URL patterns to control thumbnail size:
+    /// - square1200: 250x250 crop (small)
+    /// - master1200: 540px on long edge (medium)
+    /// - original: full resolution
+    /// </summary>
+    public static string ConvertUrlForThumbnailSize(string url, ThumbnailSize size)
+    {
+        if (string.IsNullOrEmpty(url)) return url;
+
+        return size switch
+        {
+            ThumbnailSize.Small => url
+                .Replace("_master1200", "_square1200")
+                .Replace("/540x540_70_", "/250x250_80_a2/"),
+            ThumbnailSize.Medium => url
+                .Replace("_square1200", "_master1200")
+                .Replace("/250x250_80_a2/", "/540x540_70_/"),
+            ThumbnailSize.Original => url
+                .Replace("_square1200", "_master1200")
+                .Replace("/250x250_80_a2/", "/540x540_70_/"),
+            _ => url
+        };
+    }
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+        _bitmapGate.Dispose();
+        // Dispose all cached bitmaps
+        foreach (var kv in _bitmapCache)
+            kv.Value?.Dispose();
+        _bitmapCache.Clear();
     }
 }

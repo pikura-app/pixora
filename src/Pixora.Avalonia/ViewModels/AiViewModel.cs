@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pixora.Avalonia.Services;
+using Pixora.Core.Data;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using Pixora.Core.Models;
@@ -35,6 +36,8 @@ public partial class AiViewModel : ObservableObject
     private readonly OllamaService _ollama;
     private readonly LocalFavoritesService _favorites;
     private readonly PixivDownloadService _downloader;
+    private readonly DownloadJobRepository _jobRepository;
+    private readonly DownloadCoordinator _coordinator;
     private readonly HoshiSessionService _sessions;
     private readonly PixivClient _pixiv;
     private readonly PixivImageLoader _imageLoader;
@@ -97,20 +100,24 @@ public partial class AiViewModel : ObservableObject
         OllamaService ollama,
         LocalFavoritesService favorites,
         PixivDownloadService downloader,
+        DownloadJobRepository jobRepository,
+        DownloadCoordinator coordinator,
         HoshiSessionService sessions,
         PixivClient pixiv,
         PixivImageLoader imageLoader,
         SettingsService settings,
         ImageLookupService imageLookup)
     {
-        _ollama       = ollama;
-        _favorites    = favorites;
-        _downloader   = downloader;
-        _sessions     = sessions;
-        _pixiv        = pixiv;
-        _imageLoader  = imageLoader;
-        _settings     = settings;
-        _imageLookup  = imageLookup;
+        _ollama        = ollama;
+        _favorites     = favorites;
+        _downloader    = downloader;
+        _jobRepository = jobRepository;
+        _coordinator   = coordinator;
+        _sessions      = sessions;
+        _pixiv         = pixiv;
+        _imageLoader   = imageLoader;
+        _settings      = settings;
+        _imageLookup   = imageLookup;
 
         _ollama.StateChanged += (_, _) => Dispatcher.UIThread.Post(SyncOllamaState);
         SyncOllamaState();
@@ -144,6 +151,26 @@ public partial class AiViewModel : ObservableObject
         
         // Notify when sessions collection changes to update grouped sessions
         _sessions.Sessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(GroupedSessions));
+
+        // When the sessions directory is swapped (account switch), clear the
+        // current session/messages so we don't keep showing the previous account's chat.
+        _sessions.SessionsChanged += (_, _) =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                _suppressSave = true;
+                try
+                {
+                    CurrentSession    = null;
+                    Messages.Clear();
+                    CurrentImageBytes = null;
+                    _sessionAutoNamed = false;
+                    _ollama.ClearHistory();
+                }
+                finally { _suppressSave = false; }
+                OnPropertyChanged(nameof(GroupedSessions));
+            });
+        };
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────
@@ -575,6 +602,79 @@ public partial class AiViewModel : ObservableObject
             AddSystemMessage("Chat cleared.");
     }
 
+    /// <summary>
+    /// Downloads an artwork using the DownloadJob pipeline so it appears in History
+    /// (Active → Completed/Failed) just like downloads triggered from the artwork viewer.
+    /// Reports progress as chat messages instead of failing silently.
+    /// </summary>
+    public async Task DownloadArtworkWithJobAsync(ArtworkCardViewModel card, CancellationToken ct = default)
+    {
+        AddAssistantMessage($"⏳ Downloading \"{card.Title}\"…");
+
+        var target = new DownloadTarget
+        {
+            TargetId     = card.Artwork.Id,
+            Name         = card.Artwork.Title,
+            ThumbnailUrl = card.Artwork.ThumbnailUrl,
+            UserName     = card.Artwork.UserName,
+            UserId       = card.Artwork.UserId,
+            Type         = TargetType.Artwork,
+            Status       = TargetStatus.Running,
+        };
+        var job = new DownloadJob
+        {
+            Name      = card.Artwork.Title,
+            Type      = DownloadJobType.ImageId,
+            Status    = JobStatus.Running,
+            StartedAt = DateTime.UtcNow,
+            Targets   = [target],
+        };
+
+        await _jobRepository.SaveJobAsync(job);
+        Console.Error.WriteLine($"[Hoshi] NotifyJobStarted: {job.Id} '{job.Name}'");
+        _coordinator.NotifyJobStarted(job);
+        await Task.Delay(50); // let HistoryViewModel's UI-thread Post run before download begins
+
+        try
+        {
+            var paths = await _downloader.DownloadArtworkAsync(card.Artwork, ct: ct);
+            target.Status = TargetStatus.Completed;
+            target.DownloadedItems = paths.Count;
+            job.Status = JobStatus.Completed;
+            job.OutputFolder = paths.Count > 0 ? System.IO.Path.GetDirectoryName(paths[0]) : null;
+
+            if (paths.Count == 0)
+            {
+                AddAssistantMessage($"⚠ No files were downloaded for \"{card.Title}\".");
+            }
+            else
+            {
+                var folder = job.OutputFolder ?? "(unknown)";
+                var fileWord = paths.Count == 1 ? "file" : "files";
+                AddAssistantMessage($"✓ Downloaded {paths.Count} {fileWord} for \"{card.Title}\"\nSaved to: {folder}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            target.Status = TargetStatus.Cancelled;
+            job.Status = JobStatus.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            target.Status = TargetStatus.Failed;
+            target.ErrorMessage = ex.Message;
+            job.Status = JobStatus.Failed;
+            AddSystemMessage($"✗ Download failed for \"{card.Title}\": {ex.Message}");
+        }
+        finally
+        {
+            job.CompletedAt = DateTime.UtcNow;
+            await _jobRepository.SaveJobAsync(job);
+            Console.Error.WriteLine($"[Hoshi] NotifyJobSaved: {job.Id} status={job.Status}");
+            _coordinator.NotifyJobSaved(job);
+        }
+    }
+
     // ── Intent detection: handle known commands without calling the model ────
     private async Task<bool> TryHandleIntentAsync(string input, CancellationToken ct)
     {
@@ -600,26 +700,7 @@ public partial class AiViewModel : ObservableObject
             
             if (card != null)
             {
-                AddAssistantMessage($"⏳ Downloading \"{card.Title}\"…");
-                try
-                {
-                    var paths = await _downloader.DownloadArtworkAsync(card.Artwork, ct: ct);
-                    if (paths.Count == 0)
-                    {
-                        AddAssistantMessage($"⚠ No files were downloaded for \"{card.Title}\".");
-                    }
-                    else
-                    {
-                        var folder = System.IO.Path.GetDirectoryName(paths[0]) ?? "(unknown)";
-                        var fileWord = paths.Count == 1 ? "file" : "files";
-                        AddAssistantMessage($"✓ Downloaded {paths.Count} {fileWord} for \"{card.Title}\"\nSaved to: {folder}");
-                    }
-                }
-                catch (OperationCanceledException) { }
-                catch (Exception ex)
-                {
-                    AddSystemMessage($"✗ Download failed for \"{card.Title}\": {ex.Message}");
-                }
+                await DownloadArtworkWithJobAsync(card, ct);
                 return true;
             }
             else

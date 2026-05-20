@@ -70,6 +70,7 @@ public partial class GalleryViewModel : ViewModelBase
     private readonly DialogService _dialogService;
     private readonly DownloadJobRepository _jobRepository;
     private readonly DownloadCoordinator _coordinator;
+    private readonly AccountService? _accountService;
 
     private int _loadingArtistsGuard;
     private bool _suppressArtistChanged;
@@ -182,6 +183,33 @@ public partial class GalleryViewModel : ViewModelBase
         VisibleArtworks.Add(vm);
     }
 
+    /// <summary>
+    /// Adds multiple artwork cards in a batch to reduce UI thread pressure.
+    /// </summary>
+    private void AddArtworkCardsBatch(IEnumerable<ArtworkCardViewModel> vms, string? currentArtistId = null)
+    {
+        var artistId = currentArtistId ?? SelectedArtist?.UserId;
+        var batch = new List<ArtworkCardViewModel>();
+        var thumbnailLoads = new List<Task>();
+
+        foreach (var vm in vms)
+        {
+            vm.IsCurrentArtist = artistId != null && artistId == vm.UserId;
+            batch.Add(vm);
+            // Queue thumbnail loading but don't await yet
+            thumbnailLoads.Add(vm.LoadThumbnailAsync(_imageLoader));
+        }
+
+        // Add all to collection at once (ObservableCollection will batch notifications)
+        foreach (var vm in batch)
+        {
+            VisibleArtworks.Add(vm);
+        }
+
+        // Fire-and-forget thumbnail loads
+        _ = Task.WhenAll(thumbnailLoads);
+    }
+
     public GalleryViewModel(
         PixivClient pixivClient,
         PixivImageLoader imageLoader,
@@ -190,7 +218,8 @@ public partial class GalleryViewModel : ViewModelBase
         NavigationService navigationService,
         DialogService dialogService,
         DownloadJobRepository jobRepository,
-        DownloadCoordinator coordinator)
+        DownloadCoordinator coordinator,
+        AccountService? accountService = null)
     {
         _pixivClient = pixivClient;
         _imageLoader = imageLoader;
@@ -200,6 +229,7 @@ public partial class GalleryViewModel : ViewModelBase
         _dialogService = dialogService;
         _jobRepository = jobRepository;
         _coordinator = coordinator;
+        _accountService = accountService;
 
         // Restore persisted gallery UI state
         var s = settingsService.Current;
@@ -240,6 +270,9 @@ public partial class GalleryViewModel : ViewModelBase
             // Apply blur setting to existing R-18 cards
             ApplyBlurSetting(_settingsService.Current.BlurR18Content);
             RebuildFilteredArtworks();
+            // Sync shared CardSize from settings (updated by other tabs)
+            var shared = _settingsService.Current.CardSize;
+            if (CardSize != shared) CardSize = shared;
         };
     }
 
@@ -482,18 +515,20 @@ public partial class GalleryViewModel : ViewModelBase
             CanLoadMore = false;
             ArtworksTotal = artworks.Count;
 
-            // Add artworks directly from search results
+            // Prepare batch of artwork cards
+            var batch = new List<ArtworkCardViewModel>();
             foreach (var preview in artworks)
             {
                 if (!ShowR18 && preview.IsR18) continue;
-                var vm = new ArtworkCardViewModel(preview)
+                batch.Add(new ArtworkCardViewModel(preview)
                 {
                     IsFollowed = IsArtistFollowed(preview.UserId),
                     IsBlurred = _settingsService.Current.BlurR18Content && preview.IsR18
-                };
-                AddArtworkCard(vm);
-                _ = vm.LoadThumbnailAsync(_imageLoader);
+                });
             }
+
+            // Add batch to UI
+            AddArtworkCardsBatch(batch);
 
             // Show info bar with search context
             ShowSearchInfo = true;
@@ -817,36 +852,88 @@ public partial class GalleryViewModel : ViewModelBase
                 return;
             }
 
-            var existingIds = Artists.Select(a => a.UserId).ToHashSet();
             if (isInitialLoad) ArtistsLoaded = false;
-            var seen = new HashSet<string>(existingIds);
+            var seen = new HashSet<string>(Artists.Select(a => a.UserId));
             const int limit = 48;
+            var seenLock = new object();
             var realTotal = 0;
 
-            foreach (var hidden in new[] { false, true })
+            // Step 1: Fetch first page of public AND private in parallel to get totals
+            var firstPagesTask = Task.WhenAll(
+                _pixivClient.GetFollowedArtistsAsync(userId, 0, limit, hidden: false),
+                _pixivClient.GetFollowedArtistsAsync(userId, 0, limit, hidden: true));
+            var firstPages = await firstPagesTask;
+
+            // Add first page results immediately so UI shows something
+            foreach (var page in firstPages)
             {
-                var offset = 0;
-                while (offset < 5000)
+                if (page?.Users == null) continue;
+                if (page.Total > 0) realTotal += page.Total;
+                var batch = page.Users
+                    .Where(u => { lock (seenLock) return seen.Add(u.UserId); })
+                    .Select(u => new ArtistCardViewModel(u))
+                    .ToList();
+                if (batch.Count > 0)
                 {
-                    var page = await _pixivClient.GetFollowedArtistsAsync(userId, offset, limit, hidden);
-                    if (page.Users.Count == 0) break;
-
-                    if (offset == 0 && page.Total > 0)
-                        realTotal += page.Total;
-
-                    foreach (var user in page.Users)
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (!seen.Add(user.UserId)) continue;
-                        var vm = new ArtistCardViewModel(user);
-                        Artists.Add(vm);
-                        _ = vm.LoadAvatarAsync(_imageLoader);
-                    }
-                    // Flush to filtered list after each page so sidebar fills incrementally
-                    RebuildFilteredArtists();
-                    offset += page.Users.Count;
-                    if (page.Total > 0 && offset >= page.Total) break;
+                        foreach (var vm in batch)
+                        {
+                            Artists.Add(vm);
+                            _ = vm.LoadAvatarAsync(_imageLoader);
+                        }
+                        RebuildFilteredArtists();
+                    });
                 }
             }
+
+            // Step 2: Fetch remaining pages for public and private in parallel
+            // Once we know the totals, we can issue all page fetches concurrently
+            var pageFetchTasks = new List<Task>();
+            for (int idx = 0; idx < firstPages.Length; idx++)
+            {
+                var first = firstPages[idx];
+                var hidden = idx == 1;
+                if (first?.Users == null || first.Users.Count < limit) continue;
+                var total = first.Total > 0 ? first.Total : first.Users.Count;
+                // Cap remaining to a safety bound (5000) to match prior behavior
+                var maxRemaining = Math.Min(total, 5000);
+                for (int offset = limit; offset < maxRemaining; offset += limit)
+                {
+                    var off = offset;
+                    var hiddenCapture = hidden;
+                    pageFetchTasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var page = await _pixivClient.GetFollowedArtistsAsync(userId, off, limit, hiddenCapture);
+                            if (page?.Users == null || page.Users.Count == 0) return;
+                            var batch = page.Users
+                                .Where(u => { lock (seenLock) return seen.Add(u.UserId); })
+                                .Select(u => new ArtistCardViewModel(u))
+                                .ToList();
+                            if (batch.Count > 0)
+                            {
+                                await Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    foreach (var vm in batch)
+                                    {
+                                        Artists.Add(vm);
+                                        _ = vm.LoadAvatarAsync(_imageLoader);
+                                    }
+                                    RebuildFilteredArtists();
+                                });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogDebug(ex, "Followed-artists page fetch failed at offset {Off}", off);
+                        }
+                    }));
+                }
+            }
+            if (pageFetchTasks.Count > 0)
+                await Task.WhenAll(pageFetchTasks);
 
             ArtistsTotal = realTotal > 0 ? realTotal : Artists.Count;
             ArtistsLoaded = true;
@@ -864,6 +951,47 @@ public partial class GalleryViewModel : ViewModelBase
             IsLoadingArtists = false;
             Interlocked.Exchange(ref _loadingArtistsGuard, 0);
         }
+    }
+
+    /// <summary>
+    /// Clears all per-account state and reloads followed artists for the newly active account.
+    /// Call this after SwitchTo() or after a new login.
+    /// </summary>
+    public async Task SwitchAccountAsync()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _artworkCache.Clear();
+            _currentArtistAllIds.Clear();
+            _currentArtistLoadedCount = 0;
+            SelectedArtist = null;
+            VisibleArtworks.Clear();
+            FilteredArtworks.Clear();
+            ViewerTabs.Clear();
+            InlineViewerCard = null;
+        });
+
+        // Reset Discover and Bookmarks so they reload for the new account
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var discover = AppServices.Get<DiscoverViewModel>();
+                discover.RecommendedWorks.Clear();
+                discover.RecommendedUsers.Clear();
+                discover.FilteredWorks.Clear();
+
+                var bookmarks = AppServices.Get<BookmarksViewModel>();
+                bookmarks.PublicBookmarks.Clear();
+                bookmarks.PrivateBookmarks.Clear();
+                bookmarks.FilteredPublic.Clear();
+                bookmarks.FilteredPrivate.Clear();
+                bookmarks.ReloadLocalFavoritesPublic();
+            });
+        }
+        catch { /* non-fatal */ }
+
+        await RefreshFollowedArtistsAsync();
     }
 
     /// <summary>
@@ -885,46 +1013,99 @@ public partial class GalleryViewModel : ViewModelBase
                 await _pixivClient.ValidateSessionAsync();
             }
 
+            // Clear existing list first so stale entries from a previous
+            // account don't remain visible (especially after sign-out).
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                Artists.Clear();
+                FilteredArtists.Clear();
+                ArtistsLoaded = false;
+            });
+
             var userId = _settingsService.Current.UserId;
             if (string.IsNullOrWhiteSpace(userId))
             {
                 StatusMessage = "Sign in to see followed artists.";
                 return;
             }
-
-            // Clear existing list to force full refresh
-            Artists.Clear();
-            FilteredArtists.Clear();
-            ArtistsLoaded = false;
             
             var seen = new HashSet<string>();
+            var seenLock = new object();
             const int limit = 48;
             var realTotal = 0;
 
-            foreach (var hidden in new[] { false, true })
+            // Parallel: load first page of public + private to get totals
+            var firstPages = await Task.WhenAll(
+                _pixivClient.GetFollowedArtistsAsync(userId, 0, limit, hidden: false),
+                _pixivClient.GetFollowedArtistsAsync(userId, 0, limit, hidden: true));
+
+            foreach (var page in firstPages)
             {
-                var offset = 0;
-                while (offset < 5000)
+                if (page?.Users == null) continue;
+                if (page.Total > 0) realTotal += page.Total;
+                var batch = page.Users
+                    .Where(u => { lock (seenLock) return seen.Add(u.UserId); })
+                    .Select(u => new ArtistCardViewModel(u))
+                    .ToList();
+                if (batch.Count > 0)
                 {
-                    var page = await _pixivClient.GetFollowedArtistsAsync(userId, offset, limit, hidden);
-                    if (page.Users.Count == 0) break;
-
-                    if (offset == 0 && page.Total > 0)
-                        realTotal += page.Total;
-
-                    foreach (var user in page.Users)
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (!seen.Add(user.UserId)) continue;
-                        var vm = new ArtistCardViewModel(user);
-                        Artists.Add(vm);
-                        _ = vm.LoadAvatarAsync(_imageLoader);
-                    }
-                    // Flush to filtered list after each page so sidebar fills incrementally
-                    RebuildFilteredArtists();
-                    offset += page.Users.Count;
-                    if (page.Total > 0 && offset >= page.Total) break;
+                        foreach (var vm in batch)
+                        {
+                            Artists.Add(vm);
+                            _ = vm.LoadAvatarAsync(_imageLoader);
+                        }
+                        RebuildFilteredArtists();
+                    });
                 }
             }
+
+            // Parallel: load remaining pages once total is known
+            var pageFetchTasks = new List<Task>();
+            for (int idx = 0; idx < firstPages.Length; idx++)
+            {
+                var first = firstPages[idx];
+                var hidden = idx == 1;
+                if (first?.Users == null || first.Users.Count < limit) continue;
+                var total = first.Total > 0 ? first.Total : first.Users.Count;
+                var maxRemaining = Math.Min(total, 5000);
+                for (int offset = limit; offset < maxRemaining; offset += limit)
+                {
+                    var off = offset;
+                    var hiddenCapture = hidden;
+                    pageFetchTasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var page = await _pixivClient.GetFollowedArtistsAsync(userId, off, limit, hiddenCapture);
+                            if (page?.Users == null || page.Users.Count == 0) return;
+                            var batch = page.Users
+                                .Where(u => { lock (seenLock) return seen.Add(u.UserId); })
+                                .Select(u => new ArtistCardViewModel(u))
+                                .ToList();
+                            if (batch.Count > 0)
+                            {
+                                await Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    foreach (var vm in batch)
+                                    {
+                                        Artists.Add(vm);
+                                        _ = vm.LoadAvatarAsync(_imageLoader);
+                                    }
+                                    RebuildFilteredArtists();
+                                });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogDebug(ex, "Refresh followed-artists page fetch failed at offset {Off}", off);
+                        }
+                    }));
+                }
+            }
+            if (pageFetchTasks.Count > 0)
+                await Task.WhenAll(pageFetchTasks);
 
             ArtistsTotal = realTotal > 0 ? realTotal : Artists.Count;
             ArtistsLoaded = true;
@@ -1374,8 +1555,10 @@ public partial class GalleryViewModel : ViewModelBase
                 return;
             }
 
+            // Load first page (clears + populates list) — must run first
             await LoadArtworkPageAsync(artist, append: false, ct);
             ct.ThrowIfCancellationRequested();
+            // Load second page in parallel-friendly fashion (sequential to keep order, but cheap because metadata already cached)
             if (CanLoadMore)
                 await LoadArtworkPageAsync(artist, append: true, ct);
 
@@ -1429,7 +1612,7 @@ public partial class GalleryViewModel : ViewModelBase
                 IsBlurred = _settingsService.Current.BlurR18Content && artwork.IsR18
             };
             AddArtworkCard(vm, artist.UserId);
-            _ = vm.LoadThumbnailAsync(_imageLoader, ct);
+            _ = vm.LoadThumbnailAsync(_imageLoader, ct: ct);
         }
         _currentArtistLoadedCount += batch.Count;
         CanLoadMore = _currentArtistLoadedCount < _currentArtistAllIds.Count;
@@ -1468,58 +1651,140 @@ public partial class GalleryViewModel : ViewModelBase
         await DownloadCoreAsync(VisibleArtworks.ToList());
     }
 
-    public async Task DownloadArtworkAsync(ArtworkPreview artwork)
+    [RelayCommand]
+    public async Task DownloadWithPresetAsync()
     {
-        var card = VisibleArtworks.FirstOrDefault(c => c.Id == artwork.Id)
-                   ?? new ArtworkCardViewModel(artwork);
-        await DownloadCoreAsync([card]);
+        var picked = VisibleArtworks.Where(a => a.IsSelected).ToList();
+        if (picked.Count == 0)
+        {
+            // If no selection, use all visible artworks
+            picked = VisibleArtworks.ToList();
+        }
+
+        if (picked.Count == 0)
+        {
+            StatusMessage = "No artworks to download.";
+            return;
+        }
+
+        // Show preset window with the first artwork as preview
+        var dialogService = _dialogService;
+        var firstArtwork = picked.First().Artwork;
+
+        var preset = await dialogService.ShowDownloadPresetDialogAsync(firstArtwork);
+        if (preset != null)
+        {
+            await DownloadWithPresetCoreAsync(picked, preset);
+        }
     }
 
-    public async Task DownloadArtworkRangeAsync(IReadOnlyList<int> oneBasedPositions)
+    public async Task DownloadWithPresetAsync(ArtworkCardViewModel card, ImageEditPreset preset)
+        => await DownloadWithPresetCoreAsync([card], preset);
+
+    public async Task DownloadWithPresetAsync(IReadOnlyList<ArtworkPreview> previews, ImageEditPreset preset)
     {
-        if (SelectedArtist == null || _currentArtistAllIds.Count == 0 || oneBasedPositions.Count == 0) return;
-
-        var selectedIds = oneBasedPositions
-            .Where(i => i >= 1 && i <= _currentArtistAllIds.Count)
-            .Select(i => _currentArtistAllIds[i - 1])
-            .Distinct().ToList();
-
-        StatusMessage = $"Fetching metadata for {selectedIds.Count} artworks…";
-        var works = await _pixivClient.GetArtworksMetadataAsync(SelectedArtist.UserId, selectedIds);
-        var cards = works.Values.Select(p => new ArtworkCardViewModel(p)).ToList();
-        await DownloadCoreAsync(cards);
+        if (previews.Count == 0) return;
+        var cards = previews.Select(p =>
+            VisibleArtworks.FirstOrDefault(c => c.Id == p.Id) ?? new ArtworkCardViewModel(p)).ToList();
+        await DownloadWithPresetCoreAsync(cards, preset);
     }
 
-    private async Task DownloadCoreAsync(IReadOnlyList<ArtworkCardViewModel> cards)
+    private async Task DownloadWithPresetCoreAsync(IReadOnlyList<ArtworkCardViewModel> cards, ImageEditPreset preset)
     {
         if (cards.Count == 0) return;
+
+        var acctOverride = BuildAccountSettingsOverride();
+
+        // Add the preset to the settings override
+        // CRITICAL: must set UseGlobalSettings=false so the downloader honors our overrides
+        if (acctOverride == null)
+        {
+            acctOverride = new SettingsOverride
+            {
+                UseGlobalSettings = false,
+                MaxConcurrentDownloads = _settingsService.Current.MaxConcurrentDownloads,
+                ImagePreset = preset
+            };
+        }
+        else
+        {
+            acctOverride.UseGlobalSettings = false;
+            acctOverride.ImagePreset = preset;
+        }
+
+        if (!string.IsNullOrEmpty(preset?.CustomOutputFolder))
+        {
+            acctOverride.CustomOutputFolder = preset.CustomOutputFolder;
+        }
+
+        // ── Re-download confirmation ──────────────────────────────────────────
+        var approved = new List<ArtworkCardViewModel>(cards.Count);
+        var ownerWindow = _dialogService.OwnerWindow;
+        bool? bulkDecision = null;
+
+        // Suppress redownload warnings whenever a download preset is supplied. The
+        // user picked a preset from the dialog (Discover / Rankings / Bookmarks /
+        // Gallery) so they've already opted in to (re)processing the artwork.
+        var skipAllWarnings = preset != null;
+        
+        // Determine what type of file to check for based on save mode:
+        // - SaveAsNew = true → checking for processed files (_processed suffix)
+        // - SaveAsNew = false (Overwrite) → checking for unprocessed files (original)
+        var fileTypeFilter = preset?.SaveAsNew == true ? "processed" : "unprocessed";
+
+        foreach (var card in cards)
+        {
+            // Skip file check entirely if AlsoDownloadUnprocessed is enabled
+            if (!skipAllWarnings && _downloader.HasExistingFiles(card.Id, acctOverride, fileTypeFilter))
+            {
+                if (bulkDecision == false) { continue; } // No-to-all: skip
+                if (bulkDecision == true)  { approved.Add(card); continue; } // Yes-to-all: approve
+
+                // Show dialog if we have a window, otherwise auto-approve (user already clicked download)
+                var choice = ownerWindow != null
+                    ? await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => RedownloadConfirmDialog.ShowAsync(ownerWindow, card.Title, card.Thumbnail))
+                    : RedownloadChoice.Yes; // No UI available, default to Yes
+
+                if (choice == RedownloadChoice.NoToAll)  { bulkDecision = false; continue; }
+                if (choice == RedownloadChoice.No)       { continue; }
+                if (choice == RedownloadChoice.YesToAll) { bulkDecision = true; }
+                approved.Add(card); // Yes or YesToAll
+            }
+            else
+            {
+                approved.Add(card);
+            }
+        }
+
+        if (approved.Count == 0) { StatusMessage = "All artworks skipped."; return; }
+
         IsBulkDownloading = true;
-        var total = cards.Count;
+        var total = approved.Count;
         var done = 0;
         var failed = 0;
-        var maxConcurrent = Math.Max(1, _settingsService.Current.MaxConcurrentDownloads);
+        var maxConcurrent = Math.Max(1, acctOverride.MaxConcurrentDownloads ?? _settingsService.Current.MaxConcurrentDownloads);
         using var gate = new SemaphoreSlim(maxConcurrent, maxConcurrent);
         string? outputFolder = null;
 
-        var targets = cards.Select(c => new DownloadTarget
+        var targets = approved.Select(c => new DownloadTarget
         {
             TargetId = c.Id, Name = c.Title, ThumbnailUrl = c.ThumbnailUrl, UserName = c.UserName, UserId = c.UserId, Type = TargetType.Artwork, Status = TargetStatus.Pending
         }).ToList();
 
-        var jobName = cards.Count == 1 ? cards[0].Title : $"{cards.Count} artworks";
+        var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks (with preset)";
         var activeJob = new DownloadJob
         {
             Name = jobName, Type = DownloadJobType.ImageId,
             Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
             Targets = targets
         };
+        await _jobRepository.SaveJobAsync(activeJob);
         _coordinator.NotifyJobStarted(activeJob);
 
-        // Yield so HistoryViewModel's Dispatcher.UIThread.Post can run and
-        // render the Active Downloads row before we start downloading.
         await Task.Delay(50);
 
-        var tasks = cards.Select(async (card, idx) =>
+        var tasks = approved.Select(async (card, idx) =>
         {
             await gate.WaitAsync();
             try
@@ -1548,7 +1813,183 @@ public partial class GalleryViewModel : ViewModelBase
                         CurrentBytesSoFar: p.BytesSoFar,
                         CurrentTotalBytes: p.TotalBytes));
                 });
-                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress);
+                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, overrideSettings: acctOverride);
+                Interlocked.Increment(ref done);
+                targets[idx].Status = TargetStatus.Completed;
+                targets[idx].DownloadedItems = files.Count;
+                if (outputFolder == null && files.Count > 0)
+                    outputFolder = Path.GetDirectoryName(files[0]);
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref failed);
+                targets[idx].Status = TargetStatus.Failed;
+                targets[idx].ErrorMessage = ex.Message;
+                Logger.LogError(ex, "Download failed for {Id}", card.Id);
+            }
+            finally
+            {
+                card.IsDownloading = false;
+                gate.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(tasks);
+        IsBulkDownloading = false;
+        StatusMessage = failed == 0
+            ? $"Downloaded {done}/{total} artworks with preset."
+            : $"Done: {done} ok, {failed} failed.";
+
+        activeJob.Status      = failed == 0 ? JobStatus.Completed : JobStatus.Failed;
+        activeJob.CompletedAt = DateTime.UtcNow;
+        activeJob.OutputFolder = outputFolder;
+        _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(activeJob); _coordinator.NotifyJobSaved(activeJob); });
+    }
+
+    public async Task DownloadArtworkAsync(ArtworkPreview artwork)
+    {
+        var card = VisibleArtworks.FirstOrDefault(c => c.Id == artwork.Id)
+                   ?? new ArtworkCardViewModel(artwork);
+        await DownloadCoreAsync([card]);
+    }
+
+    public Task DownloadPreviewsAsync(IReadOnlyList<ArtworkPreview> previews)
+    {
+        if (previews.Count == 0) return Task.CompletedTask;
+        var cards = previews.Select(p =>
+            VisibleArtworks.FirstOrDefault(c => c.Id == p.Id) ?? new ArtworkCardViewModel(p)).ToList();
+        return DownloadCoreAsync(cards);
+    }
+
+    public async Task DownloadArtworkRangeAsync(IReadOnlyList<int> oneBasedPositions)
+    {
+        if (SelectedArtist == null || _currentArtistAllIds.Count == 0 || oneBasedPositions.Count == 0) return;
+
+        var selectedIds = oneBasedPositions
+            .Where(i => i >= 1 && i <= _currentArtistAllIds.Count)
+            .Select(i => _currentArtistAllIds[i - 1])
+            .Distinct().ToList();
+
+        StatusMessage = $"Fetching metadata for {selectedIds.Count} artworks…";
+        var works = await _pixivClient.GetArtworksMetadataAsync(SelectedArtist.UserId, selectedIds);
+        var cards = works.Values.Select(p => new ArtworkCardViewModel(p)).ToList();
+        await DownloadCoreAsync(cards);
+    }
+
+    private SettingsOverride? BuildAccountSettingsOverride()
+    {
+        var acct = _accountService?.ActiveProfile;
+        if (acct?.Settings is not { UseAccountSettings: true } s) return null;
+        return new SettingsOverride
+        {
+            UseGlobalSettings = false,
+            DownloadRoot           = string.IsNullOrWhiteSpace(s.DownloadRoot)      ? null : s.DownloadRoot,
+            FolderTemplate         = string.IsNullOrWhiteSpace(s.FolderTemplate)    ? null : s.FolderTemplate,
+            FilenameTemplate       = string.IsNullOrWhiteSpace(s.FilenameTemplate)  ? null : s.FilenameTemplate,
+            MaxConcurrentDownloads = s.MaxConcurrentDownloads,
+            FilterAiGenerated      = s.FilterAiGenerated,
+            SkipR18                = s.SkipR18,
+            SkipR18G               = s.SkipR18G,
+            SeparateR18Folder      = s.SeparateR18Folder,
+            AllowRedownload        = s.AllowRedownload,
+        };
+    }
+
+    private async Task DownloadCoreAsync(IReadOnlyList<ArtworkCardViewModel> cards)
+    {
+        if (cards.Count == 0) return;
+
+        var acctOverride = BuildAccountSettingsOverride();
+
+        // ── Re-download confirmation ──────────────────────────────────────────
+        // Check which cards already have files on disk and ask the user.
+        var approved = new List<ArtworkCardViewModel>(cards.Count);
+        var ownerWindow = _dialogService.OwnerWindow;
+        bool? bulkDecision = null; // null = ask per-card; true = yes-to-all; false = no-to-all
+
+        foreach (var card in cards)
+        {
+            if (_downloader.HasExistingFiles(card.Id, acctOverride))
+            {
+                if (bulkDecision == false) { continue; } // No-to-all: skip
+                if (bulkDecision == true)  { approved.Add(card); continue; } // Yes-to-all: approve
+
+                // Show dialog if we have a window, otherwise auto-approve
+                var choice = ownerWindow != null
+                    ? await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => RedownloadConfirmDialog.ShowAsync(ownerWindow, card.Title, card.Thumbnail))
+                    : RedownloadChoice.Yes; // No UI available, default to Yes
+
+                if (choice == RedownloadChoice.NoToAll)  { bulkDecision = false; continue; }
+                if (choice == RedownloadChoice.No)       { continue; }
+                if (choice == RedownloadChoice.YesToAll) { bulkDecision = true; }
+                approved.Add(card); // Yes or YesToAll
+            }
+            else
+            {
+                approved.Add(card);
+            }
+        }
+
+        if (approved.Count == 0) { StatusMessage = "All artworks skipped."; return; }
+
+        IsBulkDownloading = true;
+        var total = approved.Count;
+        var done = 0;
+        var failed = 0;
+        var maxConcurrent = Math.Max(1, acctOverride?.MaxConcurrentDownloads ?? _settingsService.Current.MaxConcurrentDownloads);
+        using var gate = new SemaphoreSlim(maxConcurrent, maxConcurrent);
+        string? outputFolder = null;
+
+        var targets = approved.Select(c => new DownloadTarget
+        {
+            TargetId = c.Id, Name = c.Title, ThumbnailUrl = c.ThumbnailUrl, UserName = c.UserName, UserId = c.UserId, Type = TargetType.Artwork, Status = TargetStatus.Pending
+        }).ToList();
+
+        var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks";
+        var activeJob = new DownloadJob
+        {
+            Name = jobName, Type = DownloadJobType.ImageId,
+            Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
+            Targets = targets
+        };
+        await _jobRepository.SaveJobAsync(activeJob);
+        _coordinator.NotifyJobStarted(activeJob);
+
+        // Yield so HistoryViewModel's Dispatcher.UIThread.Post can run and
+        // render the Active Downloads row before we start downloading.
+        await Task.Delay(50);
+
+        var tasks = approved.Select(async (card, idx) =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                card.IsDownloading = true;
+                targets[idx].Status = TargetStatus.Running;
+                var localDone = done;
+                _coordinator.ReportJobProgress(activeJob.Id, new JobProgress(
+                    activeJob.Id, JobStatus.Running, localDone, total,
+                    total > 0 ? localDone * 100.0 / total : 0,
+                    card.Title, $"Downloading {card.Title}…",
+                    CurrentArtworkId: card.Id,
+                    CurrentThumbnailUrl: card.ThumbnailUrl));
+                var progress = new Progress<DownloadProgress>(p =>
+                {
+                    var pct = p.TotalBytes > 0 ? (int)(100 * p.BytesSoFar / p.TotalBytes.Value) : 0;
+                    StatusMessage = $"Downloading {p.ArtworkId} p{p.PageIndex + 1}/{p.TotalPages} ({pct}%) — {done}/{total}";
+                    _coordinator.ReportJobProgress(activeJob.Id, new JobProgress(
+                        activeJob.Id, JobStatus.Running, done, total,
+                        total > 0 ? done * 100.0 / total : 0,
+                        card.Title, null,
+                        CurrentArtworkId: p.ArtworkId,
+                        CurrentThumbnailUrl: card.ThumbnailUrl,
+                        CurrentPageIndex: p.PageIndex,
+                        CurrentPageTotal: p.TotalPages,
+                        CurrentBytesSoFar: p.BytesSoFar,
+                        CurrentTotalBytes: p.TotalBytes));
+                });
+                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, overrideSettings: acctOverride);
                 Interlocked.Increment(ref done);
                 targets[idx].Status = TargetStatus.Completed;
                 targets[idx].DownloadedItems = files.Count;
@@ -1581,6 +2022,45 @@ public partial class GalleryViewModel : ViewModelBase
         _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(activeJob); _coordinator.NotifyJobSaved(activeJob); });
     }
 
+    /// <summary>
+    /// Queues selected artworks for download with an image edit preset.
+    /// Fetches original URLs and enqueues each page for processing.
+    /// </summary>
+    public async Task QueueDownloadWithPresetAsync(List<ArtworkCardViewModel> cards, ImageEditPreset preset)
+    {
+        if (cards.Count == 0) return;
+
+        foreach (var card in cards)
+        {
+            try
+            {
+                // Fetch artwork pages to get original URLs
+                var pages = await _pixivClient.GetArtworkPagesAsync(card.Id);
+
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    var page = pages[i];
+                    var target = new DownloadTarget(
+                        card.Id,
+                        card.Title,
+                        card.UserName,
+                        card.UserId,
+                        page.Urls.Original,
+                        i,
+                        pages.Count);
+
+                    _coordinator.QueueDownloadWithPreset(target, preset);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to queue preset download for artwork {ArtworkId}", card.Id);
+            }
+        }
+
+        StatusMessage = $"Queued {cards.Count} artworks for download with preset: {preset.Name}";
+    }
+
     public bool HasArtists => Artists.Count > 0;
 }
 
@@ -1610,11 +2090,13 @@ public partial class ArtistCardViewModel : ObservableObject
         {
             var bytes = await loader.FetchBytesAsync(ProfileImageUrl);
             if (bytes is null) return;
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            // Decode on background thread to avoid UI-thread jank on large lists
+            var bmp = await Task.Run(() =>
             {
                 using var ms = new MemoryStream(bytes);
-                Avatar = new Bitmap(ms);
+                return new Bitmap(ms);
             });
+            await Dispatcher.UIThread.InvokeAsync(() => Avatar = bmp);
         }
         catch { /* non-fatal */ }
     }
@@ -1647,9 +2129,11 @@ public partial class ArtworkCardViewModel : ObservableObject
     public string TypeLabel { get; }
     public int PageCount { get; }
     public bool IsMultiPage => PageCount > 1;
-    public double AspectRatio { get; }
-    /// <summary>Clamped aspect ratio (0.5 - 2.5) to prevent extreme card heights.</summary>
-    public double ClampedAspectRatio => Math.Min(Math.Max(AspectRatio, 0.5), 2.5);
+    [ObservableProperty] private double _aspectRatio;
+    partial void OnAspectRatioChanged(double v) => OnPropertyChanged(nameof(ClampedAspectRatio));
+    /// <summary>Aspect ratio used for natural-height layout. Lightly clamped (0.25 - 5.0)
+    /// to guard against degenerate/zero values while preserving the full image proportions.</summary>
+    public double ClampedAspectRatio => Math.Min(Math.Max(AspectRatio, 0.25), 5.0);
     public bool IsR18 { get; }
     public bool IsR18G { get; }
     public bool IsAi { get; }
@@ -1673,7 +2157,7 @@ public partial class ArtworkCardViewModel : ObservableObject
         ThumbnailUrl = GetHighQualityThumbnailUrl(artwork.ThumbnailUrl);
         TypeLabel = artwork.TypeLabel;
         PageCount = artwork.PageCount;
-        AspectRatio = artwork.AspectRatio;
+        _aspectRatio = artwork.AspectRatio;
         IsR18 = artwork.IsR18;
         IsR18G = artwork.IsR18G;
         IsAi = artwork.IsAiGenerated;
@@ -1697,30 +2181,49 @@ public partial class ArtworkCardViewModel : ObservableObject
                   .Replace("/250x250_80_a2/", "/540x540_70/");
     }
 
-    public async Task LoadThumbnailAsync(PixivImageLoader loader, CancellationToken ct = default)
+    public async Task LoadThumbnailAsync(PixivImageLoader loader, ThumbnailSize size = ThumbnailSize.Medium, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(ThumbnailUrl)) return;
         try
         {
-            var bytes = await loader.FetchBytesAsync(ThumbnailUrl, ct);
-            // Fallback: try original square1200 URL if master1200 fails
-            if (bytes is null && ThumbnailUrl.Contains("_master1200"))
-            {
-                var fallbackUrl = ThumbnailUrl.Replace("_master1200", "_square1200")
-                                              .Replace("/540x540_70/", "/250x250_80_a2/");
-                bytes = await loader.FetchBytesAsync(fallbackUrl, ct);
-            }
-            if (bytes is null || ct.IsCancellationRequested) return;
+            // Default to Medium (_master1200, ≤540px long edge, preserves aspect ratio)
+            // so natural-height cards match the real image proportions and fixed-height
+            // cards still get a high-quality center-crop. Small (_square1200, 250×250)
+            // is reserved for callers that explicitly want the tiny square crop.
+            var effectiveSize = size;
 
-            // Decode the JPEG/PNG off the UI thread — Bitmap ctor can be slow
+            var skBitmap = await loader.FetchBitmapAsync(ThumbnailUrl, effectiveSize, ct);
+            if (skBitmap is null || ct.IsCancellationRequested) return;
+
+            // Convert SKBitmap to Avalonia Bitmap off the UI thread
             var bmp = await Task.Run(() =>
             {
-                using var ms = new MemoryStream(bytes);
+                using var data = skBitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+                if (data is null) return null;
+                using var ms = new MemoryStream(data.ToArray());
                 return new Bitmap(ms);
             }, ct);
 
-            if (!ct.IsCancellationRequested)
-                await Dispatcher.UIThread.InvokeAsync(() => Thumbnail = bmp);
+            skBitmap.Dispose(); // Dispose the copy we received
+
+            if (bmp is not null && !ct.IsCancellationRequested)
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    Thumbnail = bmp;
+                    // Backfill AspectRatio from the bitmap ONLY when the artwork lacks
+                    // dimension metadata (default 1.0). Don't override known dimensions —
+                    // multi-page covers may be landscape composites whereas the artwork
+                    // itself is portrait, and the user wants the card to reflect the
+                    // artwork's natural shape, not the cover thumbnail's shape.
+                    if (Math.Abs(AspectRatio - 1.0) < 0.0001
+                        && effectiveSize != ThumbnailSize.Small
+                        && bmp.PixelSize.Width > 0 && bmp.PixelSize.Height > 0)
+                    {
+                        var ratio = (double)bmp.PixelSize.Height / bmp.PixelSize.Width;
+                        if (ratio > 0 && Math.Abs(ratio - 1.0) > 0.01)
+                            AspectRatio = ratio;
+                    }
+                });
         }
         catch (OperationCanceledException) { /* superseded by artist change */ }
         catch { /* non-fatal network/decode error */ }

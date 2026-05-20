@@ -59,3 +59,13 @@ playwright/.local-webkit/
 # Temp icon generation
 tools/MakeIco/bin/
 tools/MakeIco/obj/
+
+# Local build/error capture scratch files
+build.txt
+build_*.txt
+build_test/
+errors*.txt
+error_*.txt
+final_*.txt
+last_errors.txt
+full_build.txt

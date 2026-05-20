@@ -1,5 +1,20 @@
 namespace Pixora.Core.Models;
 
+/// <summary>Controls how far back a scheduled download looks for new artworks.</summary>
+public enum ScheduleDateLimitMode
+{
+    /// <summary>No date limit — download all artworks.</summary>
+    None = 0,
+    /// <summary>Only artworks posted since this schedule last ran.</summary>
+    SinceLastRun = 1,
+    /// <summary>Only artworks posted within the last 24 hours.</summary>
+    Last1Day = 2,
+    /// <summary>Only artworks posted within the last 7 days.</summary>
+    Last7Days = 3,
+    /// <summary>Only artworks posted within the last 30 days.</summary>
+    Last30Days = 4,
+}
+
 /// <summary>
 /// A subset of AppSettings that can be overridden per-job or per-target.
 /// When UseGlobalSettings is true, all other properties are ignored.
@@ -117,8 +132,14 @@ public sealed class SettingsOverride
     /// <summary>Skip R-18G artworks (XRestrict == 2).</summary>
     public bool? SkipR18G { get; set; }
 
-    /// <summary>Only download artworks posted since the schedule last ran (scheduled downloads only).</summary>
-    public bool? OnlyNewSinceLastRun { get; set; }
+    /// <summary>Controls how far back a scheduled download looks for new artworks.</summary>
+    public ScheduleDateLimitMode DateLimitMode { get; set; } = ScheduleDateLimitMode.None;
+
+    /// <summary>Cap the number of artworks fetched per artist (0 or null = no limit).</summary>
+    public int? MaxArtworksPerArtist { get; set; }
+
+    /// <summary>When true, re-download files even if they already exist on disk.</summary>
+    public bool? AllowRedownload { get; set; }
 
     #endregion
 
@@ -141,6 +162,15 @@ public sealed class SettingsOverride
 
     /// <summary>Verify downloaded images.</summary>
     public bool? VerifyImage { get; set; }
+
+    /// <summary>Image resize/edit preset for post-processing.</summary>
+    public ImageEditPreset? ImagePreset { get; set; }
+
+    /// <summary>Custom output folder for this download (null = use global).</summary>
+    public string? CustomOutputFolder { get; set; }
+
+    /// <summary>Custom filename template (null = use global).</summary>
+    public string? FileNameTemplate { get; set; }
 
     #endregion
 
@@ -184,13 +214,17 @@ public sealed class SettingsOverride
             SkipUgoira = SkipUgoira ?? baseSettings.SkipUgoira,
             SkipR18 = SkipR18 ?? baseSettings.SkipR18,
             SkipR18G = SkipR18G ?? baseSettings.SkipR18G,
-            OnlyNewSinceLastRun = OnlyNewSinceLastRun ?? baseSettings.OnlyNewSinceLastRun,
+            DateLimitMode = DateLimitMode != ScheduleDateLimitMode.None ? DateLimitMode : baseSettings.DateLimitMode,
+            MaxArtworksPerArtist = MaxArtworksPerArtist ?? baseSettings.MaxArtworksPerArtist,
             WriteImageJSON = WriteImageJSON ?? baseSettings.WriteImageJSON,
             WriteImageInfo = WriteImageInfo ?? baseSettings.WriteImageInfo,
             WriteRawJSON = WriteRawJSON ?? baseSettings.WriteRawJSON,
             IncludeSeriesJSON = IncludeSeriesJSON ?? baseSettings.IncludeSeriesJSON,
             WriteImageXMP = WriteImageXMP ?? baseSettings.WriteImageXMP,
             VerifyImage = VerifyImage ?? baseSettings.VerifyImage,
+            ImagePreset = ImagePreset ?? baseSettings.ImagePreset,
+            CustomOutputFolder = CustomOutputFolder ?? baseSettings.CustomOutputFolder,
+            FileNameTemplate = FileNameTemplate ?? baseSettings.FileNameTemplate,
         };
     }
 
@@ -233,6 +267,9 @@ public sealed class SettingsOverride
             IncludeSeriesJSON = global.IncludeSeriesJSON,
             WriteImageXMP = global.WriteImageXMP,
             VerifyImage = global.VerifyImage,
+            ImagePreset = global.ImagePreset,
+            CustomOutputFolder = null,
+            FileNameTemplate = null,
         };
     }
 }

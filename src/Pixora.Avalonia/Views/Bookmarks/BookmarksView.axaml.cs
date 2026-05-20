@@ -8,7 +8,9 @@ using Avalonia.VisualTree;
 using Pixora.Avalonia.Services;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Avalonia.Views.Artwork;
+using Pixora.Core.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Pixora.Avalonia.Views.Bookmarks;
@@ -99,7 +101,12 @@ public partial class BookmarksView : UserControl
     private void OnTabClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is ToggleButton tb && tb.Tag is string s && int.TryParse(s, out var idx) && VM != null)
+        {
+            foreach (var c in VM.FilteredPublic.Concat(VM.FilteredPrivate).Concat(VM.FilteredFavorites))
+                c.IsSelected = false;
             VM.SelectedTabIndex = idx;
+            VM.NotifySelectionChanged();
+        }
     }
 
     // ── Card click → unblur or open viewer ───────────────────────────────────
@@ -192,6 +199,19 @@ public partial class BookmarksView : UserControl
         _ = VM.GalleryVm.DownloadSingleAsync(card);
     }
 
+    private async void OnContextDownloadPreset(object? sender, RoutedEventArgs e)
+    {
+        if (GetCard(sender) is not { } card || VM == null) return;
+
+        var dialogService = AppServices.Get<DialogService>();
+        var result = await dialogService.ShowDownloadPresetDialogAsync(card.Artwork);
+
+        if (result != null)
+        {
+            _ = VM.GalleryVm.DownloadWithPresetAsync(card, result);
+        }
+    }
+
     private void OnContextOpenArtistGallery(object? sender, RoutedEventArgs e)
     {
         if (GetCard(sender) is not { } card) return;
@@ -222,13 +242,13 @@ public partial class BookmarksView : UserControl
     {
         if (GetCard(sender) is not { } card || VM == null) return;
         card.IsSelected = true;
-        VM.NotifyFavoritesSelectionChanged();
+        VM.NotifySelectionChanged();
     }
 
     private void OnFavCardCheckboxClicked(object? sender, RoutedEventArgs e)
     {
         if (VM == null) return;
-        VM.NotifyFavoritesSelectionChanged();
+        VM.NotifySelectionChanged();
         e.Handled = true; // prevent card click from firing
     }
 
@@ -363,5 +383,44 @@ public partial class BookmarksView : UserControl
         var w = VM.BrowsePanelWidth;
         VM.BrowsePanelWidth = w + 0.001;
         VM.BrowsePanelWidth = w;
+    }
+
+    private async void OnDownloadPresetClicked(object? sender, RoutedEventArgs e)
+    {
+        if (VM == null) return;
+
+        // Priority: 1) current selection  2) artwork open in side panel viewer  3) nothing
+        var artworksToDownload = VM.SelectedTabIndex switch
+        {
+            0 => VM.FilteredPublic.Where(c => c.IsSelected).Select(c => c.Artwork).ToList(),
+            1 => VM.FilteredPrivate.Where(c => c.IsSelected).Select(c => c.Artwork).ToList(),
+            _ => VM.FilteredFavorites.Where(c => c.IsSelected).Select(c => c.Artwork).ToList(),
+        };
+
+        // If no selection but something is open in the viewer, use that
+        if (artworksToDownload.Count == 0 && VM.GalleryVm.InlineViewerCard != null)
+        {
+            artworksToDownload = new List<ArtworkPreview> { VM.GalleryVm.InlineViewerCard.Artwork };
+        }
+
+        if (artworksToDownload.Count == 0)
+        {
+            VM.StatusMessage = "Select bookmarks first or open one in the side panel.";
+            return;
+        }
+
+        var dialogService = AppServices.Get<DialogService>();
+        var firstArtwork = artworksToDownload.First();
+        var result = await dialogService.ShowDownloadPresetDialogAsync(firstArtwork, artworksToDownload.Skip(1).ToList());
+
+        if (result != null)
+        {
+            // Download all artworks with the selected preset using the GalleryViewModel's method
+            foreach (var artwork in artworksToDownload)
+            {
+                var card = new ArtworkCardViewModel(artwork);
+                _ = VM.GalleryVm.DownloadWithPresetAsync(card, result);
+            }
+        }
     }
 }

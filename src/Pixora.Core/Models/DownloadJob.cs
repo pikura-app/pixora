@@ -136,6 +136,22 @@ public sealed class DownloadTarget
     /// <summary>Type of target.</summary>
     public TargetType Type { get; set; }
 
+    #region Image Download Properties
+
+    /// <summary>Original image URL for downloading.</summary>
+    public string? OriginalUrl { get; set; }
+
+    /// <summary>Override URL for downloading (takes priority over OriginalUrl).</summary>
+    public string? OverrideUrl { get; set; }
+
+    /// <summary>Page index for multi-page artworks.</summary>
+    public int PageIndex { get; set; }
+
+    /// <summary>Total page count for multi-page artworks.</summary>
+    public int PageCount { get; set; }
+
+    #endregion
+
     #region Page Range Configuration
 
     /// <summary>
@@ -184,6 +200,33 @@ public sealed class DownloadTarget
 
     [JsonIgnore]
     public DownloadJob? Job { get; set; }
+
+    #endregion
+
+    #region Constructors
+
+    /// <summary>Default constructor for serialization.</summary>
+    public DownloadTarget() { }
+
+    /// <summary>Constructor for artwork downloads with preset processing.</summary>
+    public DownloadTarget(
+        string workId,
+        string title,
+        string? userName,
+        string? userId,
+        string? originalUrl,
+        int pageIndex = 0,
+        int pageCount = 1)
+    {
+        TargetId = workId;
+        Name = title;
+        UserName = userName;
+        UserId = userId;
+        OriginalUrl = originalUrl;
+        PageIndex = pageIndex;
+        PageCount = pageCount;
+        Type = TargetType.Artwork;
+    }
 
     #endregion
 }

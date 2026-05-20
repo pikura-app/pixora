@@ -12,6 +12,7 @@ public sealed class LocalFavoritesService
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
     private readonly string _path;
+    private string _activePath;
     private readonly Lock _gate = new();
     private List<LocalFavoriteEntry> _entries = [];
 
@@ -20,16 +21,58 @@ public sealed class LocalFavoritesService
     public LocalFavoritesService(string? overridePath = null)
     {
         _path = overridePath ?? DefaultPath();
+        _activePath = _path;
         Load();
     }
 
-    public static string DefaultPath()
+    public static string DefaultPath() => PathForUser(null);
+
+    public static string PathForUser(string? userId)
     {
         var dir = System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Pixora");
         Directory.CreateDirectory(dir);
-        return System.IO.Path.Combine(dir, "local_favorites.json");
+        var file = string.IsNullOrWhiteSpace(userId)
+            ? "local_favorites.json"
+            : $"local_favorites_{userId}.json";
+        return System.IO.Path.Combine(dir, file);
+    }
+
+    /// <summary>Reload favorites from the per-user file for the given account.</summary>
+    public void SwitchUser(string? userId)
+    {
+        var newPath = PathForUser(userId);
+        // _path is readonly — use the field directly via reflection-free workaround:
+        // instead, reload into _entries from the new path
+        lock (_gate)
+        {
+            if (!File.Exists(newPath) && !string.IsNullOrWhiteSpace(userId))
+            {
+                // Migrate the legacy shared file only when no per-user files exist yet,
+                // meaning this is the very first account to be migrated.
+                var legacyPath = PathForUser(null);
+                var dir = System.IO.Path.GetDirectoryName(newPath)!;
+                bool anyPerUserFileExists = Directory.EnumerateFiles(dir, "local_favorites_*.json").Any();
+                if (File.Exists(legacyPath) && !anyPerUserFileExists)
+                {
+                    try { File.Copy(legacyPath, newPath, overwrite: false); } catch { }
+                }
+            }
+
+            if (!File.Exists(newPath)) { _entries = []; }
+            else
+            {
+                try
+                {
+                    using var fs = File.OpenRead(newPath);
+                    _entries = JsonSerializer.Deserialize<List<LocalFavoriteEntry>>(fs, JsonOpts) ?? [];
+                }
+                catch { _entries = []; }
+            }
+            _activePath = newPath;
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     public IReadOnlyList<LocalFavoriteEntry> GetAll()
@@ -114,7 +157,7 @@ public sealed class LocalFavoritesService
 
     private void Save()
     {
-        using var fs = File.Create(_path);
+        using var fs = File.Create(_activePath);
         JsonSerializer.Serialize(fs, _entries, JsonOpts);
     }
 }
@@ -131,6 +174,8 @@ public sealed class LocalFavoriteEntry
     public int XRestrict { get; set; }
     public int IllustType { get; set; }
     public int AiType { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = [];
     public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? FolderName { get; set; }
@@ -146,6 +191,8 @@ public sealed class LocalFavoriteEntry
         XRestrict = XRestrict,
         IllustType = IllustType,
         AiType = AiType,
+        Width = Width,
+        Height = Height,
         Tags = Tags,
     };
 
@@ -160,6 +207,8 @@ public sealed class LocalFavoriteEntry
         XRestrict = p.XRestrict,
         IllustType = p.IllustType,
         AiType = p.AiType,
+        Width = p.Width,
+        Height = p.Height,
         Tags = p.Tags,
         AddedAt = DateTimeOffset.UtcNow,
     };

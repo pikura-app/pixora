@@ -6,6 +6,7 @@ using Pixora.Core.Utilities;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 namespace Pixora.Core.Services;
 
@@ -39,6 +40,7 @@ public sealed class DownloadCoordinator : IDisposable
     private readonly SettingsService _settingsService;
     private readonly DownloadJobRepository _jobRepository;
     private readonly ILogger<DownloadCoordinator> _logger;
+    private readonly AccountService? _accountService;
 
     // Active job tracking
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeJobs = new();
@@ -73,7 +75,9 @@ public sealed class DownloadCoordinator : IDisposable
         SettingsService settingsService,
         DownloadJobRepository jobRepository,
         FanboxClient fanboxClient,
-        ILogger<DownloadCoordinator> logger)
+        ILogger<DownloadCoordinator> logger,
+        ImageResizeService? resizeService = null,
+        AccountService? accountService = null)
     {
         _client = client;
         _downloadService = downloadService;
@@ -81,9 +85,12 @@ public sealed class DownloadCoordinator : IDisposable
         _jobRepository = jobRepository;
         _fanboxClient = fanboxClient;
         _logger = logger;
+        _resizeService = resizeService;
+        _accountService = accountService;
     }
 
     private readonly FanboxClient _fanboxClient;
+    private readonly ImageResizeService? _resizeService;
 
     #region Job Management
 
@@ -241,6 +248,83 @@ public sealed class DownloadCoordinator : IDisposable
 
     #endregion
 
+    #region Queuing
+
+    private readonly ConcurrentDictionary<Guid, (DownloadTarget, ImageEditPreset)> _presetQueue = [];
+
+    /// <summary>
+    /// Queues a single download with a resize preset for processing after download.
+    /// </summary>
+    public void QueueDownloadWithPreset(DownloadTarget target, ImageEditPreset preset)
+    {
+        var jobId = Guid.NewGuid();
+        _presetQueue[jobId] = (target, preset);
+
+        // Queue for immediate download and post-process
+        _ = Task.Run(async () => await DownloadAndProcessAsync(target, preset));
+    }
+
+    private async Task DownloadAndProcessAsync(DownloadTarget target, ImageEditPreset preset)
+    {
+        try
+        {
+            // Get base download directory
+            var baseDir = Path.Combine(_settingsService.Current.DownloadRoot, "Processed");
+            Directory.CreateDirectory(baseDir);
+
+            var fileName = $"{target.TargetId}_p{target.PageIndex}.png";
+            var outputPath = Path.Combine(baseDir, fileName);
+
+            // If custom folder is specified, use that
+            if (!string.IsNullOrEmpty(preset.CustomOutputFolder))
+            {
+                Directory.CreateDirectory(preset.CustomOutputFolder);
+                outputPath = Path.Combine(preset.CustomOutputFolder, fileName);
+            }
+
+            // Download image first to temp location
+            var tempPath = Path.Combine(Path.GetTempPath(), $"pixora_{Guid.NewGuid()}.tmp");
+            try
+            {
+                using var httpClient = new HttpClient();
+                var imageUrl = target.OverrideUrl ?? target.OriginalUrl;
+                if (string.IsNullOrEmpty(imageUrl))
+                {
+                    _logger.LogWarning("No image URL available for target {TargetId}", target.TargetId);
+                    return;
+                }
+
+                var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
+                await File.WriteAllBytesAsync(tempPath, imageBytes);
+
+                // Process with preset (overwrite original file, then move to final destination)
+                using var cts = new CancellationTokenSource();
+                var processedPath = await _resizeService.ProcessAsync(tempPath, preset, cts.Token);
+                if (processedPath != null && processedPath != tempPath)
+                {
+                    // If output differs from tempPath, move it to the final destination
+                    File.Move(processedPath, outputPath, overwrite: true);
+                }
+
+                _logger.LogInformation("Processed and saved: {OutputPath}", outputPath);
+            }
+            finally
+            {
+                // Clean up temp file
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download and process artwork {TargetId}", target.TargetId);
+        }
+    }
+
+    #endregion
+
     #region Progress Reporting
 
     /// <summary>
@@ -301,10 +385,34 @@ public sealed class DownloadCoordinator : IDisposable
         var completedCount = job.Targets.Count(t => t.Status == TargetStatus.Completed);
         var totalCount = job.Targets.Count;
 
-        // Get effective settings for this job
+        // Get effective settings for this job — start from global, then apply per-account overrides
         var effectiveSettings = job.Settings.UseGlobalSettings
             ? SettingsOverride.FromGlobalSettings(_settingsService.Current)
             : job.Settings;
+
+        // Apply per-account download root/folder/filename overrides when enabled
+        var acctProfile = _accountService?.ActiveProfile;
+        if (acctProfile?.Settings is { UseAccountSettings: true } acctSettings)
+        {
+            if (!string.IsNullOrWhiteSpace(acctSettings.DownloadRoot))
+            { effectiveSettings.DownloadRoot = acctSettings.DownloadRoot; effectiveSettings.UseGlobalSettings = false; }
+            if (!string.IsNullOrWhiteSpace(acctSettings.FolderTemplate))
+                effectiveSettings.FolderTemplate = acctSettings.FolderTemplate;
+            if (!string.IsNullOrWhiteSpace(acctSettings.FilenameTemplate))
+                effectiveSettings.FilenameTemplate = acctSettings.FilenameTemplate;
+            if (acctSettings.MaxConcurrentDownloads.HasValue)
+                effectiveSettings.MaxConcurrentDownloads = acctSettings.MaxConcurrentDownloads;
+            if (acctSettings.FilterAiGenerated.HasValue)
+                effectiveSettings.FilterAiGenerated = acctSettings.FilterAiGenerated;
+            if (acctSettings.SkipR18.HasValue)
+                effectiveSettings.SkipR18 = acctSettings.SkipR18;
+            if (acctSettings.SkipR18G.HasValue)
+                effectiveSettings.SkipR18G = acctSettings.SkipR18G;
+            if (acctSettings.SeparateR18Folder.HasValue)
+                effectiveSettings.SeparateR18Folder = acctSettings.SeparateR18Folder;
+            if (acctSettings.AllowRedownload.HasValue)
+                effectiveSettings.AllowRedownload = acctSettings.AllowRedownload;
+        }
 
         // Process each target
         foreach (var target in job.Targets.Where(t =>
@@ -341,13 +449,37 @@ public sealed class DownloadCoordinator : IDisposable
                         : effectiveSettings;
 
                     // Execute based on target type
-                    var (found, downloaded) = target.Type switch
+                    int found, downloaded;
+                    if (target.Type == TargetType.Artist)
                     {
-                        TargetType.Artist => await DownloadArtistAsync(job.Id, target, targetSettings, ct),
-                        TargetType.Artwork => await DownloadArtworkAsync(target, targetSettings, ct),
-                        TargetType.Post => await DownloadFanboxPostAsync(target, targetSettings, ct),
-                        _ => throw new NotSupportedException($"Target type {target.Type} not supported")
-                    };
+                        (found, downloaded) = await DownloadArtistAsync(
+                            job.Id, target, targetSettings, ct,
+                            onOutputFolder: folder =>
+                            {
+                                if (string.IsNullOrWhiteSpace(job.OutputFolder))
+                                {
+                                    job.OutputFolder = folder;
+                                    _ = _jobRepository.SaveJobAsync(job, ct);
+                                }
+                            },
+                            onFirstThumbnail: url =>
+                            {
+                                if (string.IsNullOrWhiteSpace(target.ThumbnailUrl))
+                                {
+                                    target.ThumbnailUrl = url;
+                                    _ = _jobRepository.SaveJobAsync(job, ct);
+                                }
+                            });
+                    }
+                    else
+                    {
+                        (found, downloaded) = target.Type switch
+                        {
+                            TargetType.Artwork => await DownloadArtworkAsync(target, targetSettings, ct),
+                            TargetType.Post    => await DownloadFanboxPostAsync(target, targetSettings, ct),
+                            _ => throw new NotSupportedException($"Target type {target.Type} not supported")
+                        };
+                    }
 
                     await _jobRepository.UpdateTargetStatusAsync(
                         target.Id,
@@ -405,7 +537,9 @@ public sealed class DownloadCoordinator : IDisposable
         Guid jobId,
         DownloadTarget target,
         SettingsOverride settings,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<string>? onOutputFolder = null,
+        Action<string>? onFirstThumbnail = null)
     {
         // Get all artwork IDs for this artist
         var profile = await _client.GetUserProfileAllAsync(target.TargetId, ct);
@@ -414,28 +548,42 @@ public sealed class DownloadCoordinator : IDisposable
         if (allArtworkIds.Count == 0)
             return (0, 0);
 
-        // Fetch metadata in batches of 48 to avoid URL-too-long (414) errors
-        const int batchSize = 48;
-        var allMetadata = new Dictionary<string, ArtworkPreview>();
-        for (int i = 0; i < allArtworkIds.Count; i += batchSize)
-        {
-            ct.ThrowIfCancellationRequested();
-            var batch = allArtworkIds.Skip(i).Take(batchSize);
-            var batchMeta = await _client.GetArtworksMetadataAsync(target.TargetId, batch, ct);
-            foreach (var kv in batchMeta)
-                allMetadata[kv.Key] = kv.Value;
-        }
-
-        // Apply page range filter
-        var pageRange = target.HasCustomPageRange
-            ? PageRangeParser.Parse(target.PageRange)
-            : PageRangeParser.Parse("0"); // All pages
+        // Cap to the N most-recent artworks when requested (IDs are already newest-first)
+        if (settings.MaxArtworksPerArtist is > 0)
+            allArtworkIds = allArtworkIds.Take(settings.MaxArtworksPerArtist.Value).ToList();
 
         // Pre-parse per-target tag/date filters (case-insensitive substring match for tags)
         var includeTagSet = ParseTagSet(settings.IncludeTags);
         var excludeTagSet = ParseTagSet(settings.ExcludeTagsFilter);
         var dateFromUtc = settings.DateFrom?.Date;
         var dateToUtc = settings.DateTo?.Date.AddDays(1).AddTicks(-1); // include the entire 'To' day
+
+        // Fetch metadata in batches of 48 (newest-first). When a DateFrom cutoff is active,
+        // stop early once every artwork in a batch predates the cutoff — no need to scan
+        // the entire gallery for date-limited schedules.
+        const int batchSize = 48;
+        var allMetadata = new Dictionary<string, ArtworkPreview>();
+        for (int i = 0; i < allArtworkIds.Count; i += batchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            var batch = allArtworkIds.Skip(i).Take(batchSize).ToList();
+            var batchMeta = await _client.GetArtworksMetadataAsync(target.TargetId, batch, ct);
+            foreach (var kv in batchMeta)
+                allMetadata[kv.Key] = kv.Value;
+
+            // Early-stop: if every artwork in this batch is older than the cutoff, all
+            // remaining IDs (which are even older) will also be filtered out.
+            if (dateFromUtc.HasValue && batchMeta.Count > 0 &&
+                batchMeta.Values.All(a => a.CreateDate.HasValue && a.CreateDate.Value.UtcDateTime < dateFromUtc.Value))
+            {
+                break;
+            }
+        }
+
+        // Apply page range filter
+        var pageRange = target.HasCustomPageRange
+            ? PageRangeParser.Parse(target.PageRange)
+            : PageRangeParser.Parse("0"); // All pages
 
         // Filter the metadata list before counting "found"
         var filteredArtworks = allMetadata.Values.Where(artwork =>
@@ -488,8 +636,20 @@ public sealed class DownloadCoordinator : IDisposable
                 if (settings.DownloadDelaySeconds > 0)
                     await Task.Delay(settings.DownloadDelaySeconds.Value * 1000, ct);
 
-                await _downloadService.DownloadArtworkPagesAsync(artwork, pageIndices, null, ct, settings);
+                var savedFiles = await _downloadService.DownloadArtworkPagesAsync(artwork, pageIndices, null, ct, settings);
                 downloaded++;
+
+                // Capture output folder and thumbnail from the first successfully downloaded artwork
+                if (savedFiles.Count > 0)
+                {
+                    onOutputFolder?.Invoke(Path.GetDirectoryName(savedFiles[0])!);
+                    onOutputFolder = null; // only capture once
+                }
+                if (!string.IsNullOrEmpty(artwork.ThumbnailUrl))
+                {
+                    onFirstThumbnail?.Invoke(artwork.ThumbnailUrl);
+                    onFirstThumbnail = null; // only capture once
+                }
             }
             catch (Exception ex)
             {

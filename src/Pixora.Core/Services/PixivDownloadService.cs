@@ -20,6 +20,7 @@ public sealed class PixivDownloadService
     private readonly PixivClient _client;
     private readonly PixivHttpClientFactory _httpFactory;
     private readonly SettingsService _settings;
+    private readonly ImageResizeService _resizeService;
     private readonly ILogger<PixivDownloadService> _logger;
 
     private static readonly string DiagLog = Path.Combine(
@@ -40,11 +41,13 @@ public sealed class PixivDownloadService
         PixivClient client,
         PixivHttpClientFactory httpFactory,
         SettingsService settings,
+        ImageResizeService resizeService,
         ILogger<PixivDownloadService> logger)
     {
         _client = client;
         _httpFactory = httpFactory;
         _settings = settings;
+        _resizeService = resizeService;
         _logger = logger;
     }
 
@@ -55,10 +58,11 @@ public sealed class PixivDownloadService
     public Task<IReadOnlyList<string>> DownloadArtworkAsync(
         ArtworkPreview artwork,
         IProgress<DownloadProgress>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        SettingsOverride? overrideSettings = null)
     {
         // null = "all pages"
-        return DownloadArtworkPagesAsync(artwork, pageIndexes: null, progress, ct);
+        return DownloadArtworkPagesAsync(artwork, pageIndexes: null, progress, ct, overrideSettings);
     }
 
     /// <summary>
@@ -98,6 +102,7 @@ public sealed class PixivDownloadService
         var effectiveDateFormat = ovr?.DateFormat ?? s.DateFormat;
         var effectiveCreateSubfolder = ovr?.CreateSubfolderPerSubmission ?? s.CreateSubfolderPerSubmission;
         var effectiveSeparateR18 = ovr?.SeparateR18Folder ?? s.SeparateR18Folder;
+        var allowRedownload = ovr?.AllowRedownload ?? false;
 
         var template = new FilenameTemplate(effectiveDateFormat);
         var ctx0 = new FilenameContext
@@ -124,6 +129,13 @@ public sealed class PixivDownloadService
             var subfolderName = SafeName($"{artwork.Id}_{artwork.Title}");
             Diag($"SafeName('{artwork.Id}_{artwork.Title}') => '{subfolderName}'");
             targetDir = Path.Combine(targetDir, subfolderName);
+        }
+
+        // Override targetDir if CustomOutputFolder is set (from preset)
+        if (!string.IsNullOrWhiteSpace(ovr?.CustomOutputFolder))
+        {
+            targetDir = ovr!.CustomOutputFolder!;
+            Diag($"Using CustomOutputFolder: {targetDir}");
         }
 
         Diag($"Creating directory: {targetDir} (override={(ovr != null ? "yes" : "no")})");
@@ -181,7 +193,7 @@ public sealed class PixivDownloadService
             var destPath = Path.Combine(targetDir, fileName);
             Diag($"  page[{i}] destPath={destPath}");
 
-            if (File.Exists(destPath) && new FileInfo(destPath).Length > 0)
+            if (!allowRedownload && File.Exists(destPath) && new FileInfo(destPath).Length > 0)
             {
                 Diag($"  page[{i}] EXISTS, skipping (size={new FileInfo(destPath).Length})");
                 savedFiles.Add(destPath);
@@ -194,7 +206,63 @@ public sealed class PixivDownloadService
                 await DownloadFileAsync(pageUrl, destPath, batchIdx, batchTotal, artwork.Id, progress, ct)
                     .ConfigureAwait(false);
                 Diag($"  page[{i}] DOWNLOADED size={(File.Exists(destPath) ? new FileInfo(destPath).Length : -1)}");
-                savedFiles.Add(destPath);
+
+                // Apply preset post-processing if specified (resize, color adjustments, format conversion)
+                var preset = ovr?.ImagePreset;
+                bool needsResize = preset != null
+                    && preset.DevicePreset != DevicePreset.Original
+                    && preset.DevicePreset != DevicePreset.None;
+                bool needsAdjustments = preset?.Adjustments?.HasAdjustments == true;
+                bool needsCrop = preset?.CropRegion != null;
+                bool needsFormatConvert = preset != null
+                    && preset.ResizeSettings.OutputFormat != ResizeOutputFormat.KeepOriginal;
+                if (preset != null && (needsResize || needsAdjustments || needsCrop || needsFormatConvert))
+                {
+                    Diag($"  page[{i}] POST-PROCESS with preset '{preset.Name}' (SaveAsNew={preset.SaveAsNew}, CustomFolder={preset.CustomOutputFolder ?? "<null>"})");
+                    try
+                    {
+                        var processedPath = await _resizeService.ProcessAsync(destPath, preset, ct).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(processedPath) && File.Exists(processedPath))
+                        {
+                            Diag($"  page[{i}] PROCESSED -> {processedPath}");
+                            // If processed file is in a different location, return that path so the user sees it
+                            savedFiles.Add(processedPath);
+
+                            // When SaveAsNew=true, original (unprocessed) at destPath is preserved by ProcessAsync.
+                            // Delete it unless user explicitly opted in via AlsoDownloadUnprocessed.
+                            if (preset.SaveAsNew
+                                && !preset.AlsoDownloadUnprocessed
+                                && !string.Equals(processedPath, destPath, StringComparison.OrdinalIgnoreCase)
+                                && File.Exists(destPath))
+                            {
+                                try
+                                {
+                                    File.Delete(destPath);
+                                    Diag($"  page[{i}] removed unprocessed copy at {destPath} (AlsoDownloadUnprocessed=false)");
+                                }
+                                catch (Exception delEx)
+                                {
+                                    Diag($"  page[{i}] failed to remove unprocessed copy: {delEx.Message}");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Diag($"  page[{i}] PROCESS returned no file, keeping original");
+                            savedFiles.Add(destPath);
+                        }
+                    }
+                    catch (Exception procEx)
+                    {
+                        Diag($"  page[{i}] PROCESS FAILED: {procEx.GetType().Name}: {procEx.Message}");
+                        _logger.LogError(procEx, "Failed to apply preset to {Path}", destPath);
+                        savedFiles.Add(destPath); // keep original even if processing fails
+                    }
+                }
+                else
+                {
+                    savedFiles.Add(destPath);
+                }
             }
             catch (Exception ex)
             {
@@ -296,6 +364,65 @@ public sealed class PixivDownloadService
         // BMP: "BM"
         if (head[0] == 0x42 && head[1] == 0x4D) return true;
         return false;
+    }
+
+    /// <summary>
+    /// Returns true if any file whose name starts with <paramref name="artworkId"/> exists
+    /// inside the download directory (recursive). Checks both DownloadRoot and CustomOutputFolder.
+    /// Used to detect already-downloaded artworks before showing a re-download confirmation dialog.
+    /// When <paramref name="fileTypeFilter"/> is "processed", only checks for files with "_processed" suffix.
+    /// When "unprocessed", only checks for files without "_processed" suffix.
+    /// When "all" (default), checks for any file starting with the artwork ID.
+    /// </summary>
+    public bool HasExistingFiles(string artworkId, SettingsOverride? overrideSettings = null, string fileTypeFilter = "all")
+    {
+        var s = _settings.Current;
+        var ovr = overrideSettings != null && !overrideSettings.UseGlobalSettings ? overrideSettings : null;
+        
+        // Helper to check if filename matches the criteria
+        bool MatchesPattern(string filename)
+        {
+            var name = Path.GetFileNameWithoutExtension(filename);
+            // Must start with artwork ID
+            if (!name.StartsWith(artworkId, StringComparison.OrdinalIgnoreCase))
+                return false;
+            
+            // Apply file type filter
+            return fileTypeFilter switch
+            {
+                "processed" => name.Contains("_processed", StringComparison.OrdinalIgnoreCase),
+                "unprocessed" => !name.Contains("_processed", StringComparison.OrdinalIgnoreCase),
+                _ => true // "all" - match any file starting with artwork ID
+            };
+        }
+        
+        // Check CustomOutputFolder first if set
+        if (!string.IsNullOrWhiteSpace(ovr?.CustomOutputFolder))
+        {
+            var customFolder = ovr!.CustomOutputFolder!;
+            if (Directory.Exists(customFolder))
+            {
+                try
+                {
+                    var found = Directory
+                        .EnumerateFiles(customFolder, "*", SearchOption.AllDirectories)
+                        .Any(MatchesPattern);
+                    if (found) return true;
+                }
+                catch { /* continue to check DownloadRoot */ }
+            }
+        }
+        
+        // Check DownloadRoot (either from override or global)
+        var root = !string.IsNullOrWhiteSpace(ovr?.DownloadRoot) ? ovr!.DownloadRoot! : s.DownloadRoot;
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) return false;
+        try
+        {
+            return Directory
+                .EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Any(MatchesPattern);
+        }
+        catch { return false; }
     }
 
     private static readonly HashSet<string> WindowsReserved = new(StringComparer.OrdinalIgnoreCase)

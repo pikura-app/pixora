@@ -223,33 +223,9 @@ public partial class HoshiView : UserControl
 
     private async void OnDlClicked(object? sender, RoutedEventArgs e)
     {
-        if (VM is not { CurrentCard: { } card } vm) return;
-        var dl = AppServices.Get<Pixora.Core.Services.PixivDownloadService>();
-
-        vm.Messages.Add(new AiChatMessage { Role = "assistant", Content = $"⏳ Downloading \"{card.Title}\"…" });
-
-        try
-        {
-            var paths = await dl.DownloadArtworkAsync(card.Artwork);
-            if (paths.Count == 0)
-            {
-                vm.Messages.Add(new AiChatMessage { Role = "assistant", Content = $"⚠ No files were downloaded for \"{card.Title}\"." });
-            }
-            else
-            {
-                var folder = System.IO.Path.GetDirectoryName(paths[0]) ?? "(unknown)";
-                var fileWord = paths.Count == 1 ? "file" : "files";
-                vm.Messages.Add(new AiChatMessage
-                {
-                    Role = "assistant",
-                    Content = $"✓ Downloaded {paths.Count} {fileWord} for \"{card.Title}\"\nSaved to: {folder}"
-                });
-            }
-        }
-        catch (System.Exception ex)
-        {
-            vm.Messages.Add(new AiChatMessage { Role = "system", Content = $"✗ Download failed for \"{card.Title}\": {ex.Message}" });
-        }
+        Console.Error.WriteLine($"[Hoshi] OnDlClicked: VM={VM != null} CurrentCard={VM?.CurrentCard?.Title ?? "null"}");
+        if (VM is not { CurrentCard: { } card } vm) { Console.Error.WriteLine("[Hoshi] OnDlClicked: bailed — no CurrentCard"); return; }
+        await vm.DownloadArtworkWithJobAsync(card);
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Pixora.Avalonia.Services;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
@@ -15,6 +16,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly NavigationService _navigationService;
     private readonly SettingsService _settingsService;
     private readonly UpdateCheckService _updateCheck;
+    private readonly ILogger<MainWindowViewModel> _logger;
     private ContentControl? _mainContentControl;
 
     [ObservableProperty] private string _sidebarUserName    = "Guest User";
@@ -38,11 +40,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty] private string _changelogNotes       = string.Empty;
     [ObservableProperty] private string _changelogReleaseUrl  = string.Empty;
 
-    public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck)
+    public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck, ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService;
         _settingsService   = settingsService;
         _updateCheck       = updateCheck;
+        _logger            = logger;
         Title = "Pixora";
         RefreshUserChip();
         _settingsService.Changed += (_, _) => RefreshUserChip();
@@ -212,17 +215,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("NavigateToGallery called");
             if (_mainContentControl != null)
             {
                 var galleryView = new Pixora.Avalonia.Views.Gallery.GalleryView();
                 _mainContentControl.Content = galleryView;
-                System.Diagnostics.Debug.WriteLine("GalleryView loaded successfully");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"NavigateToGallery failed: {ex.Message}");
+            _logger.LogError(ex, "NavigateToGallery failed");
         }
     }
 
@@ -231,17 +232,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("NavigateToRankings called");
             if (_mainContentControl != null)
             {
                 var rankingsView = new Pixora.Avalonia.Views.RankingsView();
                 _mainContentControl.Content = rankingsView;
-                System.Diagnostics.Debug.WriteLine("RankingsView loaded successfully");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"NavigateToRankings failed: {ex.Message}");
+            _logger.LogError(ex, "NavigateToRankings failed");
         }
     }
 
@@ -250,17 +249,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("NavigateToDownloads called");
             if (_mainContentControl != null)
             {
                 var downloadsView = new Pixora.Avalonia.Views.DownloadsView();
                 _mainContentControl.Content = downloadsView;
-                System.Diagnostics.Debug.WriteLine("DownloadsView loaded successfully");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"NavigateToDownloads failed: {ex.Message}");
+            _logger.LogError(ex, "NavigateToDownloads failed");
         }
     }
 
@@ -269,17 +266,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("NavigateToHistory called");
             if (_mainContentControl != null)
             {
                 var historyView = new Pixora.Avalonia.Views.History.HistoryView();
                 _mainContentControl.Content = historyView;
-                System.Diagnostics.Debug.WriteLine("HistoryView loaded successfully");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"NavigateToHistory failed: {ex.Message}");
+            _logger.LogError(ex, "NavigateToHistory failed");
         }
     }
 
@@ -288,17 +283,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("NavigateToSettings called");
             if (_mainContentControl != null)
             {
                 var settingsView = new Pixora.Avalonia.Views.Settings.SettingsView();
                 _mainContentControl.Content = settingsView;
-                System.Diagnostics.Debug.WriteLine("SettingsView loaded successfully");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"NavigateToSettings failed: {ex.Message}");
+            _logger.LogError(ex, "NavigateToSettings failed");
         }
     }
 

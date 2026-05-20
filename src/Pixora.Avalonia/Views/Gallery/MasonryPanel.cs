@@ -46,7 +46,10 @@ public class MasonryPanel : Panel
             availableWidth = ColumnWidth * 4;
 
         var columnCount = Math.Max(1, (int)Math.Floor((availableWidth + ItemSpacing) / (ColumnWidth + ItemSpacing)));
-        var actualColumnWidth = (availableWidth - (columnCount - 1) * ItemSpacing) / columnCount;
+        // Use the exact ColumnWidth (don't stretch to fill). This keeps card width
+        // equal to CardSize so explicit Width bindings line up with the column slot
+        // — extra space falls on the right of the panel as a normal empty gutter.
+        var actualColumnWidth = ColumnWidth;
 
         // Cache for Arrange pass
         _cachedSizes = new Size[Children.Count];
@@ -109,15 +112,23 @@ public class MasonryPanel : Panel
         if (Math.Abs(availableWidth - finalSize.Width) > 1)
         {
             columnCount = Math.Max(1, (int)Math.Floor((availableWidth + ItemSpacing) / (ColumnWidth + ItemSpacing)));
-            actualColumnWidth = (availableWidth - (columnCount - 1) * ItemSpacing) / columnCount;
+            actualColumnWidth = ColumnWidth;
         }
 
         var columnHeights = new double[columnCount];
 
+        // Bias cards toward the left margin: give the left gutter ~20% of the
+        // leftover space and the right gutter the remainder. This keeps cards
+        // visually anchored near the panel's left edge while still leaving some
+        // breathing room and preventing all leftover from piling on one side.
+        var contentWidth = columnCount * actualColumnWidth + (columnCount - 1) * ItemSpacing;
+        var leftover = Math.Max(0, availableWidth - contentWidth);
+        var offsetX = leftover * 0.2;
+
         for (int i = 0; i < Children.Count && i < _cachedSizes.Length; i++)
         {
             var shortestCol = FindShortestColumn(columnHeights);
-            var x = shortestCol * (actualColumnWidth + ItemSpacing);
+            var x = offsetX + shortestCol * (actualColumnWidth + ItemSpacing);
             var y = columnHeights[shortestCol];
             var size = _cachedSizes[i];
 

@@ -23,72 +23,160 @@ public partial class PixivLoginWindow : Window
     public PixivLoginWindow(bool clearCookiesForNewAccount = false)
     {
         _clearCookies = clearCookiesForNewAccount;
-        InitializeComponent();
-
-        if (OperatingSystem.IsLinux())
-        {
-            WebView.EnvironmentRequested += (_, args) =>
-            {
-                if (args is LinuxWpeWebViewEnvironmentRequestedEventArgs wpe)
-                    wpe.PreferWebKitGtkInstead = true;
-            };
-        }
 
         if (_clearCookies)
         {
-            WebView.NavigationCompleted += ClearCookiesOnFirstLoad;
+            // Delete the WebView2 cookie database from disk BEFORE InitializeComponent()
+            // so the WebView process starts with a clean profile. This avoids touching
+            // Pixiv's server (no /logout.php) so all other saved accounts stay valid.
+            TryDeleteWebView2CookiesFromDisk();
+        }
+
+        InitializeComponent();
+
+        WebView.EnvironmentRequested += (_, args) =>
+        {
+            // Windows WebView2: enable InPrivate mode so no cookies or session data
+            // are ever written to disk. Each login window starts completely fresh.
+            // We set the property via reflection because the concrete EventArgs type
+            // (WindowsWebView2EnvironmentRequestedEventArgs) lives in a namespace that
+            // varies across Avalonia.Controls.WebView versions.
+            if (_clearCookies && OperatingSystem.IsWindows())
+            {
+                var t = args.GetType();
+                // Set InPrivate mode so WebView2 uses an ephemeral (in-memory) profile.
+                t.GetProperty("IsInPrivateModeEnabled")?.SetValue(args, true);
+                // Also point UserDataFolder at a unique temp dir so this instance never
+                // shares a profile with the main app WebView or a previous login window.
+                var tmpDir = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), $"pixora_login_{Guid.NewGuid():N}");
+                t.GetProperty("UserDataFolder")?.SetValue(args, tmpDir);
+            }
+
+            if (args is LinuxWpeWebViewEnvironmentRequestedEventArgs wpe)
+                wpe.PreferWebKitGtkInstead = true;
+        };
+
+        if (_clearCookies)
+        {
+            // Belt-and-suspenders in-proc clear for non-WebView2 platforms
+            // (macOS WKWebView, Linux WebKitGTK) that don't support InPrivate.
+            WebView.NavigationCompleted -= WebView_NavigationCompleted;
+            WebView.Source = new Uri("about:blank");
+            WebView.NavigationCompleted += ClearCookiesThenLogin;
         }
     }
 
-    private async void ClearCookiesOnFirstLoad(object? sender, WebViewNavigationCompletedEventArgs e)
+    /// <summary>
+    /// Deletes the WebView2 cookies file(s) from disk so the next WebView instance
+    /// starts with a fresh, unauthenticated profile. Safe to call before InitializeComponent.
+    /// </summary>
+    private static void TryDeleteWebView2CookiesFromDisk()
     {
-        if (sender is not NativeWebView wv) return;
-        WebView.NavigationCompleted -= ClearCookiesOnFirstLoad;
         try
         {
-            // Clear all cookies via JS (covers all domains loaded so far)
-            const string clearScript = """
-                (function() {
-                    var cookies = document.cookie.split(';');
-                    for (var i = 0; i < cookies.length; i++) {
-                        var name = cookies[i].split('=')[0].trim();
-                        var domains = ['.pixiv.net', 'pixiv.net', '.accounts.pixiv.net', 'accounts.pixiv.net', window.location.hostname];
-                        var paths = ['/', '/api', ''];
-                        for (var d = 0; d < domains.length; d++)
-                            for (var p = 0; p < paths.length; p++)
-                                document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=' + domains[d] + ';path=' + paths[p];
-                    }
-                })()
-                """;
-            await wv.InvokeScript(clearScript);
+            // WebView2 stores its persistent data under %LocalAppData%\<ExeName>.WebView2
+            // or %AppData%\<ExeName>\EBWebView.  We target the most common locations.
+            var exeName = System.Diagnostics.Process.GetCurrentProcess().ProcessName; // "Pixora"
+            var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            var candidates = new[]
+            {
+                // WebView2 fixed-version / default locations
+                System.IO.Path.Combine(localApp, $"{exeName}.WebView2", "EBWebView", "Default", "Cookies"),
+                System.IO.Path.Combine(localApp, $"{exeName}.WebView2", "EBWebView", "Default", "Network", "Cookies"),
+                System.IO.Path.Combine(localApp, $"{exeName}.WebView2", "Default", "Cookies"),
+                System.IO.Path.Combine(localApp, $"{exeName}.WebView2", "Default", "Network", "Cookies"),
+                // Avalonia.Controls.WebView may also use %AppData%\Pixora\EBWebView
+                System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Pixora", "EBWebView", "Default", "Cookies"),
+                System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Pixora", "EBWebView", "Default", "Network", "Cookies"),
+            };
+
+            foreach (var path in candidates)
+            {
+                try
+                {
+                    if (System.IO.File.Exists(path))
+                        System.IO.File.Delete(path);
+                }
+                catch { /* locked by another process — will fall back to in-proc API */ }
+            }
         }
         catch { /* non-fatal */ }
-        // Navigate to Pixiv logout to invalidate server session, then to fresh login
-        wv.Source = new Uri("https://accounts.pixiv.net/login?lang=en&source=pc&view_type=page");
     }
 
-    private async void WebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
+    private async void ClearCookiesThenLogin(object? sender, WebViewNavigationCompletedEventArgs e)
+    {
+        if (sender is not NativeWebView wv) return;
+        var uri = wv.Source?.ToString() ?? string.Empty;
+        if (uri != "about:blank" && !string.IsNullOrEmpty(uri)) return;
+
+        WebView.NavigationCompleted -= ClearCookiesThenLogin;
+
+        // In-proc cookie API clear (belt-and-suspenders on top of the disk deletion).
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var cm = wv.TryGetCookieManager();
+                if (cm == null) return;
+                try
+                {
+                    var mi = cm.GetType().GetMethod("DeleteAllCookies");
+                    mi?.Invoke(cm, null);
+                }
+                catch { /* non-fatal */ }
+                try
+                {
+                    var cookies = await cm.GetCookiesAsync();
+                    var del = cm.GetType().GetMethod("DeleteCookie");
+                    if (del != null)
+                        foreach (var c in cookies)
+                            try { del.Invoke(cm, new object?[] { c }); } catch { }
+                }
+                catch { /* non-fatal */ }
+            });
+            await Task.Delay(200);
+        }
+        catch { /* non-fatal */ }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            WebView.NavigationCompleted += WebView_NavigationCompleted;
+            wv.Source = new Uri("https://accounts.pixiv.net/login?lang=en&source=pc&view_type=page");
+        });
+    }
+
+    // NavigationCompleted may fire on any thread depending on the WebView2 host.
+    // Always dispatch the entire handler to the UI thread so webView (COM/WinRT thread-affined)
+    // is only accessed from the thread that owns it.
+    private void WebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
     {
         if (_completed || sender is not NativeWebView webView) return;
         if (!e.IsSuccess) return;
 
-        var uri = webView.Source;
-        if (uri is null) return;
-
-        // Only act once we're on pixiv.net (post-login redirect)
-        if (!uri.Host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
-
-        // Run entirely on the UI thread to avoid cross-thread access on WebView objects
-        await Dispatcher.UIThread.InvokeAsync(async () => await HandleLoginAsync(webView));
+        Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var uri = webView.Source;
+            if (uri is null) return;
+            if (!uri.Host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
+            await HandleLoginAsync(webView);
+        });
     }
 
+    // Runs entirely on the UI thread. Task.Delay resumes on threadpool but webView is only
+    // touched before / after those delays via InvokeAsync wrappers to re-enter the UI thread.
     private async Task HandleLoginAsync(NativeWebView webView)
     {
         StatusText.Text = "Detecting session…";
 
         try
         {
-            // Give the page a moment to fully establish session cookies after redirect
+            // Small delay to let the page settle — off UI thread is fine here
             await Task.Delay(1500);
 
             const string script = """
@@ -110,17 +198,21 @@ public partial class PixivLoginWindow : Window
                 })()
                 """;
 
-            var result = await webView.InvokeScript(script);
+            // Back on UI thread to call InvokeScript (webView is thread-affined)
+            var result = await Dispatcher.UIThread.InvokeAsync(() => webView.InvokeScript(script));
 
             if (string.IsNullOrWhiteSpace(result))
             {
-                StatusText.Text = "Retrying session check…";
+                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Retrying session check…");
                 await Task.Delay(2000);
-                result = await webView.InvokeScript(script);
+                result = await Dispatcher.UIThread.InvokeAsync(() => webView.InvokeScript(script));
                 if (string.IsNullOrWhiteSpace(result))
                 {
-                    StatusText.Text = "Could not detect session. Try signing in again.";
-                    _completed = false;
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        StatusText.Text = "Could not detect session. Try signing in again.";
+                        _completed = false;
+                    });
                     return;
                 }
             }
@@ -136,8 +228,11 @@ public partial class PixivLoginWindow : Window
             {
                 var rawMsg = root.TryGetProperty("raw", out var rp) ? rp.GetString() :
                              root.TryGetProperty("err", out var ep) ? ep.GetString() : json;
-                StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}";
-                _completed = false;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    StatusText.Text = $"Not signed in: {rawMsg?[..Math.Min(rawMsg?.Length ?? 0, 120)]}";
+                    _completed = false;
+                });
                 return;
             }
 
@@ -146,14 +241,27 @@ public partial class PixivLoginWindow : Window
 
             if (string.IsNullOrWhiteSpace(userId))
             {
-                StatusText.Text = "Session detected but user ID missing — try again.";
+                await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session detected but user ID missing — try again.");
                 return;
             }
 
             _completed = true;
-            StatusText.Text = "Session confirmed — extracting cookie…";
+            await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Confirming session…");
 
-            var sid = await TryGetPhpSessIdViaCookieManagerAsync(webView);
+            // Extract PHPSESSID — GetCookiesAsync must be awaited on the UI thread
+            string? sid = null;
+            try
+            {
+                sid = await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    var cm = webView.TryGetCookieManager();
+                    if (cm == null) return null;
+                    var cookies = await cm.GetCookiesAsync();
+                    return cookies.FirstOrDefault(c =>
+                        string.Equals(c.Name, "PHPSESSID", StringComparison.OrdinalIgnoreCase))?.Value;
+                });
+            }
+            catch { /* non-fatal */ }
 
             var settings = AppServices.Get<SettingsService>();
             settings.Update(s =>
@@ -163,78 +271,39 @@ public partial class PixivLoginWindow : Window
                 s.UserName = userName ?? userId;
             });
 
-            // Validation and account upsert can run off-thread; hop back to UI after
-            await Task.Run(async () =>
-            {
-                var client = AppServices.Get<PixivClient>();
-                await client.ValidateSessionAsync();
-                AppServices.Get<AccountService>().UpsertFromCurrentSession();
-            });
+            // Register the profile NOW so it appears in the accounts list even if
+            // the network validation below fails for any reason.
+            try { AppServices.Get<AccountService>().UpsertFromCurrentSession(); }
+            catch { /* non-fatal */ }
 
-            var displayName = settings.Current.UserName ?? settings.Current.UserId;
-            LoginSucceeded  = true;
-            StatusText.Text = $"Signed in as {displayName}";
+            // Network validation — entirely off UI thread, no webView access
+            try
+            {
+                await Task.Run(async () =>
+                {
+                    var client = AppServices.Get<PixivClient>();
+                    await client.ValidateSessionAsync();
+                });
+            }
+            catch { /* non-fatal — the profile is already saved */ }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var displayName = settings.Current.UserName ?? settings.Current.UserId;
+                LoginSucceeded  = true;
+                StatusText.Text = $"Signed in as {displayName}";
+            });
             await Task.Delay(800);
-            Close();
+            await Dispatcher.UIThread.InvokeAsync(() => Close());
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Error: {ex.Message}";
-            _completed = false;
-        }
-    }
-
-    /// <summary>
-    /// Reads PHPSESSID from the WebView cookie store.
-    /// Uses the official cross-platform TryGetCookieManager() API first (works on Windows and macOS).
-    /// Falls back to JS document.cookie, then manual prompt as a last resort.
-    /// </summary>
-    private async Task<string?> TryGetPhpSessIdViaCookieManagerAsync(NativeWebView webView)
-    {
-        // 1. Try the official Avalonia cross-platform cookie manager (Windows + macOS)
-        try
-        {
-            var cookieManager = webView.TryGetCookieManager();
-            if (cookieManager != null)
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var cookies = await cookieManager.GetCookiesAsync();
-                var sid = cookies
-                    .FirstOrDefault(c => string.Equals(c.Name, "PHPSESSID", StringComparison.OrdinalIgnoreCase));
-                if (sid != null && !string.IsNullOrWhiteSpace(sid.Value))
-                    return sid.Value;
-            }
+                StatusText.Text = $"Error: {ex.Message}";
+                _completed = false;
+            });
         }
-        catch { /* non-fatal — fall through */ }
-
-        // 2. Try JS document.cookie (only works if not HttpOnly, but worth trying)
-        try
-        {
-            const string script = """
-                (function() {
-                    var m = document.cookie.match(/(?:^|;\s*)PHPSESSID=([^;]+)/);
-                    return m ? m[1] : '';
-                })()
-                """;
-            var result = await webView.InvokeScript(script);
-            if (!string.IsNullOrWhiteSpace(result) && result != "\"\"" && result != "null")
-            {
-                var value = result.Trim('"');
-                if (!string.IsNullOrWhiteSpace(value)) return value;
-            }
-        }
-        catch { /* non-fatal */ }
-
-        // 3. Last resort: ask the user to paste it manually
-        await Dispatcher.UIThread.InvokeAsync(() => StatusText.Text = "Session confirmed — paste your PHPSESSID below to complete sign-in.");
-        return await PromptForPhpSessIdAsync();
-    }
-
-    private async Task<string?> PromptForPhpSessIdAsync()
-    {
-        var dialog = new ManualCookieDialog();
-        var owner  = TopLevel.GetTopLevel(this) as Window ?? this;
-        await dialog.ShowDialog(owner);
-        return string.IsNullOrWhiteSpace(dialog.PhpSessId) ? null : dialog.PhpSessId;
     }
 
     private void Cancel_Click(object? sender, RoutedEventArgs e) => Close();

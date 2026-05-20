@@ -222,4 +222,5 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
+          body_path: RELEASE_NOTES.md
           files: artifacts/**/*

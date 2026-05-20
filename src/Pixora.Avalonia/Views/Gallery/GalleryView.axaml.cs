@@ -10,6 +10,7 @@ using Pixora.Avalonia.Views.Artwork;
 using Pixora.Avalonia.Views.Dialogs;
 using Pixora.Core.Settings;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Pixora.Avalonia.Views.Gallery;
@@ -427,6 +428,41 @@ public partial class GalleryView : UserControl
         VM.DateTo = null;
         VM.SortMode = ArtworkSortMode.Default;
         if (this.FindControl<ComboBox>("SortCombo") is { } combo) combo.SelectedIndex = 0;
+    }
+
+    private async void OnDownloadPresetClicked(object? sender, RoutedEventArgs e)
+    {
+        var vm = VM;
+        if (vm == null) return;
+
+        // Priority: 1) selected artworks  2) currently viewed (inline viewer)  3) error
+        var picked = vm.VisibleArtworks.Where(a => a.IsSelected).ToList();
+        if (picked.Count == 0 && vm.InlineViewerCard != null)
+        {
+            // Use the currently viewed artwork
+            picked = new List<ArtworkCardViewModel> { vm.InlineViewerCard };
+        }
+
+        if (picked.Count == 0)
+        {
+            vm.StatusMessage = "No artwork selected or open. Click an artwork or select multiple first.";
+            return;
+        }
+
+        // Show preset window with the first artwork as preview
+        var dialogService = AppServices.Get<DialogService>();
+        var firstArtwork = picked[0].Artwork;
+        var additionalArtworks = picked.Skip(1).Select(c => c.Artwork).ToList();
+
+        var preset = await dialogService.ShowDownloadPresetDialogAsync(firstArtwork, additionalArtworks);
+        if (preset != null)
+        {
+            foreach (var card in picked)
+            {
+                await vm.DownloadWithPresetAsync(card, preset);
+            }
+            vm.StatusMessage = $"Queued {picked.Count} artwork(s) for download with preset: {preset.Name}";
+        }
     }
 
     private async void OnDownloadRangeClicked(object? sender, RoutedEventArgs e)

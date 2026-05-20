@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Pixora.Core.Models;
 
 namespace Pixora.Core.Settings;
 
@@ -292,6 +293,9 @@ public sealed class AppSettings
     /// <summary>UI locale passed to Pixiv ajax endpoints.</summary>
     public string Locale { get; set; } = "en";
 
+    /// <summary>Display language for the Pixora UI: "English", "日本語", "中文", "한국어".</summary>
+    public string AppLanguage { get; set; } = "English";
+
     /// <summary>App theme: "Default", "Light", "Dark".</summary>
     public string Theme { get; set; } = "Default";
 
@@ -361,6 +365,15 @@ public sealed class AppSettings
 
     /// <summary>When true, app starts hidden in system tray (no window shown).</summary>
     public bool StartMinimizedToTray { get; set; } = false;
+
+    /// <summary>When true, the app stays running in the background (tray) when closed so scheduled downloads can still execute.</summary>
+    public bool KeepSchedulesRunningInBackground { get; set; } = false;
+
+    /// <summary>When true, show a tray notification when a scheduled download completes.</summary>
+    public bool ShowScheduleNotifications { get; set; } = true;
+
+    /// <summary>When true, show a tray notification when any download job completes (individual, batch, or scheduled).</summary>
+    public bool NotifyOnDownloadComplete { get; set; } = false;
 
     #endregion
 
@@ -494,6 +507,40 @@ public sealed class AppSettings
 
     /// <summary>The version that was running last time the app launched — used to show changelog on first run after update.</summary>
     public string? LastSeenVersion { get; set; }
+
+    #endregion
+
+    #region Image Processing
+
+    /// <summary>Active resize preset for post-download processing (None = no processing).</summary>
+    public DevicePreset ActiveResizePreset { get; set; } = DevicePreset.None;
+
+    /// <summary>Resize mode: Fit, Fill, or Stretch.</summary>
+    public ResizeMode ResizeMode { get; set; } = ResizeMode.Fit;
+
+    /// <summary>Output format for resized images.</summary>
+    public ResizeOutputFormat ResizeOutputFormat { get; set; } = ResizeOutputFormat.KeepOriginal;
+
+    /// <summary>JPEG quality for resized images (1-100).</summary>
+    public int ResizeJpegQuality { get; set; } = 90;
+
+    /// <summary>Custom resize width in pixels (when using Custom preset).</summary>
+    public int ResizeCustomWidth { get; set; } = 1920;
+
+    /// <summary>Custom resize height in pixels (when using Custom preset).</summary>
+    public int ResizeCustomHeight { get; set; } = 1080;
+
+    /// <summary>When true, maintain aspect ratio during custom resize.</summary>
+    public bool ResizeMaintainAspect { get; set; } = true;
+
+    /// <summary>When true, enable image processing on all downloads.</summary>
+    public bool EnableImageProcessing { get; set; } = false;
+
+    /// <summary>Custom output folder for processed images (empty = same as original).</summary>
+    public string? ImageProcessingOutputFolder { get; set; }
+
+    /// <summary>Default image resize/edit preset for post-download processing (null = no processing).</summary>
+    public ImageEditPreset? ImagePreset { get; set; }
 
     #endregion
 

@@ -184,6 +184,9 @@
                             Name="DlRangeBtn" Click="OnDownloadPageRange"
                             IsVisible="{Binding InlineViewerCard.IsMultiPage}"
                             ToolTip.Tip="Download page range"/>
+                    <Button Content="🎨 Preset" CornerRadius="5" Padding="9,4" FontSize="11"
+                            Name="DlPresetBtn" Click="OnDownloadWithPreset"
+                            ToolTip.Tip="Download with image processing preset"/>
 
                     <Rectangle Width="1" Height="16" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="4,0"/>
 
@@ -234,9 +237,17 @@
                 PointerMoved="OnImagePointerMoved"
                 PointerReleased="OnImagePointerReleased">
             <Panel>
+                <!-- No artwork selected placeholder -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                            IsVisible="{Binding InlineViewerCard, Converter={x:Static ObjectConverters.IsNull}}">
+                    <TextBlock Text="Click an image to preview it here" FontSize="13"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                               HorizontalAlignment="Center" TextAlignment="Center"/>
+                </StackPanel>
+
                 <!-- Loading spinner -->
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"
-                            Name="LoadingPanel">
+                            Name="LoadingPanel" IsVisible="False">
                     <ProgressBar IsIndeterminate="True" Width="180"/>
                     <TextBlock Text="Loading…" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" HorizontalAlignment="Center"/>
                 </StackPanel>

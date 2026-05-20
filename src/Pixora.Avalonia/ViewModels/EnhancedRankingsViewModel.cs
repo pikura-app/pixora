@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pixora.Avalonia.Services;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 
@@ -133,8 +134,8 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
         _itemsPerPage = s.RankingsItemsPerPage;
         _showR18 = s.RankingsShowR18;
 
-        // Restore view options
-        _cardSize = s.RankingsCardSize;
+        // Restore view options — CardSize is shared across all tabs (synced via s.CardSize)
+        _cardSize = s.CardSize;
         _isGridView = s.RankingsViewMode == "Grid";
         _isListView = s.RankingsViewMode == "List";
         _isFixedHeight = s.RankingsCardHeightMode == "Fixed";
@@ -148,6 +149,9 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowR18Buttons));
             OnPropertyChanged(nameof(IsR18Enabled));
             OnPropertyChanged(nameof(ShowAiButton));
+            // Sync shared CardSize from settings (updated by other tabs)
+            var shared = _settingsService.Current.CardSize;
+            if (CardSize != shared) CardSize = shared;
             // Only reload for global filter changes; Rankings-specific toggles handle their own reload
             UpdateFilteredItems();
         };
@@ -198,7 +202,8 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
     partial void OnCardSizeChanged(int value)
     {
         OnPropertyChanged(nameof(FixedCardTotalHeight));
-        _settingsService.Update(s => s.RankingsCardSize = value);
+        if (_settingsService.Current.CardSize != value)
+            _settingsService.Update(s => s.CardSize = value);
     }
 
     partial void OnIsFixedHeightChanged(bool value)
@@ -465,6 +470,43 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
 
     [RelayCommand]
     public void ClearSelection() { foreach (var c in Items) c.IsSelected = false; SelectedCount = 0; }
+
+    [RelayCommand]
+    public Task DownloadSelectedAsync()
+    {
+        var previews = Items.Where(c => c.IsSelected).Select(c => c.ToPreview()).ToList();
+        if (previews.Count == 0) return Task.CompletedTask;
+        return GalleryVm.DownloadPreviewsAsync(previews);
+    }
+
+    [RelayCommand]
+    public Task DownloadVisibleAsync()
+    {
+        var previews = FilteredItems.Select(c => c.ToPreview()).ToList();
+        if (previews.Count == 0) return Task.CompletedTask;
+        return GalleryVm.DownloadPreviewsAsync(previews);
+    }
+
+    [RelayCommand]
+    public async Task DownloadWithPresetAsync()
+    {
+        var previews = Items.Where(c => c.IsSelected).Select(c => c.ToPreview()).ToList();
+        if (previews.Count == 0)
+        {
+            StatusMessage = "No artworks selected.";
+            return;
+        }
+
+        // Get first artwork for preview
+        var first = previews[0];
+        var dialogService = Pixora.Avalonia.Services.AppServices.Get<DialogService>();
+        var preset = await dialogService.ShowDownloadPresetDialogAsync(first);
+        if (preset != null)
+        {
+            // Use GalleryVm's method to download with preset
+            await GalleryVm.DownloadWithPresetAsync(previews, preset);
+        }
+    }
 
     // Pagination commands
     [RelayCommand] private void TogglePagination() => UsePagination = !UsePagination;

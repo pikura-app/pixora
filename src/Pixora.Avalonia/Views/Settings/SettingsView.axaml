@@ -87,7 +87,7 @@
             <!-- ====================== STORAGE & NAMING ====================== -->
             <TabItem Header="Storage &amp; Naming">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
-                    <StackPanel Spacing="16" Margin="8,8,8,8">
+                    <StackPanel Spacing="16" Margin="8,8,8,32">
 
                         <!-- Download Folder -->
                         <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
@@ -249,6 +249,92 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Per-Account Download Settings (only when multiple accounts) -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="24"
+                                Margin="0,0,0,8"
+                                IsVisible="{Binding HasMultipleAccounts}">
+                            <StackPanel Spacing="18">
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Per-Account Download Settings" FontWeight="SemiBold" FontSize="14"/>
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                            <Run Text="Overrides for "/>
+                                            <Run Text="{Binding ActiveProfileLabel}" FontWeight="SemiBold"/>
+                                            <Run Text=" — leave blank to use global settings"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseAccountSettings}"
+                                                 OnContent="Enabled" OffContent="Disabled"
+                                                 VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                <StackPanel Spacing="14" IsEnabled="{Binding UseAccountSettings}">
+
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Download Root" FontSize="12" FontWeight="SemiBold"/>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding AcctDownloadRoot}"
+                                                     Watermark="Leave blank to use global root"
+                                                     FontSize="12" CornerRadius="6"/>
+                                            <Button Grid.Column="1" Content="Browse"
+                                                    Command="{Binding BrowseAcctDownloadRootCommand}"
+                                                    CornerRadius="6" FontSize="12" Padding="10,6"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Folder Template" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding AcctFolderTemplate}"
+                                                 Watermark="e.g. %artist% (%member_id%)"
+                                                 FontSize="12" CornerRadius="6"/>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Filename Template" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding AcctFilenameTemplate}"
+                                                 Watermark="e.g. %image_id%_p%page_index%"
+                                                 FontSize="12" CornerRadius="6"/>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="Max Concurrent Downloads" FontSize="12" FontWeight="SemiBold"/>
+                                        <NumericUpDown Value="{Binding AcctMaxConcurrentDownloads}"
+                                                       Minimum="1" Maximum="20"
+                                                       FontSize="12" CornerRadius="6" Width="120"
+                                                       HorizontalAlignment="Left"/>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Content Filters" FontSize="12" FontWeight="SemiBold"/>
+                                        <CheckBox IsChecked="{Binding AcctFilterAiGenerated}"
+                                                  Content="Filter AI-generated artworks" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSkipR18}"
+                                                  Content="Skip R-18 content" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSkipR18G}"
+                                                  Content="Skip R-18G content" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctSeparateR18Folder}"
+                                                  Content="Place R-18 in separate subfolder" FontSize="12"/>
+                                        <CheckBox IsChecked="{Binding AcctAllowRedownload}"
+                                                  Content="Allow re-download (overwrite existing files)" FontSize="12"/>
+                                    </StackPanel>
+
+                                </StackPanel>
+
+                                <Button Content="Save Account Settings"
+                                        Command="{Binding SaveAccountSettingsCommand}"
+                                        Classes="accent" CornerRadius="6" Padding="14,7"
+                                        HorizontalAlignment="Right"/>
+
+                            </StackPanel>
+                        </Border>
+
                         <!-- Metadata Export -->
                         <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
@@ -275,6 +361,173 @@
                                     <CheckBox Content="Local timezone" IsChecked="{Binding UseLocalTimezone, Mode=TwoWay}"
                                               FontSize="13" Margin="0,0,24,8"/>
                                 </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ====================== IMAGE PROCESSING ====================== -->
+            <TabItem Header="Image Processing">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                    <StackPanel Spacing="16" Margin="8,8,8,32">
+
+                        <!-- Enable Image Processing -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="16">
+                                <CheckBox Content="Enable automatic image processing on downloads"
+                                          IsChecked="{Binding EnableImageProcessing, Mode=TwoWay}"
+                                          FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           Text="When enabled, all downloaded images will be processed according to the active preset below."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Active Resize Preset -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Active Resize Preset" FontWeight="SemiBold" FontSize="14"/>
+
+                                <ComboBox SelectedIndex="{Binding ActiveResizePresetIndex, Mode=TwoWay}"
+                                          FontSize="13" CornerRadius="6" HorizontalAlignment="Left" MinWidth="250">
+                                    <ComboBoxItem Content="None (Original Quality)"/>
+                                    <ComboBoxItem Content="4K Desktop Wallpaper (3840x2160)"/>
+                                    <ComboBoxItem Content="QHD Desktop Wallpaper (2560x1440)"/>
+                                    <ComboBoxItem Content="Full HD Desktop Wallpaper (1920x1080)"/>
+                                    <ComboBoxItem Content="HD Desktop Wallpaper (1280x720)"/>
+                                    <ComboBoxItem Content="iPhone 16 Pro Max (1320x2868)"/>
+                                    <ComboBoxItem Content="iPhone 16 / Pro (1179x2556)"/>
+                                    <ComboBoxItem Content="iPhone 14/15 Pro Max (1290x2796)"/>
+                                    <ComboBoxItem Content="iPhone SE (750x1334)"/>
+                                    <ComboBoxItem Content="iPad Pro 12.9&quot; (2048x2732)"/>
+                                    <ComboBoxItem Content="Samsung Galaxy S24 Ultra (1440x3120)"/>
+                                    <ComboBoxItem Content="Samsung Galaxy S24 / S24+ (1080x2340)"/>
+                                    <ComboBoxItem Content="Custom Resolution..."/>
+                                </ComboBox>
+
+                                <StackPanel Spacing="12" IsVisible="{Binding IsCustomResizePreset}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <TextBlock Grid.Column="0" Text="Width:" VerticalAlignment="Center" FontSize="13"/>
+                                        <NumericUpDown Grid.Column="1"
+                                                       Value="{Binding ResizeCustomWidth, Mode=TwoWay}"
+                                                       Minimum="100" Maximum="7680"
+                                                       FontSize="13" CornerRadius="6"/>
+                                        <TextBlock Grid.Column="2" Text="px" VerticalAlignment="Center" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <TextBlock Grid.Column="0" Text="Height:" VerticalAlignment="Center" FontSize="13"/>
+                                        <NumericUpDown Grid.Column="1"
+                                                       Value="{Binding ResizeCustomHeight, Mode=TwoWay}"
+                                                       Minimum="100" Maximum="4320"
+                                                       FontSize="13" CornerRadius="6"/>
+                                        <TextBlock Grid.Column="2" Text="px" VerticalAlignment="Center" FontSize="12"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    </Grid>
+                                    <CheckBox Content="Maintain aspect ratio"
+                                              IsChecked="{Binding ResizeMaintainAspect, Mode=TwoWay}"
+                                              FontSize="12"/>
+                                </StackPanel>
+
+                                <Separator Margin="0,8"
+                                           Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                <!-- Resize Mode -->
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Resize Mode" FontSize="13" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <RadioButton Content="Fit (preserve aspect)"
+                                                     IsChecked="{Binding ResizeMode, Mode=TwoWay, Converter={x:Static conv:EnumToBoolConverter.Instance}, ConverterParameter=Fit}"/>
+                                        <RadioButton Content="Fill (crop to fit)"
+                                                     IsChecked="{Binding ResizeMode, Mode=TwoWay, Converter={x:Static conv:EnumToBoolConverter.Instance}, ConverterParameter=Fill}"/>
+                                        <RadioButton Content="Stretch (distort)"
+                                                     IsChecked="{Binding ResizeMode, Mode=TwoWay, Converter={x:Static conv:EnumToBoolConverter.Instance}, ConverterParameter=Stretch}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Output Format -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Output Format" FontWeight="SemiBold" FontSize="14"/>
+
+                                <ComboBox SelectedIndex="{Binding ResizeOutputFormatIndex, Mode=TwoWay}"
+                                          FontSize="13" CornerRadius="6" HorizontalAlignment="Left" MinWidth="250">
+                                    <ComboBoxItem Content="Keep Original Format"/>
+                                    <ComboBoxItem Content="JPEG (High Quality)"/>
+                                    <ComboBoxItem Content="JPEG (Medium Quality)"/>
+                                    <ComboBoxItem Content="PNG (Lossless)"/>
+                                    <ComboBoxItem Content="WebP (Modern Format)"/>
+                                </ComboBox>
+
+                                <StackPanel Spacing="8" IsVisible="{Binding IsJpegOutputFormat}">
+                                    <TextBlock Text="JPEG Quality" FontSize="12" FontWeight="SemiBold"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Slider Grid.Column="0"
+                                                Value="{Binding ResizeJpegQuality, Mode=TwoWay}"
+                                                Minimum="1" Maximum="100" TickFrequency="1"
+                                                IsSnapToTickEnabled="True"
+                                                Margin="0,0,16,0"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding ResizeJpegQuality, StringFormat='{}{0}'}"
+                                                   FontSize="13" MinWidth="35" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Custom Output Folder -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Custom Output Folder" FontWeight="SemiBold" FontSize="14"/>
+                                <CheckBox Content="Save processed images to a custom folder"
+                                          IsChecked="{Binding UseCustomProcessingFolder, Mode=TwoWay}"
+                                          FontSize="13"/>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"
+                                      IsVisible="{Binding UseCustomProcessingFolder}">
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding ImageProcessingOutputFolder}"
+                                             IsReadOnly="True"
+                                             Watermark="Select a folder..."
+                                             CornerRadius="6" FontSize="13"/>
+                                    <Button Grid.Column="1"
+                                            Content="Browse..."
+                                            Command="{Binding BrowseProcessingFolderCommand}"
+                                            CornerRadius="6" FontSize="13" Padding="14,6"/>
+                                </Grid>
+                                <TextBlock FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           Text="If not set, processed images will be saved alongside the originals."
+                                           IsVisible="{Binding !UseCustomProcessingFolder}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Saved Custom Presets -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28">
+                            <StackPanel Spacing="16">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Custom Presets" FontWeight="SemiBold" FontSize="14"/>
+                                    <Button Grid.Column="1"
+                                            Content="📝 Open Image Editor"
+                                            Command="{Binding OpenImageEditorCommand}"
+                                            CornerRadius="6" FontSize="12" Padding="12,6"/>
+                                </Grid>
+                                <TextBlock FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                           Text="Create and save custom presets with advanced adjustments. Click the button above to open the image editor."/>
                             </StackPanel>
                         </Border>
 
@@ -644,6 +897,20 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Notifications -->
+                    <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="20" Margin="4,10,4,4">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Notifications" FontWeight="SemiBold" FontSize="14"/>
+                            <CheckBox Content="Notify me when any download finishes (individual, batch, or scheduled)"
+                                      IsChecked="{Binding NotifyOnDownloadComplete, Mode=TwoWay}" FontSize="12"/>
+                            <TextBlock FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                       Text="Shows a system tray notification when a download job completes, regardless of type."/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Diagnostics & Logging -->
                     <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                             BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
@@ -961,125 +1228,114 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ====================== ACCOUNT ====================== -->
-            <TabItem Header="Account">
+            <!-- ====================== ACCOUNTS ====================== -->
+            <TabItem Header="Accounts">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                     <StackPanel Spacing="24" Margin="8">
 
-                        <!-- Sign-in status -->
+                        <!-- Accounts list (always visible) -->
                         <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                                 BorderThickness="1" CornerRadius="8" Padding="24">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                <Border Grid.Column="0" Width="38" Height="38" CornerRadius="19" Margin="0,0,12,0"
-                                        Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
-                                        VerticalAlignment="Center">
-                                    <TextBlock Text="&#x2713;" FontSize="17" FontWeight="Bold" Foreground="White"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               IsVisible="{Binding IsSignedIn}"/>
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding AccountStatus}" FontWeight="SemiBold" FontSize="13"/>
-                                    <TextBlock Text="{Binding AccountDetail}" FontSize="11"
-                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <Button Content="Sign in" Command="{Binding LoginCommand}"
-                                            CornerRadius="6" Classes="accent" IsVisible="{Binding !IsSignedIn}"/>
-                                    <Button Content="Sign out" Command="{Binding LogoutCommand}"
-                                            CornerRadius="6" IsVisible="{Binding IsSignedIn}"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                            <StackPanel Spacing="20">
 
-                        <!-- Per-account download settings -->
-                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
-                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                                BorderThickness="1" CornerRadius="8" Padding="24"
-                                IsVisible="{Binding HasActiveProfile}">
-                            <StackPanel Spacing="18">
-
-                                <!-- Header row -->
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" Spacing="2">
-                                        <TextBlock Text="Per-Account Download Settings" FontWeight="SemiBold" FontSize="14"/>
-                                        <TextBlock FontSize="11"
-                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
-                                            <Run Text="Overrides for "/>
-                                            <Run Text="{Binding ActiveProfileLabel}" FontWeight="SemiBold"/>
-                                            <Run Text=" — leave blank to use global settings"/>
-                                        </TextBlock>
+                                <!-- Accounts header row -->
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="Accounts" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="Manage your signed-in Pixiv accounts" FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
                                     </StackPanel>
-                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseAccountSettings}"
-                                                 OnContent="Enabled" OffContent="Disabled"
-                                                 VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="Sign out all accounts"
+                                            Command="{Binding SignOutAllCommand}"
+                                            CornerRadius="6" Margin="0,0,8,0"
+                                            IsVisible="{Binding IsSignedIn}"/>
+                                    <Button Grid.Column="2" Content="+ Add account"
+                                            Command="{Binding AddAccountCommand}"
+                                            CornerRadius="6" Classes="accent"/>
                                 </Grid>
 
-                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}"/>
-
-                                <!-- Fields — only interactive when the toggle is on -->
-                                <StackPanel Spacing="14" IsEnabled="{Binding UseAccountSettings}">
-
-                                    <!-- Download root -->
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="Download Root" FontSize="12" FontWeight="SemiBold"/>
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                            <TextBox Grid.Column="0"
-                                                     Text="{Binding AcctDownloadRoot}"
-                                                     Watermark="Leave blank to use global root"
-                                                     FontSize="12" CornerRadius="6"/>
-                                            <Button Grid.Column="1" Content="Browse"
-                                                    Command="{Binding BrowseAcctDownloadRootCommand}"
-                                                    CornerRadius="6" FontSize="12" Padding="10,6"/>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!-- Folder template -->
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="Folder Template" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBox Text="{Binding AcctFolderTemplate}"
-                                                 Watermark="e.g. %artist% (%member_id%)"
-                                                 FontSize="12" CornerRadius="6"/>
-                                    </StackPanel>
-
-                                    <!-- Filename template -->
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="Filename Template" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBox Text="{Binding AcctFilenameTemplate}"
-                                                 Watermark="e.g. %image_id%_p%page_index%"
-                                                 FontSize="12" CornerRadius="6"/>
-                                    </StackPanel>
-
-                                    <!-- Max concurrent downloads -->
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="Max Concurrent Downloads" FontSize="12" FontWeight="SemiBold"/>
-                                        <NumericUpDown Value="{Binding AcctMaxConcurrentDownloads}"
-                                                       Minimum="1" Maximum="20"
-                                                       FontSize="12" CornerRadius="6" Width="120"
-                                                       HorizontalAlignment="Left"/>
-                                    </StackPanel>
-
-                                    <!-- Content filter toggles -->
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Content Filters" FontSize="12" FontWeight="SemiBold"/>
-                                        <CheckBox IsChecked="{Binding AcctFilterAiGenerated}"
-                                                  Content="Filter AI-generated artworks" FontSize="12"/>
-                                        <CheckBox IsChecked="{Binding AcctSkipR18}"
-                                                  Content="Skip R-18 content" FontSize="12"/>
-                                        <CheckBox IsChecked="{Binding AcctSkipR18G}"
-                                                  Content="Skip R-18G content" FontSize="12"/>
-                                        <CheckBox IsChecked="{Binding AcctSeparateR18Folder}"
-                                                  Content="Place R-18 in separate subfolder" FontSize="12"/>
-                                    </StackPanel>
-
-                                </StackPanel>
-
-                                <!-- Save button -->
-                                <Button Content="Save Account Settings"
-                                        Command="{Binding SaveAccountSettingsCommand}"
-                                        Classes="accent" CornerRadius="6" Padding="14,7"
-                                        HorizontalAlignment="Right"/>
-
+                                <!-- Accounts list -->
+                                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="8">
+                                    <ItemsControl ItemsSource="{Binding Profiles}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="6" Padding="12,10" Margin="0,2">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="#1A5599FF" Opacity="0"/>
+                                                    </Border.Background>
+                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                                        <Border Grid.Column="0" Width="34" Height="34" CornerRadius="17"
+                                                                Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                                                Margin="0,0,12,0" VerticalAlignment="Center">
+                                                            <TextBlock FontSize="14" FontWeight="Bold" Foreground="White"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Text="{Binding DisplayLabel[0]}"/>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DisplayLabel}" FontWeight="SemiBold" FontSize="13"/>
+                                                            <TextBlock FontSize="10"
+                                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                                                <Run Text="ID: "/><Run Text="{Binding UserId}"/>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <Panel Grid.Column="2" Margin="0,0,6,0">
+                                                            <Border CornerRadius="5" Padding="10,4"
+                                                                    Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                                                    VerticalAlignment="Center">
+                                                                <TextBlock Text="Active" FontSize="11" FontWeight="SemiBold"
+                                                                           Foreground="White"
+                                                                           HorizontalAlignment="Center"/>
+                                                                <Border.IsVisible>
+                                                                    <MultiBinding Converter="{x:Static conv:StringsEqualMultiConverter.Instance}">
+                                                                        <Binding Path="Id"/>
+                                                                        <Binding Path="$parent[ItemsControl].((vm:SettingsViewModel)DataContext).ActiveProfileId"/>
+                                                                    </MultiBinding>
+                                                                </Border.IsVisible>
+                                                            </Border>
+                                                            <Button Content="Switch"
+                                                                    CornerRadius="5"
+                                                                    Classes="accent"
+                                                                    Padding="10,4"
+                                                                    FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SwitchToAccountCommand}"
+                                                                    CommandParameter="{Binding}">
+                                                                <Button.IsVisible>
+                                                                    <MultiBinding Converter="{x:Static conv:StringsEqualMultiConverter.Instance}"
+                                                                                  ConverterParameter="negate">
+                                                                        <Binding Path="Id"/>
+                                                                        <Binding Path="$parent[ItemsControl].((vm:SettingsViewModel)DataContext).ActiveProfileId"/>
+                                                                    </MultiBinding>
+                                                                </Button.IsVisible>
+                                                            </Button>
+                                                        </Panel>
+                                                        <Button Grid.Column="3"
+                                                                Content="Sign out"
+                                                                CornerRadius="5"
+                                                                Padding="10,4"
+                                                                FontSize="11"
+                                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SignOutAccountCommand}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                        <ItemsControl.Styles>
+                                            <Style Selector="ItemsControl:empty">
+                                                <Setter Property="Template">
+                                                    <ControlTemplate>
+                                                        <TextBlock Text="No accounts signed in. Click '+ Add account' to get started."
+                                                                   FontSize="12" Padding="12"
+                                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                                   HorizontalAlignment="Center"/>
+                                                    </ControlTemplate>
+                                                </Setter>
+                                            </Style>
+                                        </ItemsControl.Styles>
+                                    </ItemsControl>
+                                </Border>
                             </StackPanel>
                         </Border>
 

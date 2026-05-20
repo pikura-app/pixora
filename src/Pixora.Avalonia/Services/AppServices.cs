@@ -67,6 +67,10 @@ public static class AppServices
                 services.AddSingleton<ArtistMonitorRepository>(provider =>
                     new ArtistMonitorRepository(dbPath, provider.GetRequiredService<ILogger<ArtistMonitorRepository>>()));
 
+                // User image presets repository (same database)
+                services.AddSingleton<UserPresetsRepository>(provider =>
+                    new UserPresetsRepository(dbPath, provider.GetRequiredService<ILogger<UserPresetsRepository>>()));
+
                 // Schedule repository (same database)
                 services.AddSingleton<DownloadScheduleRepository>(provider =>
                     new DownloadScheduleRepository(dbPath, provider.GetRequiredService<ILogger<DownloadScheduleRepository>>()));
@@ -79,7 +83,9 @@ public static class AppServices
                         provider.GetRequiredService<SettingsService>(),
                         provider.GetRequiredService<DownloadJobRepository>(),
                         provider.GetRequiredService<FanboxClient>(),
-                        provider.GetRequiredService<ILogger<DownloadCoordinator>>()));
+                        provider.GetRequiredService<ILogger<DownloadCoordinator>>(),
+                        provider.GetRequiredService<ImageResizeService>(),
+                        provider.GetRequiredService<AccountService>()));
 
                 // Artist monitor service
                 services.AddSingleton<ArtistMonitorService>();
@@ -90,15 +96,22 @@ public static class AppServices
                 // FANBOX client
                 services.AddSingleton<FanboxClient>();
 
-                // AI assistant (Ollama)
-                services.AddSingleton<OllamaService>();
-                services.AddSingleton<HoshiSessionService>();
+                // Image lookup (AI vision)
                 services.AddSingleton<ImageLookupService>();
+
+                // Image resize/processing service
+                services.AddSingleton<ImageResizeService>();
+
+                // AI assistant (Ollama)
+                services.AddSingleton<HoshiSessionService>();
+                services.AddSingleton<OllamaService>();
                 services.AddSingleton<Pixora.Avalonia.ViewModels.AiViewModel>(provider =>
                     new Pixora.Avalonia.ViewModels.AiViewModel(
                         provider.GetRequiredService<OllamaService>(),
                         provider.GetRequiredService<Pixora.Core.Services.LocalFavoritesService>(),
                         provider.GetRequiredService<PixivDownloadService>(),
+                        provider.GetRequiredService<Pixora.Core.Data.DownloadJobRepository>(),
+                        provider.GetRequiredService<DownloadCoordinator>(),
                         provider.GetRequiredService<HoshiSessionService>(),
                         provider.GetRequiredService<PixivClient>(),
                         provider.GetRequiredService<PixivImageLoader>(),
@@ -109,7 +122,10 @@ public static class AppServices
                 services.AddSingleton<UpdateCheckService>();
 
                 // Multi-account
-                services.AddSingleton<AccountService>();
+                services.AddSingleton<AccountService>(provider =>
+                    new AccountService(
+                        provider.GetRequiredService<SettingsService>(),
+                        provider.GetRequiredService<Pixora.Core.Services.LocalFavoritesService>()));
 
                 // Avalonia-specific services
                 services.AddSingleton<NavigationService>();
@@ -117,10 +133,21 @@ public static class AppServices
                 services.AddSingleton<AccessibilityService>();
                 services.AddSingleton<FilePickerService>();
                 services.AddSingleton<NotificationService>();
+                services.AddSingleton<AgentIpcClient>();
 
                 // ViewModels
                 services.AddSingleton<MainWindowViewModel>();
-                services.AddSingleton<GalleryViewModel>();
+                services.AddSingleton<GalleryViewModel>(provider =>
+                    new GalleryViewModel(
+                        provider.GetRequiredService<PixivClient>(),
+                        provider.GetRequiredService<PixivImageLoader>(),
+                        provider.GetRequiredService<PixivDownloadService>(),
+                        provider.GetRequiredService<SettingsService>(),
+                        provider.GetRequiredService<NavigationService>(),
+                        provider.GetRequiredService<DialogService>(),
+                        provider.GetRequiredService<DownloadJobRepository>(),
+                        provider.GetRequiredService<DownloadCoordinator>(),
+                        provider.GetRequiredService<AccountService>()));
                 services.AddTransient<ArtworkDetailViewModel>();
                 services.AddTransient<RankingsViewModel>();
                 services.AddSingleton<EnhancedRankingsViewModel>();
@@ -168,7 +195,8 @@ public static class AppServices
                         provider.GetRequiredService<DownloadFromListViewModel>(),
                         provider.GetRequiredService<DownloadBySearchViewModel>(),
                         provider.GetRequiredService<DownloadByFanboxViewModel>(),
-                        provider.GetRequiredService<SchedulesViewModel>()));
+                        provider.GetRequiredService<SchedulesViewModel>(),
+                        provider.GetRequiredService<SettingsViewModel>()));
                 services.AddSingleton<HistoryViewModel>(provider =>
                     new HistoryViewModel(
                         provider.GetRequiredService<DownloadJobRepository>(),
@@ -199,6 +227,59 @@ public static class AppServices
 
         // Wire up notifications
         WireUpNotifications();
+
+        // Wire up per-account Hoshi session isolation
+        WireUpHoshiSessionIsolation();
+
+        // Wire up per-account download/schedule/history isolation
+        WireUpPerAccountDb();
+    }
+
+    private static void WireUpPerAccountDb()
+    {
+        try
+        {
+            var accounts  = Get<AccountService>();
+            var jobRepo   = Get<DownloadJobRepository>();
+            var schedRepo = Get<DownloadScheduleRepository>();
+
+            // Startup: set active user on repos so constructors load the right data.
+            // Do NOT trigger VM reloads here — each VM constructor handles its own initial load.
+            jobRepo.SetActiveUser(accounts.ActiveProfile?.UserId);
+            schedRepo.SetActiveUser(accounts.ActiveProfile?.UserId);
+
+            // On account switch: update repos then reload VMs on the UI thread.
+            accounts.ActiveProfileChanged += (_, _) =>
+            {
+                var userId = accounts.ActiveProfile?.UserId;
+                jobRepo.SetActiveUser(userId);
+                schedRepo.SetActiveUser(userId);
+
+                global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    try { await Get<HistoryViewModel>().ReloadAsync(); } catch { }
+                    try { await Get<SchedulesViewModel>().ReloadAsync(); } catch { }
+                    try { await Get<AnalyticsViewModel>().ReloadAsync(); } catch { }
+                });
+            };
+        }
+        catch { /* non-fatal */ }
+    }
+
+    private static void WireUpHoshiSessionIsolation()
+    {
+        try
+        {
+            var sessions = Get<HoshiSessionService>();
+            var accounts = Get<AccountService>();
+
+            // Apply the active user immediately so startup loads the correct dir
+            sessions.SwitchUser(accounts.ActiveProfile?.UserId);
+
+            accounts.ActiveProfileChanged += (_, _) =>
+                sessions.SwitchUser(accounts.ActiveProfile?.UserId);
+        }
+        catch { /* non-fatal */ }
     }
 
     private static void WireUpNotifications()
@@ -209,9 +290,30 @@ public static class AppServices
             var notificationService = Get<NotificationService>();
             var monitorService = Get<ArtistMonitorService>();
 
-            // Download completion notifications
+            // Clean up orphaned jobs from prior session BEFORE HistoryViewModel loads.
+            // Downloads run in-process — any "Running" or "Pending" jobs in the DB at startup
+            // are zombies from a crashed/closed previous session. Marking them Cancelled
+            // prevents them from clogging the Active Downloads tab on every restart.
+            try
+            {
+                var jobRepo = Get<DownloadJobRepository>();
+                jobRepo.MarkOrphanedJobsAsCancelledAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to clean up orphaned jobs: {ex.Message}");
+            }
+
+            // Eagerly construct HistoryViewModel so it subscribes to JobStarted/JobCompleted
+            // from startup — otherwise downloads that begin before History is navigated to
+            // are never tracked in the Active Downloads list.
+            _ = Get<HistoryViewModel>();
+
+            // Download completion notifications (gated on user setting)
             coordinator.JobCompleted += (sender, e) =>
             {
+                var settings = Get<SettingsService>();
+                if (!settings.Current.NotifyOnDownloadComplete) return;
                 var succeeded = e.Job.CompletedItems;
                 var failed = e.Job.FailedItems;
                 var firstArtworkId = e.Job.Targets.FirstOrDefault()?.TargetId;
@@ -261,11 +363,22 @@ public static class AppServices
                 }
             });
 
-            // Start schedule executor
+            // Start schedule executor — only if the background agent is NOT already running.
+            // If the agent is running it owns all schedule execution; we just listen via IPC.
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    // Give the IPC client a moment to attempt connection
+                    await Task.Delay(3000);
+
+                    var ipcClient = Get<AgentIpcClient>();
+                    if (ipcClient.IsConnected)
+                    {
+                        Debug.WriteLine("Agent is running — skipping in-app schedule executor.");
+                        return;
+                    }
+
                     var executor = Get<ScheduleExecutorService>();
 
                     // Execute startup schedules first
@@ -274,11 +387,59 @@ public static class AppServices
                     // Start periodic checking
                     executor.Start();
 
-                    Debug.WriteLine("Schedule executor started");
+                    Debug.WriteLine("Schedule executor started (no agent detected)");
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Failed to start schedule executor: {ex.Message}");
+                }
+            });
+
+            // Start IPC client — connects to Pixora.Agent if it is running
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var ipcClient = Get<AgentIpcClient>();
+                    var historyVm = Get<HistoryViewModel>();
+                    var notificationService = Get<NotificationService>();
+                    var settings = Get<SettingsService>();
+
+                    ipcClient.MessageReceived += (_, msg) =>
+                    {
+                        // Agent just connected — stop the in-app executor to avoid double-runs
+                        if (msg.Event is "heartbeat" or "schedule_started")
+                        {
+                            try
+                            {
+                                var executor = Get<ScheduleExecutorService>();
+                                executor.Stop();
+                                Debug.WriteLine("Agent detected via IPC — stopped in-app executor.");
+                            }
+                            catch { }
+                        }
+
+                        // Show tray notification for schedule completions (if enabled)
+                        if (msg.Event is "schedule_completed" or "schedule_failed"
+                            && settings.Current.ShowScheduleNotifications
+                            && !string.IsNullOrEmpty(msg.StatusText))
+                        {
+                            notificationService.ShowNotification(
+                                "Pixora Schedule",
+                                msg.StatusText);
+                        }
+
+                        // Reload history so agent-triggered jobs appear in the UI
+                        if (msg.Event is "schedule_completed" or "schedule_failed")
+                            _ = historyVm.ReloadAsync();
+                    };
+
+                    ipcClient.Start();
+                    Debug.WriteLine("Agent IPC client started");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to start agent IPC client: {ex.Message}");
                 }
             });
         }

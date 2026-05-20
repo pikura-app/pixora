@@ -156,6 +156,7 @@ public partial class ArtworkViewerViewModel : ObservableObject
             Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
             Targets = [target]
         };
+        await _jobRepository.SaveJobAsync(job);
         _coordinator.NotifyJobStarted(job);
         try
         {

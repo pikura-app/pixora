@@ -22,7 +22,7 @@ public sealed class HoshiSessionService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private readonly string _dir;
+    private string _dir;
     private readonly SemaphoreSlim _ioLock = new(1, 1);
 
     /// <summary>All sessions, sorted by UpdatedAt descending (most recent first).</summary>
@@ -33,11 +33,29 @@ public sealed class HoshiSessionService
 
     public HoshiSessionService()
     {
-        _dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Pixora", "hoshi_sessions");
+        _dir = DirForUser(null);
         Directory.CreateDirectory(_dir);
         LoadAll();
+    }
+
+    /// <summary>Returns the per-user sessions directory. Falls back to the legacy shared dir when userId is null/empty.</summary>
+    public static string DirForUser(string? userId)
+    {
+        var baseDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Pixora");
+        return string.IsNullOrWhiteSpace(userId)
+            ? Path.Combine(baseDir, "hoshi_sessions")
+            : Path.Combine(baseDir, "hoshi_sessions", userId);
+    }
+
+    /// <summary>Switch the active user. Reloads sessions from the per-user directory.</summary>
+    public void SwitchUser(string? userId)
+    {
+        _dir = DirForUser(userId);
+        Directory.CreateDirectory(_dir);
+        LoadAll();
+        SessionsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void LoadAll()

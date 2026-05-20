@@ -182,7 +182,7 @@
             <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
                     BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="12,10">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
                     <TextBlock Grid.Column="0" Text="⚙ Download Behavior"
                                FontWeight="SemiBold" FontSize="12"
                                VerticalAlignment="Center" Margin="0,0,20,0"/>
@@ -206,6 +206,12 @@
                               FontSize="11"
                               VerticalAlignment="Center"
                               Margin="8,0,0,0"/>
+                    <CheckBox x:Name="AllowRedownloadCheckBox"
+                              Grid.Column="5"
+                              Content="Allow re-download"
+                              FontSize="11"
+                              VerticalAlignment="Center"
+                              Margin="12,0,0,0"/>
                 </Grid>
             </Border>
 

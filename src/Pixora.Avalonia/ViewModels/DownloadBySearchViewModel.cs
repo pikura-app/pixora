@@ -108,7 +108,9 @@ public partial class DownloadBySearchViewModel : ViewModelBase
             var bytes = await _imageLoader.FetchBytesAsync(thumbnailUrl);
             if (bytes != null)
             {
-                item.Thumbnail = new Bitmap(new System.IO.MemoryStream(bytes));
+                // Decode on background thread to avoid UI-thread jank
+                var bmp = await Task.Run(() => new Bitmap(new System.IO.MemoryStream(bytes)));
+                await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => item.Thumbnail = bmp);
             }
         }
         catch

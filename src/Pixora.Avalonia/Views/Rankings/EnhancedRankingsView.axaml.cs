@@ -43,23 +43,23 @@ public partial class EnhancedRankingsView : UserControl
                     VM.ShowPreview = true;
             }
             catch { }
-        };
 
-        // Wire Browse/Close events on both viewers
-        var inlineViewer = this.FindControl<Pixora.Avalonia.Views.Gallery.InlineArtworkViewer>("RankingsInlineViewer");
-        if (inlineViewer != null)
-        {
-            inlineViewer.ToggleBrowse += OnViewerToggleBrowse;
-            inlineViewer.ExpandViewer  += OnExpandViewer;
-            inlineViewer.ViewerClosed += OnViewerClosed;
-        }
-        var overlayViewer = this.FindControl<Pixora.Avalonia.Views.Gallery.InlineArtworkViewer>("RankingsOverlayViewer");
-        if (overlayViewer != null)
-        {
-            overlayViewer.ToggleBrowse += OnViewerToggleBrowse;
-            overlayViewer.ExpandViewer  += OnExpandViewer;
-            overlayViewer.ViewerClosed += OnViewerClosed;
-        }
+            // Wire Browse/Close events on both viewers (must be after visual tree is built)
+            var inlineViewer = this.FindControl<Pixora.Avalonia.Views.Gallery.InlineArtworkViewer>("RankingsInlineViewer");
+            if (inlineViewer != null)
+            {
+                inlineViewer.ToggleBrowse += OnViewerToggleBrowse;
+                inlineViewer.ExpandViewer  += OnExpandViewer;
+                inlineViewer.ViewerClosed += OnViewerClosed;
+            }
+            var overlayViewer = this.FindControl<Pixora.Avalonia.Views.Gallery.InlineArtworkViewer>("RankingsOverlayViewer");
+            if (overlayViewer != null)
+            {
+                overlayViewer.ToggleBrowse += OnViewerToggleBrowse;
+                overlayViewer.ExpandViewer  += OnExpandViewer;
+                overlayViewer.ViewerClosed += OnViewerClosed;
+            }
+        };
     }
 
     private void OnViewerToggleBrowse(object? sender, RoutedEventArgs e)
@@ -269,26 +269,6 @@ public partial class EnhancedRankingsView : UserControl
         catch { /* non-fatal */ }
     }
 
-    private void OnCardCheckboxClicked(object? sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        VM?.NotifySelectionChanged();
-    }
-
-    // ── Context-menu handlers ──────────────────────────────────────────────
-    private void OnContextToggleSelection(object? sender, RoutedEventArgs e)
-    {
-        if (GetCardFromMenu(sender) is not { } card) return;
-        card.IsSelected = !card.IsSelected;
-        VM?.NotifySelectionChanged();
-    }
-
-    private void OnContextPreview(object? sender, RoutedEventArgs e)
-    {
-        if (GetCardFromMenu(sender) is not { } card) return;
-        OpenInlineViewer(card);  // OpenInlineViewer already sets ShowPreview = true
-    }
-
     private void OnContextOpenFullScreen(object? sender, RoutedEventArgs e)
     {
         if (GetCardFromMenu(sender) is not { } card || VM == null) return;
@@ -317,6 +297,18 @@ public partial class EnhancedRankingsView : UserControl
     {
         if (GetCardFromMenu(sender) is not { } card) return;
         _ = OpenPopupAsync(card);
+    }
+
+    private void OnContextToggleSelection(object? sender, RoutedEventArgs e)
+    {
+        if (GetCardFromMenu(sender) is not { } card) return;
+        card.IsSelected = !card.IsSelected;
+    }
+
+    private void OnContextPreview(object? sender, RoutedEventArgs e)
+    {
+        if (GetCardFromMenu(sender) is not { } card) return;
+        OpenInlineViewer(card);
     }
 
     // "Open artist gallery" — switch to Gallery tab and load the artist
@@ -423,10 +415,18 @@ public partial class EnhancedRankingsView : UserControl
         }
     }
 
+    private bool _showPreviewHooked;
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (VM is { } vm)
+        {
             vm.PropertyChanged += OnVmPropertyChanged;
+            if (!_showPreviewHooked)
+            {
+                HookGalleryShowPreview();
+                _showPreviewHooked = true;
+            }
+        }
     }
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -470,5 +470,44 @@ public partial class EnhancedRankingsView : UserControl
                 return ctrl.DataContext as RankingCardViewModel;
         }
         return null;
+    }
+
+    private async void OnDownloadPresetClicked(object? sender, RoutedEventArgs e)
+    {
+        if (VM == null) return;
+
+        // Priority: 1) selected artworks  2) currently viewed (inline viewer)  3) error
+        var previews = VM.Items.Where(c => c.IsSelected).Select(c => c.ToPreview()).ToList();
+        if (previews.Count == 0 && VM.GalleryVm.InlineViewerCard != null)
+        {
+            // Use the currently viewed artwork
+            previews.Add(VM.GalleryVm.InlineViewerCard.Artwork);
+        }
+
+        if (previews.Count == 0)
+        {
+            VM.StatusMessage = "No artwork selected or open. Click an artwork or select multiple first.";
+            return;
+        }
+
+        // Use DialogService to show preset dialog
+        var dialogService = AppServices.Get<DialogService>();
+        var firstPreview = previews[0];
+        var additionalPreviews = previews.Skip(1).ToList();
+
+        var result = await dialogService.ShowDownloadPresetDialogAsync(firstPreview, additionalPreviews);
+
+        if (result != null)
+        {
+            // Download all selected artworks with the preset
+            await VM.GalleryVm.DownloadWithPresetAsync(previews, result);
+            VM.StatusMessage = $"Queued {previews.Count} artwork(s) for download with preset: {result.Name}";
+        }
+    }
+
+    private void OnCardCheckboxClicked(object? sender, RoutedEventArgs e)
+    {
+        // Handle checkbox click to prevent event bubbling
+        e.Handled = true;
     }
 }

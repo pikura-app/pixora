@@ -186,6 +186,12 @@ public sealed class ScheduleExecutorService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Executes a single schedule immediately (used by RunNow in the UI).
+    /// </summary>
+    public async Task ExecuteOneAsync(DownloadSchedule schedule, CancellationToken ct = default)
+        => await ExecuteScheduleAsync(schedule, ct);
+
     private async Task ExecuteFollowedArtistsScheduleAsync(DownloadSchedule schedule, CancellationToken ct)
     {
         var self = await _client.ResolveSelfAsync();
@@ -213,8 +219,8 @@ public sealed class ScheduleExecutorService : IDisposable
             PageRange = schedule.PageRange
         }).ToList();
 
-        // Get settings
-        var settings = schedule.Settings ?? new SettingsOverride { UseGlobalSettings = true };
+        // Get settings — apply OnlyNewSinceLastRun by setting DateFrom to the schedule's last run time
+        var settings = ApplyOnlyNewFilter(schedule);
 
         // Create job
         await _coordinator.CreateJobAsync(
@@ -275,7 +281,8 @@ public sealed class ScheduleExecutorService : IDisposable
             PageRange = artist.PageRange ?? schedule.PageRange
         }).ToList();
 
-        var settings = schedule.Settings ?? new SettingsOverride { UseGlobalSettings = true };
+        // Apply OnlyNewSinceLastRun by injecting DateFrom = last run time
+        var settings = ApplyOnlyNewFilter(schedule);
 
         await _coordinator.CreateJobAsync(
             DownloadJobType.Artist,
@@ -319,6 +326,50 @@ public sealed class ScheduleExecutorService : IDisposable
             settings,
             startImmediately: true,
             ct);
+    }
+
+    /// <summary>
+    /// Returns effective settings with DateFrom resolved from the schedule's DateLimitMode.
+    /// Produces a fresh copy so the stored schedule.Settings is never mutated.
+    /// </summary>
+    private static SettingsOverride ApplyOnlyNewFilter(DownloadSchedule schedule)
+    {
+        var src = schedule.Settings;
+        var settings = src != null
+            ? new SettingsOverride
+            {
+                UseGlobalSettings = src.UseGlobalSettings,
+                DownloadRoot      = src.DownloadRoot,
+                FolderTemplate    = src.FolderTemplate,
+                FilenameTemplate  = src.FilenameTemplate,
+                FilterAiGenerated = src.FilterAiGenerated,
+                SkipManga         = src.SkipManga,
+                SkipUgoira        = src.SkipUgoira,
+                SkipR18           = src.SkipR18,
+                SkipR18G          = src.SkipR18G,
+                DateLimitMode        = src.DateLimitMode,
+                MaxArtworksPerArtist = src.MaxArtworksPerArtist,
+                IncludeTags          = src.IncludeTags,
+                ExcludeTagsFilter    = src.ExcludeTagsFilter,
+                SeparateR18Folder    = src.SeparateR18Folder,
+                DateFrom             = src.DateFrom,
+                DateTo               = src.DateTo,
+                AllowRedownload      = src.AllowRedownload,
+            }
+            : new SettingsOverride { UseGlobalSettings = true };
+
+        var now = DateTime.UtcNow;
+        settings.DateFrom = settings.DateLimitMode switch
+        {
+            ScheduleDateLimitMode.SinceLastRun =>
+                schedule.LastRunAt.HasValue ? schedule.LastRunAt.Value.ToLocalTime().Date : null,
+            ScheduleDateLimitMode.Last1Day   => now.ToLocalTime().Date.AddDays(-1),
+            ScheduleDateLimitMode.Last7Days  => now.ToLocalTime().Date.AddDays(-7),
+            ScheduleDateLimitMode.Last30Days => now.ToLocalTime().Date.AddDays(-30),
+            _                                => settings.DateFrom, // None — keep explicit DateFrom or null
+        };
+
+        return settings;
     }
 
     public void Dispose()

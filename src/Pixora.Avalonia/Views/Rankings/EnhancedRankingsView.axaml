@@ -323,19 +323,27 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
                 <Button CornerRadius="6" Padding="12,6" FontSize="11"
                         Classes.accent="{Binding HasSelection}"
-                        Command="{Binding SelectAllCommand}" ToolTip.Tip="Select all">
+                        IsEnabled="{Binding HasSelection}"
+                        Command="{Binding DownloadSelectedCommand}"
+                        ToolTip.Tip="Download selected artworks">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <TextBlock Text="↓" FontSize="12"/>
-                        <TextBlock Text="{Binding SelectedCount, StringFormat='Download Selected ({0})'}"/>
+                        <TextBlock Text="{Binding SelectedCount, StringFormat='Download Selected ({0})'}" />
                     </StackPanel>
                 </Button>
                 <Button CornerRadius="6" Padding="12,6" FontSize="11"
-                        ToolTip.Tip="Download all visible">
+                        Command="{Binding DownloadVisibleCommand}"
+                        ToolTip.Tip="Download all visible artworks">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <TextBlock Text="⊞" FontSize="12"/>
                         <TextBlock Text="Download Visible"/>
                     </StackPanel>
                 </Button>
+                <Button Content="🎨 Download Preset" CornerRadius="6" Padding="12,6" FontSize="11"
+                        Classes="accent"
+                        Click="OnDownloadPresetClicked"
+                        IsEnabled="{Binding !IsLoading}"
+                        ToolTip.Tip="Download with image processing preset"/>
                 <Button Content="{Binding SelectedCount, StringFormat='Clear ({0})'}"
                         CornerRadius="6" Padding="12,6" FontSize="11"
                         Command="{Binding ClearSelectionCommand}"
@@ -356,22 +364,21 @@
 
                 <!-- Draggable splitter (only when preview is on) -->
                 <GridSplitter Grid.Column="1" Width="4"
-                              IsVisible="{Binding ShowPreview}"
                               Background="{actipro:ThemeResource Container1BorderBrush}"
+                              IsVisible="{Binding ShowPreview}"
                               ResizeBehavior="PreviousAndNext"
                               ResizeDirection="Columns"
                               DragCompleted="OnSplitterDragCompleted"/>
 
                 <!-- Side preview panel -->
                 <Border Grid.Column="2"
-                        IsVisible="{Binding ShowPreview}"
                         Background="{actipro:ThemeResource Container1BackgroundBrush}"
                         BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                        BorderThickness="1,0,0,0">
+                        BorderThickness="1,0,0,0"
+                        IsVisible="{Binding ShowPreview}">
                     <gallery:InlineArtworkViewer Name="RankingsInlineViewer"
                                                  DataContext="{Binding GalleryVm}"
-                                                 IsExpanded="{Binding $parent[UserControl].((vm:EnhancedRankingsViewModel)DataContext).IsViewerExpanded}"
-                                                 IsVisible="{Binding $parent[UserControl].((vm:EnhancedRankingsViewModel)DataContext).GalleryVm.HasTabs}"/>
+                                                 IsExpanded="{Binding $parent[UserControl].((vm:EnhancedRankingsViewModel)DataContext).IsViewerExpanded}"/>
                 </Border>
 
                 <!-- Main artwork area -->

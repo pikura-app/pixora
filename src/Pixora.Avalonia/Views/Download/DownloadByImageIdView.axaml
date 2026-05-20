@@ -6,7 +6,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
              x:Class="Pixora.Avalonia.Views.DownloadByImageIdView"
-             x:DataType="vm:DownloadByImageIdViewModel">
+             x:DataType="vm:DownloadByImageIdViewModel"
+             x:Name="ThisView">
 
     <Design.DataContext>
         <vm:DownloadByImageIdViewModel/>
@@ -56,8 +57,11 @@
                                  FontSize="13"/>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="📋 Paste from Clipboard"
+                                    Click="OnPasteClicked"
+                                    CornerRadius="6" Padding="12,8"/>
                             <Button Content="📁 Import from File"
-                                    Command="{Binding ImportFromFileAsync}"
+                                    Command="{Binding ImportFromFileCommand}"
                                     CornerRadius="6" Padding="12,8"/>
                             <Button Content="Clear"
                                     Command="{Binding ClearInputCommand}"

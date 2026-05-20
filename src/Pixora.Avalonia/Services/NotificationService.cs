@@ -83,12 +83,47 @@ public class NotificationService
     {
         try
         {
-            // For Windows, we'll use a simple console debug message
-            // In a production app, you'd use Windows.UI.Notifications or Microsoft.Toolkit.Uwp.Notifications
-            _logger.LogInformation("[NOTIFICATION] {Title}: {Message}", title, message);
+            // Use PowerShell + BurntToast (pre-installed on Windows 10/11) for native toast.
+            // Falls back silently if the module is absent.
+            var escaped_title   = title.Replace("'", "''").Replace("\"", "\\\"");
+            var escaped_message = message.Replace("'", "''").Replace("\"", "\\\"");
+            var appIcon = type switch
+            {
+                NotificationType.Error   => "error",
+                NotificationType.Warning => "warning",
+                _                        => "info"
+            };
 
-            // TODO: Implement proper Windows toast notifications using Windows SDK
-            // This would require adding a package reference to Microsoft.Toolkit.Uwp.Notifications
+            var script = $@"
+                try {{
+                    if (Get-Module -ListAvailable -Name BurntToast) {{
+                        Import-Module BurntToast -ErrorAction Stop
+                        New-BurntToastNotification -Text '{escaped_title}','{escaped_message}' -AppLogo '{appIcon}'
+                    }} else {{
+                        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+                        [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+                        $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+                        $template.SelectSingleNode('//text[@id=""1""]').AppendChild($template.CreateTextNode('{escaped_title}')) | Out-Null
+                        $template.SelectSingleNode('//text[@id=""2""]').AppendChild($template.CreateTextNode('{escaped_message}')) | Out-Null
+                        $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+                        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Pixora').Show($toast)
+                    }}
+                }} catch {{ }}";
+
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName  = "powershell.exe",
+                    Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{script.Replace("\"", "\\\"")}\"",
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError  = true,
+                }
+            };
+            process.Start();
+            // Fire-and-forget — don't block the UI thread waiting for the shell
         }
         catch (Exception ex)
         {

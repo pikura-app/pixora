@@ -1,10 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pixora.Core.Models;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using Pixora.Avalonia.Services;
 using Pixora.Avalonia.Views.Login;
+using Pixora.Avalonia.Views.Dialogs;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
@@ -46,6 +48,10 @@ public partial class SettingsViewModel : ViewModelBase
             ?.ToString(3)   // major.minor.patch
         ?? "unknown";
 
+    // Image Processing computed properties
+    public bool IsCustomResizePreset => ActiveResizePresetIndex == 13;
+    public bool IsJpegOutputFormat => ResizeOutputFormatIndex == 1 || ResizeOutputFormatIndex == 2;
+
     [ObservableProperty]
     private bool _isLightTheme;
 
@@ -86,6 +92,18 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _verifyImage;
     [ObservableProperty] private bool _setLastModified = true;
     [ObservableProperty] private bool _useLocalTimezone;
+
+    // Image Processing
+    [ObservableProperty] private bool _enableImageProcessing;
+    [ObservableProperty] private int _activeResizePresetIndex; // 0=None, 1-12=presets, 13=custom
+    [ObservableProperty] private int _resizeCustomWidth = 1920;
+    [ObservableProperty] private int _resizeCustomHeight = 1080;
+    [ObservableProperty] private bool _resizeMaintainAspect = true;
+    [ObservableProperty] private string _resizeMode = "Fit";
+    [ObservableProperty] private int _resizeOutputFormatIndex; // 0=original, 1-2=JPEG, 3=PNG, 4=WebP
+    [ObservableProperty] private int _resizeJpegQuality = 90;
+    [ObservableProperty] private bool _useCustomProcessingFolder;
+    [ObservableProperty] private string _imageProcessingOutputFolder = "";
 
     // Download Control
     [ObservableProperty] private int _overwriteMode; // 0=skip, 1=overwrite, 2=backup
@@ -140,6 +158,9 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _minimizeToTray;
     [ObservableProperty] private bool _closeToTray;
     [ObservableProperty] private bool _startMinimizedToTray;
+    [ObservableProperty] private bool _keepSchedulesRunningInBackground;
+    [ObservableProperty] private bool _showScheduleNotifications = true;
+    [ObservableProperty] private bool _notifyOnDownloadComplete = false;
 
     /// <summary>0=Disabled, 1=Minimize to tray, 2=Close to tray</summary>
     public int TrayBehavior
@@ -237,9 +258,14 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool   _acctSkipR18;
     [ObservableProperty] private bool   _acctSkipR18G;
     [ObservableProperty] private bool   _acctSeparateR18Folder;
+    [ObservableProperty] private bool   _acctAllowRedownload;
     [ObservableProperty] private int    _acctMaxConcurrentDownloads = 3;
     [ObservableProperty] private bool   _hasActiveProfile;
     [ObservableProperty] private string _activeProfileLabel = string.Empty;
+    [ObservableProperty] private string _activeProfileId    = string.Empty;
+    [ObservableProperty] private bool   _hasMultipleAccounts;
+
+    public ObservableCollection<AccountProfile> Profiles { get; } = new();
 
     [RelayCommand]
     private async Task BrowseAcctDownloadRootAsync()
@@ -264,7 +290,66 @@ public partial class SettingsViewModel : ViewModelBase
             SkipR18G                = AcctSkipR18G,
             SeparateR18Folder       = AcctSeparateR18Folder,
             MaxConcurrentDownloads  = AcctMaxConcurrentDownloads,
+            AllowRedownload         = AcctAllowRedownload,
         });
+    }
+
+    private void RefreshProfiles()
+    {
+        global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            Profiles.Clear();
+            foreach (var p in _accountService.Profiles)
+                Profiles.Add(p);
+            HasMultipleAccounts = Profiles.Count > 1;
+        });
+    }
+
+    [RelayCommand]
+    private async Task SwitchToAccountAsync(AccountProfile profile)
+    {
+        if (_accountService.ActiveProfile?.Id == profile.Id) return;
+        _accountService.SwitchTo(profile.Id);
+        LoadSettings();
+        try { await AppServices.Get<GalleryViewModel>().SwitchAccountAsync(); } catch { }
+    }
+
+    [RelayCommand]
+    private async Task SignOutAccountAsync(AccountProfile profile)
+    {
+        var confirmed = await _dialogService.ShowConfirmationAsync(
+            "Sign out", $"Sign out of {profile.DisplayLabel}?");
+        if (!confirmed) return;
+        _accountService.Remove(profile.Id);
+        LoadSettings();
+        try { await AppServices.Get<GalleryViewModel>().SwitchAccountAsync(); } catch { }
+    }
+
+    [RelayCommand]
+    private async Task SignOutAllAsync()
+    {
+        var confirmed = await _dialogService.ShowConfirmationAsync(
+            "Sign out all", "Sign out of all accounts and clear all sessions?");
+        if (!confirmed) return;
+        foreach (var p in _accountService.Profiles.ToList())
+            _accountService.Remove(p.Id);
+        _settingsService.Update(s => { s.PhpSessId = string.Empty; s.UserId = null; s.UserName = null; });
+        LoadSettings();
+        try { await AppServices.Get<GalleryViewModel>().SwitchAccountAsync(); } catch { }
+    }
+
+    [RelayCommand]
+    private async Task AddAccountAsync()
+    {
+        var mainWindow = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        if (mainWindow is null) return;
+        var loginWindow = new PixivLoginWindow(clearCookiesForNewAccount: true);
+        await loginWindow.ShowDialog(mainWindow);
+        if (loginWindow.LoginSucceeded)
+        {
+            LoadSettings();
+            try { await AppServices.Get<GalleryViewModel>().SwitchAccountAsync(); } catch { }
+        }
     }
 
     private void LoadAccountSettings()
@@ -272,6 +357,7 @@ public partial class SettingsViewModel : ViewModelBase
         var profile = _accountService.ActiveProfile;
         HasActiveProfile   = profile is not null;
         ActiveProfileLabel = profile?.DisplayLabel ?? string.Empty;
+        ActiveProfileId    = profile?.Id           ?? string.Empty;
         if (profile?.Settings is { } s)
         {
             UseAccountSettings       = s.UseAccountSettings;
@@ -281,14 +367,15 @@ public partial class SettingsViewModel : ViewModelBase
             AcctFilterAiGenerated    = s.FilterAiGenerated    ?? false;
             AcctSkipR18              = s.SkipR18              ?? false;
             AcctSkipR18G             = s.SkipR18G             ?? false;
-            AcctSeparateR18Folder    = s.SeparateR18Folder    ?? false;
-            AcctMaxConcurrentDownloads = s.MaxConcurrentDownloads ?? 3;
+            AcctSeparateR18Folder       = s.SeparateR18Folder       ?? false;
+            AcctMaxConcurrentDownloads   = s.MaxConcurrentDownloads  ?? 3;
+            AcctAllowRedownload          = s.AllowRedownload          ?? false;
         }
         else
         {
             UseAccountSettings = false;
             AcctDownloadRoot = AcctFolderTemplate = AcctFilenameTemplate = string.Empty;
-            AcctFilterAiGenerated = AcctSkipR18 = AcctSkipR18G = AcctSeparateR18Folder = false;
+            AcctFilterAiGenerated = AcctSkipR18 = AcctSkipR18G = AcctSeparateR18Folder = AcctAllowRedownload = false;
             AcctMaxConcurrentDownloads = 3;
         }
     }
@@ -350,8 +437,14 @@ public partial class SettingsViewModel : ViewModelBase
 
         LoadSettings();
         LoadAccountSettings();
+        RefreshProfiles();
         _settingsService.Changed += (_, _) => LoadSettings();
-        _accountService.ActiveProfileChanged += (_, _) => LoadAccountSettings();
+        _accountService.ProfilesChanged      += (_, _) => RefreshProfiles();
+        _accountService.ActiveProfileChanged += (_, _) =>
+        {
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() => LoadAccountSettings());
+            RefreshProfiles();
+        };
         IsLightTheme = settingsService.Current.Theme == "Light";
 
         // Kick off an installed-models refresh in the background so the Hoshi AI
@@ -407,6 +500,18 @@ public partial class SettingsViewModel : ViewModelBase
         SetLastModified = s.SetLastModified;
         UseLocalTimezone = s.UseLocalTimezone;
 
+        // Image Processing
+        EnableImageProcessing = s.EnableImageProcessing;
+        ActiveResizePresetIndex = (int)s.ActiveResizePreset;
+        ResizeCustomWidth = s.ResizeCustomWidth;
+        ResizeCustomHeight = s.ResizeCustomHeight;
+        ResizeMaintainAspect = s.ResizeMaintainAspect;
+        ResizeMode = s.ResizeMode.ToString();
+        ResizeOutputFormatIndex = (int)s.ResizeOutputFormat;
+        ResizeJpegQuality = s.ResizeJpegQuality;
+        UseCustomProcessingFolder = !string.IsNullOrEmpty(s.ImageProcessingOutputFolder);
+        ImageProcessingOutputFolder = s.ImageProcessingOutputFolder ?? "";
+
         // Download Control
         OverwriteMode = s.OverwriteMode;
         BackupOldFile = s.BackupOldFile;
@@ -455,7 +560,8 @@ public partial class SettingsViewModel : ViewModelBase
         WriteFanboxHtml = s.WriteFanboxHtml;
 
         // Localization
-        PixivLocale = s.Locale;
+        PixivLocale  = s.Locale;
+        AppLanguage  = s.AppLanguage;
 
         // Startup & System Tray
         StartWithWindows = s.StartWithWindows;
@@ -463,6 +569,9 @@ public partial class SettingsViewModel : ViewModelBase
         MinimizeToTray = s.MinimizeToTray;
         CloseToTray = s.CloseToTray;
         StartMinimizedToTray = s.StartMinimizedToTray;
+        KeepSchedulesRunningInBackground = s.KeepSchedulesRunningInBackground;
+        ShowScheduleNotifications = s.ShowScheduleNotifications;
+        NotifyOnDownloadComplete = s.NotifyOnDownloadComplete;
         OnPropertyChanged(nameof(TrayBehavior));
 
         SettingsPathHint = $"Settings: {SettingsService.DefaultPath()}";
@@ -543,7 +652,9 @@ public partial class SettingsViewModel : ViewModelBase
             var mainWindow = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
             if (mainWindow is null) return;
 
-            var loginWindow = new PixivLoginWindow();
+            // Always clear WebView cookies on explicit sign-in so a previously
+            // logged-in account's cached cookies don't auto-authenticate us.
+            var loginWindow = new PixivLoginWindow(clearCookiesForNewAccount: true);
             await loginWindow.ShowDialog(mainWindow);
 
             if (loginWindow.LoginSucceeded)
@@ -552,7 +663,7 @@ public partial class SettingsViewModel : ViewModelBase
                 try
                 {
                     var galleryVm = AppServices.Get<GalleryViewModel>();
-                    await galleryVm.RefreshFollowedArtistsCommand.ExecuteAsync(null);
+                    await galleryVm.SwitchAccountAsync();
                 }
                 catch { /* non-fatal */ }
             }
@@ -719,6 +830,67 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnUseLocalTimezoneChanged(bool value)
         => _settingsService.Update(s => s.UseLocalTimezone = value);
 
+    // Image Processing
+    partial void OnEnableImageProcessingChanged(bool value)
+        => _settingsService.Update(s => s.EnableImageProcessing = value);
+
+    partial void OnActiveResizePresetIndexChanged(int value)
+    {
+        _settingsService.Update(s => s.ActiveResizePreset = (DevicePreset)value);
+        OnPropertyChanged(nameof(IsCustomResizePreset));
+    }
+
+    partial void OnResizeCustomWidthChanged(int value)
+        => _settingsService.Update(s => s.ResizeCustomWidth = value);
+
+    partial void OnResizeCustomHeightChanged(int value)
+        => _settingsService.Update(s => s.ResizeCustomHeight = value);
+
+    partial void OnResizeMaintainAspectChanged(bool value)
+        => _settingsService.Update(s => s.ResizeMaintainAspect = value);
+
+    partial void OnResizeModeChanged(string value)
+        => _settingsService.Update(s => s.ResizeMode = Enum.Parse<ResizeMode>(value));
+
+    partial void OnResizeOutputFormatIndexChanged(int value)
+    {
+        _settingsService.Update(s => s.ResizeOutputFormat = (ResizeOutputFormat)value);
+        OnPropertyChanged(nameof(IsJpegOutputFormat));
+    }
+
+    partial void OnResizeJpegQualityChanged(int value)
+        => _settingsService.Update(s => s.ResizeJpegQuality = value);
+
+    partial void OnUseCustomProcessingFolderChanged(bool value)
+    {
+        // Store empty string when disabled, preserve existing path when enabled
+        if (!value)
+            _settingsService.Update(s => s.ImageProcessingOutputFolder = null);
+    }
+
+    partial void OnImageProcessingOutputFolderChanged(string value)
+        => _settingsService.Update(s => s.ImageProcessingOutputFolder = value);
+
+    [RelayCommand]
+    private async Task BrowseProcessingFolderAsync()
+    {
+        var folder = await _filePickerService.PickFolderAsync("Select Image Processing Output Folder");
+        if (!string.IsNullOrWhiteSpace(folder))
+        {
+            ImageProcessingOutputFolder = folder;
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenImageEditorAsync()
+    {
+        // Open image editor to create a custom preset
+        var editor = new Views.Dialogs.ImageEditorWindow();
+        await editor.ShowDialog(App.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.MainWindow
+            : null);
+    }
+
     // Download Control
     partial void OnOverwriteModeChanged(int value)
         => _settingsService.Update(s => s.OverwriteMode = value);
@@ -876,7 +1048,7 @@ public partial class SettingsViewModel : ViewModelBase
     private void SetAppLanguage(string language)
     {
         AppLanguage = language;
-        // TODO: Apply localization change when translation system is implemented
+        _settingsService.Update(s => s.AppLanguage = language);
     }
 
     [RelayCommand]
@@ -1111,6 +1283,20 @@ public partial class SettingsViewModel : ViewModelBase
                 MinimizeToTray && (CloseToTray || value));
         }
     }
+
+    partial void OnKeepSchedulesRunningInBackgroundChanged(bool value)
+    {
+        _settingsService.Update(s => s.KeepSchedulesRunningInBackground = value);
+        // Enabling background schedules implies close-to-tray behaviour
+        if (value && !CloseToTray)
+            CloseToTray = true;
+    }
+
+    partial void OnShowScheduleNotificationsChanged(bool value)
+        => _settingsService.Update(s => s.ShowScheduleNotifications = value);
+
+    partial void OnNotifyOnDownloadCompleteChanged(bool value)
+        => _settingsService.Update(s => s.NotifyOnDownloadComplete = value);
 
     // ── Hoshi AI Model Management ────────────────────────────────────────────
     partial void OnUseCustomHoshiModelsChanged(bool value)

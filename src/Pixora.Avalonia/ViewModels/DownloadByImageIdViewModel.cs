@@ -151,8 +151,17 @@ public partial class DownloadByImageIdViewModel : ViewModelBase
 
     #region Commands
 
-    // TODO: Clipboard paste - Avalonia clipboard API differs by platform
-    // For now, users can manually paste into the text box
+    /// <summary>
+    /// Called from the code-behind with clipboard text (Avalonia clipboard requires a TopLevel reference).
+    /// </summary>
+    public void PasteFromClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        InputText = string.IsNullOrEmpty(InputText)
+            ? text
+            : InputText + "\n" + text;
+        StatusMessage = "Pasted from clipboard";
+    }
 
     [RelayCommand]
     private async Task ImportFromFileAsync()

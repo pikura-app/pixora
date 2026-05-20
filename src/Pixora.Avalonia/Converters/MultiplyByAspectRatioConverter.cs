@@ -35,9 +35,8 @@ public class MultiplyByAspectRatioConverter : IMultiValueConverter
             _ => 1.0
         };
 
-        // Cap at 500 for visual uniformity
-        var height = width * ratio;
-        return Math.Min(height, 500.0);
+        // Natural height = width × aspectRatio (no cap — preserves full image proportions)
+        return width * ratio;
     }
 
     public object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)

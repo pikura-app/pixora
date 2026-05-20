@@ -11,6 +11,8 @@ using Pixora.Avalonia.Services;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Avalonia.Views.Artwork;
 using Pixora.Avalonia.Views.Dialogs;
+using Pixora.Core.Data;
+using Pixora.Core.Http;
 using Pixora.Core.Models;
 using Pixora.Core.Services;
 using System;
@@ -241,9 +243,26 @@ public partial class InlineArtworkViewer : UserControl
         e.Handled = true;
     }
 
+    private void ClearViewer()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+        _currentCard = null;
+        _currentOriginalUrl = null;
+        _pages = [];
+        _currentPageIndex = 0;
+        _fullResLoaded = false;
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (ViewerImage != null) { ViewerImage.Source = null; ViewerImage.IsVisible = false; }
+            if (LoadingPanel != null) LoadingPanel.IsVisible = false;
+        });
+    }
+
     private async Task LoadCardAsync(ArtworkCardViewModel? card)
     {
-        if (card == null) return;
+        if (card == null) { ClearViewer(); return; }
 
         // Cancel any in-flight load
         _loadCts?.Cancel();
@@ -318,8 +337,9 @@ public partial class InlineArtworkViewer : UserControl
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (LoadingPanel != null) LoadingPanel.IsVisible = loading;
-            if (ViewerImage != null) ViewerImage.IsVisible = !loading;
+            var hasCard = VM?.InlineViewerCard != null;
+            if (LoadingPanel != null) LoadingPanel.IsVisible = loading && hasCard;
+            if (ViewerImage != null) ViewerImage.IsVisible = !loading && hasCard;
         });
     }
 
@@ -493,6 +513,52 @@ public partial class InlineArtworkViewer : UserControl
         var ok = await dialog.ShowDialog<bool?>(window);
         if (ok == true && dialog.SelectedIndexes.Count > 0)
             _ = VM.DownloadPagesAsync(_currentCard, dialog.SelectedIndexes);
+    }
+
+    private async void OnDownloadWithPreset(object? sender, RoutedEventArgs e)
+    {
+        if (_currentCard == null || VM == null) return;
+        var window = TopLevel.GetTopLevel(this) as Window;
+
+// Get required services and presets
+var imageResizeService = AppServices.Get<ImageResizeService>();
+var dialogService = AppServices.Get<DialogService>();
+var imageLoader = AppServices.Get<PixivImageLoader>();
+var pixivClient = AppServices.Get<PixivClient>();
+var userPresetsRepo = AppServices.Get<UserPresetsRepository>();
+var customPresets = await userPresetsRepo.GetAllAsync();
+
+// Create artwork preview list - map ArtworkPreview to Dialogs.ArtworkPreview
+var artwork = _currentCard.Artwork;
+
+var artworks = new List<global::Pixora.Avalonia.Views.Dialogs.ArtworkPreview>
+{
+    new()
+    {
+        ArtworkId = artwork.Id ?? "",
+        Title = artwork.Title ?? "",
+        ArtistName = artwork.UserName ?? "",
+        ThumbnailUrl = artwork.ThumbnailUrl,
+        PageCount = artwork.PageCount
+    }
+};
+
+// Show the download preset window
+var presetWindow = new DownloadPresetWindow(
+    imageResizeService,
+    dialogService,
+    imageLoader,
+    pixivClient,
+    artworks,
+    customPresets?.ToList());
+var result = await presetWindow.ShowDialog<ImageEditPreset?>(window);
+
+// Only download if user didn't cancel (result != null) and clicked Download button
+if (result != null && presetWindow.DownloadClicked)
+{
+    // Download with the selected preset via ViewModel
+    _ = VM.DownloadWithPresetAsync(_currentCard, result);
+}
     }
 
     private async void OnOpenPopup(object? sender, RoutedEventArgs e)
@@ -943,33 +1009,7 @@ public partial class InlineArtworkViewer : UserControl
     private async void OnAiDlClicked(object? sender, RoutedEventArgs e)
     {
         if (_currentCard == null) return;
-        var card = _currentCard;
-        _aiVm.Messages.Add(new AiChatMessage { Role = "assistant", Content = $"⏳ Downloading \"{card.Title}\"…" });
-        RefreshAiMessages();
-
-        try
-        {
-            var paths = await _downloader.DownloadArtworkAsync(card.Artwork);
-            if (paths.Count == 0)
-            {
-                _aiVm.Messages.Add(new AiChatMessage { Role = "assistant", Content = $"⚠ No files were downloaded for \"{card.Title}\"." });
-            }
-            else
-            {
-                var folder = System.IO.Path.GetDirectoryName(paths[0]) ?? "(unknown)";
-                var fileWord = paths.Count == 1 ? "file" : "files";
-                _aiVm.Messages.Add(new AiChatMessage
-                {
-                    Role = "assistant",
-                    Content = $"✓ Downloaded {paths.Count} {fileWord} for \"{card.Title}\"\nSaved to: {folder}"
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            _aiVm.Messages.Add(new AiChatMessage { Role = "system", Content = $"✗ Download failed for \"{card.Title}\": {ex.Message}" });
-        }
-
+        await _aiVm.DownloadArtworkWithJobAsync(_currentCard);
         RefreshAiMessages();
     }
 

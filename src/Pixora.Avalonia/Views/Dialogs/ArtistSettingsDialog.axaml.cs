@@ -39,6 +39,7 @@ public partial class ArtistSettingsDialog : Window
         FilterAiCheckBox.IsChecked = Settings.FilterAiGenerated;
         CreateSubfolderCheckBox.IsChecked = Settings.CreateSubfolderPerSubmission;
         SeparateR18CheckBox.IsChecked = Settings.SeparateR18Folder;
+        AllowRedownloadCheckBox.IsChecked = Settings.AllowRedownload;
     }
 
     private async void BrowseFolderButton_Click(object? sender, RoutedEventArgs e)
@@ -79,6 +80,7 @@ public partial class ArtistSettingsDialog : Window
         FilterAiCheckBox.IsChecked = false;
         CreateSubfolderCheckBox.IsChecked = false;
         SeparateR18CheckBox.IsChecked = false;
+        AllowRedownloadCheckBox.IsChecked = false;
     }
 
     private void SaveButton_Click(object? sender, RoutedEventArgs e)
@@ -97,6 +99,7 @@ public partial class ArtistSettingsDialog : Window
             Settings.FilterAiGenerated = FilterAiCheckBox.IsChecked;
             Settings.CreateSubfolderPerSubmission = CreateSubfolderCheckBox.IsChecked;
             Settings.SeparateR18Folder = SeparateR18CheckBox.IsChecked;
+            Settings.AllowRedownload = AllowRedownloadCheckBox.IsChecked;
         }
         else
         {
@@ -110,6 +113,7 @@ public partial class ArtistSettingsDialog : Window
             Settings.FilterAiGenerated = null;
             Settings.CreateSubfolderPerSubmission = null;
             Settings.SeparateR18Folder = null;
+            Settings.AllowRedownload = null;
         }
 
         Close(true);

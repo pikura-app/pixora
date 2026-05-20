@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -16,11 +17,14 @@ namespace Pixora.Avalonia.Views;
 
 public partial class MainWindow : Window
 {
+    private TrayIcon? _trayIcon;
+
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Closing += OnClosing;
+        PropertyChanged += (_, ev) => { if (ev.Property.Name == nameof(WindowState)) UpdateCaptionIcons(); };
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
@@ -37,6 +41,9 @@ public partial class MainWindow : Window
             Width  = 1200;
             Height = 800;
         }
+
+        // Build tray icon programmatically (Avalonia 12 requires this approach)
+        BuildTrayIcon();
 
         // Initialize services that need the window reference
         try
@@ -107,14 +114,16 @@ public partial class MainWindow : Window
     {
         try
         {
+            var settings = AppServices.Get<SettingsService>();
             if (WindowState == WindowState.Normal)
+                settings.Update(s => { s.WindowWidth = Width; s.WindowHeight = Height; });
+
+            var s = settings.Current;
+            if (s.CloseToTray || s.KeepSchedulesRunningInBackground)
             {
-                var settings = AppServices.Get<SettingsService>();
-                settings.Update(s =>
-                {
-                    s.WindowWidth = Width;
-                    s.WindowHeight = Height;
-                });
+                e.Cancel = true;
+                Hide();
+                return;
             }
         }
         catch { }
@@ -128,6 +137,9 @@ public partial class MainWindow : Window
     private Pixora.Avalonia.Views.Bookmarks.BookmarksView? _bookmarksView;
     private Pixora.Avalonia.Views.Hoshi.HoshiView? _hoshiView;
     private Pixora.Avalonia.Views.Analytics.AnalyticsView? _analyticsView;
+    private Pixora.Avalonia.Views.History.HistoryView? _historyView;
+
+    private void SetSectionTitle(string section) => Title = $"Pixora — {section}";
 
     public void LoadGalleryView()
     {
@@ -136,6 +148,7 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.GalleryViewModel>();
             _galleryView ??= new Pixora.Avalonia.Views.Gallery.GalleryView { DataContext = vm };
             MainContentControl.Content = _galleryView;
+            SetSectionTitle("Gallery");
         }
         catch (Exception ex)
         {
@@ -159,10 +172,12 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.SettingsViewModel>();
             _settingsView ??= new Pixora.Avalonia.Views.Settings.SettingsView { DataContext = vm };
             MainContentControl.Content = _settingsView;
+            SetSectionTitle("Settings");
         }
         catch
         {
             MainContentControl.Content = new TextBlock { Text = "Settings", FontSize = 18, Foreground = Brush.Parse("#9CA3AF") };
+            SetSectionTitle("Settings");
         }
     }
 
@@ -173,6 +188,7 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.EnhancedRankingsViewModel>();
             _rankingsView ??= new Pixora.Avalonia.Views.Rankings.EnhancedRankingsView { DataContext = vm };
             MainContentControl.Content = _rankingsView;
+            SetSectionTitle("Rankings");
         }
         catch
         {
@@ -187,6 +203,7 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.DiscoverViewModel>();
             _discoverView ??= new Pixora.Avalonia.Views.Discover.DiscoverView { DataContext = vm };
             MainContentControl.Content = _discoverView;
+            SetSectionTitle("Discover");
             vm.OnNavigatedTo();
         }
         catch (Exception ex)
@@ -202,6 +219,7 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.BookmarksViewModel>();
             _bookmarksView ??= new Pixora.Avalonia.Views.Bookmarks.BookmarksView { DataContext = vm };
             MainContentControl.Content = _bookmarksView;
+            SetSectionTitle("Bookmarks");
             vm.OnNavigatedTo();
         }
         catch (Exception ex)
@@ -210,12 +228,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void HistoryButton_Click(object? sender, RoutedEventArgs e)
+    private async void HistoryButton_Click(object? sender, RoutedEventArgs e)
     {
         try
         {
             var vm = AppServices.Get<HistoryViewModel>();
-            MainContentControl.Content = new History.HistoryView { DataContext = vm };
+            _historyView ??= new History.HistoryView { DataContext = vm };
+            MainContentControl.Content = _historyView;
+            SetSectionTitle("History");
+            await vm.ReloadAsync();
         }
         catch (Exception ex)
         {
@@ -230,10 +251,12 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<AnalyticsViewModel>();
             _analyticsView ??= new Pixora.Avalonia.Views.Analytics.AnalyticsView { DataContext = vm };
             MainContentControl.Content = _analyticsView;
+            SetSectionTitle("Analytics");
         }
         catch (Exception ex)
         {
             MainContentControl.Content = new TextBlock { Text = $"Analytics — error: {ex.Message}", FontSize = 18, Foreground = Brush.Parse("#9CA3AF"), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            SetSectionTitle("Analytics");
         }
     }
 
@@ -243,6 +266,7 @@ public partial class MainWindow : Window
         {
             var vm = AppServices.Get<BatchDownloadViewModel>();
             MainContentControl.Content = new BatchDownloadView { DataContext = vm };
+            SetSectionTitle("Batch Download");
         }
         catch (Exception ex)
         {
@@ -253,6 +277,7 @@ public partial class MainWindow : Window
     private void ArtistsButton_Click(object? sender, RoutedEventArgs e)
     {
         MainContentControl.Content = new TextBlock { Text = "Artists — coming soon", FontSize = 18, Foreground = Brush.Parse("#9CA3AF"), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        SetSectionTitle("Artists");
     }
 
     internal void HoshiButton_Click(object? sender, RoutedEventArgs e)
@@ -262,6 +287,7 @@ public partial class MainWindow : Window
             var vm = AppServices.Get<Pixora.Avalonia.ViewModels.AiViewModel>();
             _hoshiView ??= new Pixora.Avalonia.Views.Hoshi.HoshiView { DataContext = vm };
             MainContentControl.Content = _hoshiView;
+            SetSectionTitle("Hoshi");
         }
         catch (Exception ex)
         {
@@ -273,6 +299,68 @@ public partial class MainWindow : Window
     {
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             BeginMoveDrag(e);
+    }
+
+    private void ResizeBorder_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        var pos  = e.GetCurrentPoint(this).Position;
+        var w    = Bounds.Width;
+        var h    = Bounds.Height;
+        const int edge = 8;
+        bool left   = pos.X <= edge;
+        bool right  = pos.X >= w - edge;
+        bool top    = pos.Y <= edge;
+        bool bottom = pos.Y >= h - edge;
+
+        var dir = (left, right, top, bottom) switch
+        {
+            (true,  false, true,  false) => WindowEdge.NorthWest,
+            (false, true,  true,  false) => WindowEdge.NorthEast,
+            (true,  false, false, true ) => WindowEdge.SouthWest,
+            (false, true,  false, true ) => WindowEdge.SouthEast,
+            (true,  false, false, false) => WindowEdge.West,
+            (false, true,  false, false) => WindowEdge.East,
+            (false, false, true,  false) => WindowEdge.North,
+            (false, false, false, true ) => WindowEdge.South,
+            _ => (WindowEdge?)null
+        };
+
+        if (dir.HasValue)
+        {
+            e.Handled = true;
+            BeginResizeDrag(dir.Value, e);
+        }
+    }
+
+    private void MinimizeBtn_Click(object? sender, RoutedEventArgs e)
+        => WindowState = WindowState.Minimized;
+
+    private void MaximizeBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void FullscreenBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.FullScreen
+            ? WindowState.Normal
+            : WindowState.FullScreen;
+    }
+
+    private void CloseBtn_Click(object? sender, RoutedEventArgs e)
+        => Close();
+
+    private void UpdateCaptionIcons()
+    {
+        // Maximize: E922 = maximize, E923 = restore
+        if (MaximizeBtn is { } max)
+            max.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
+        // Fullscreen: E1D9 = enter fullscreen, E1D8 = exit fullscreen
+        if (FullscreenBtn is { } fs)
+            fs.Content = WindowState == WindowState.FullScreen ? "\uE1D8" : "\uE1D9";
     }
 
     private void AccountChip_Click(object? sender, RoutedEventArgs e)
@@ -370,11 +458,63 @@ public partial class MainWindow : Window
         try
         {
             var galleryVm = AppServices.Get<ViewModels.GalleryViewModel>();
-            await galleryVm.RefreshFollowedArtistsCommand.ExecuteAsync(null);
-            // Make sure gallery view is visible
-            LoadGalleryView();
+            await galleryVm.SwitchAccountAsync();
         }
         catch { /* non-fatal */ }
+    }
+
+    // ── Tray icon (programmatic) ──────────────────────────────────────────────
+    private void BuildTrayIcon()
+    {
+        try
+        {
+            var openItem = new NativeMenuItem("Open Pixora");
+            openItem.Click += (_, _) => ShowFromTray();
+
+            var pauseItem = new NativeMenuItem("Pause schedules");
+            pauseItem.Click += (_, _) =>
+            {
+                try { AppServices.Get<Pixora.Core.Services.ScheduleExecutorService>().Stop(); }
+                catch { }
+            };
+
+            var exitItem = new NativeMenuItem("Exit");
+            exitItem.Click += (_, _) =>
+            {
+                Closing -= OnClosing;
+                Close();
+            };
+
+            var menu = new NativeMenu();
+            menu.Add(openItem);
+            menu.Add(new NativeMenuItemSeparator());
+            menu.Add(pauseItem);
+            menu.Add(new NativeMenuItemSeparator());
+            menu.Add(exitItem);
+
+            _trayIcon = new TrayIcon
+            {
+                ToolTipText = "Pixora",
+                Icon        = new WindowIcon(global::Avalonia.Platform.AssetLoader.Open(new Uri("avares://Pixora/Assets/pixora-logo.png"))),
+                Menu        = menu,
+                IsVisible   = true,
+            };
+            _trayIcon.Clicked += (_, _) => ShowFromTray();
+
+            // Register so Avalonia lifecycle knows about it
+            TrayIcon.SetIcons(global::Avalonia.Application.Current!, new TrayIcons { _trayIcon });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"TrayIcon init failed: {ex.Message}");
+        }
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
     }
 
     private void HamburgerBtn_Click(object? sender, RoutedEventArgs e)

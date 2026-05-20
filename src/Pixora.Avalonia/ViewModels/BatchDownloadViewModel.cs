@@ -16,6 +16,7 @@ public partial class BatchDownloadViewModel : ViewModelBase
     [ObservableProperty] private DownloadBySearchViewModel _searchViewModel;
     [ObservableProperty] private DownloadByFanboxViewModel _fanboxViewModel;
     [ObservableProperty] private SchedulesViewModel _schedulesViewModel;
+    [ObservableProperty] private SettingsViewModel _settingsViewModel;
 
     public BatchDownloadViewModel(
         DownloadByArtistViewModel artistViewModel,
@@ -24,7 +25,8 @@ public partial class BatchDownloadViewModel : ViewModelBase
         DownloadFromListViewModel fromListViewModel,
         DownloadBySearchViewModel searchViewModel,
         DownloadByFanboxViewModel fanboxViewModel,
-        SchedulesViewModel schedulesViewModel)
+        SchedulesViewModel schedulesViewModel,
+        SettingsViewModel settingsViewModel)
     {
         ArtistViewModel = artistViewModel;
         ImageIdViewModel = imageIdViewModel;
@@ -33,6 +35,7 @@ public partial class BatchDownloadViewModel : ViewModelBase
         SearchViewModel = searchViewModel;
         FanboxViewModel = fanboxViewModel;
         SchedulesViewModel = schedulesViewModel;
+        SettingsViewModel = settingsViewModel;
     }
 
     [RelayCommand]
