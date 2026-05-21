@@ -3,12 +3,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Pixora.Avalonia.Services;
 using Pixora.Core.Models;
 using Pixora.Core.Services;
 using SkiaSharp;
@@ -18,6 +20,7 @@ namespace Pixora.Avalonia.Views.Dialogs;
 public partial class ImageEditorWindow : Window
 {
     private readonly ImageResizeService? _imageResizeService;
+    private readonly UgoiraService? _ugoiraService;
     private SKBitmap _originalBitmap;
     private ImageEditPreset _currentPreset;
     private CancellationTokenSource? _previewDebounceCts;
@@ -33,6 +36,12 @@ public partial class ImageEditorWindow : Window
     private System.Collections.Generic.List<SKBitmap> _pages =>
         _currentArtworkIndex < _artworks.Count ? _artworks[_currentArtworkIndex].Pages : new();
     private int _currentPageIndex = 0;
+
+    // Ugoira (animated) support
+    private string? _ugoiraPreviewPath;
+    private bool _isUgoira; // Set based on artwork type, can be cleared for edit modes
+    private bool _forceShowUgoiraDialog; // When true, always show mode selection dialog
+    private bool _ugoiraDialogShowing; // Guard to prevent double-showing dialog
 
     // Default and "active drag" cursors for the editor preview. Updated each
     // time the active preset changes so the user gets a hint when crop pan is
@@ -82,6 +91,7 @@ public partial class ImageEditorWindow : Window
         };
         _currentArtworkIndex = 0;
         _currentPageIndex = 0;
+        _isUgoira = false;
 
         _currentPreset = initialPreset?.Clone() ?? new ImageEditPreset { DevicePreset = DevicePreset.Custom };
 
@@ -121,6 +131,7 @@ public partial class ImageEditorWindow : Window
         };
         _currentArtworkIndex = 0;
         _currentPageIndex = System.Math.Clamp(initialPageIndex, 0, pages.Count - 1);
+        _isUgoira = false;
         _originalBitmap = pages[_currentPageIndex];
 
         _currentPreset = initialPreset?.Clone() ?? new ImageEditPreset { DevicePreset = DevicePreset.Custom };
@@ -144,7 +155,8 @@ public partial class ImageEditorWindow : Window
         System.Collections.Generic.IList<EditableArtwork> artworks,
         int initialArtworkIndex = 0,
         int initialPageIndex = 0,
-        ImageEditPreset? initialPreset = null) : this()
+        ImageEditPreset? initialPreset = null,
+        bool forceShowUgoiraDialog = false) : this()
     {
         if (artworks == null || artworks.Count == 0)
             throw new System.ArgumentException("At least one artwork is required", nameof(artworks));
@@ -152,6 +164,8 @@ public partial class ImageEditorWindow : Window
         _imageResizeService = imageResizeService;
         _artworks = new System.Collections.Generic.List<EditableArtwork>(artworks);
         _currentArtworkIndex = System.Math.Clamp(initialArtworkIndex, 0, _artworks.Count - 1);
+        _isUgoira = _artworks[_currentArtworkIndex].IllustType == 2;
+        _forceShowUgoiraDialog = forceShowUgoiraDialog;
 
         var currentArtwork = _artworks[_currentArtworkIndex];
         _currentPageIndex = System.Math.Clamp(initialPageIndex, 0, System.Math.Max(0, currentArtwork.PageCount - 1));
@@ -238,7 +252,16 @@ public partial class ImageEditorWindow : Window
             _currentArtworkIndex--;
             var prevArtwork = _artworks[_currentArtworkIndex];
             _currentPageIndex = System.Math.Max(0, prevArtwork.PageCount - 1);
-            GoToPage(_currentPageIndex);
+            
+            // Check if this is an unprocessed ugoira
+            if (prevArtwork.IllustType == 2 && prevArtwork.Pages.Count == 0)
+            {
+                _ = LoadUgoiraForArtworkAsync(prevArtwork);
+            }
+            else
+            {
+                GoToPage(_currentPageIndex);
+            }
         }
     }
 
@@ -256,8 +279,18 @@ public partial class ImageEditorWindow : Window
         else if (_currentArtworkIndex < _artworks.Count - 1)
         {
             _currentArtworkIndex++;
+            var nextArtwork = _artworks[_currentArtworkIndex];
             _currentPageIndex = 0;
-            GoToPage(_currentPageIndex);
+            
+            // Check if this is an unprocessed ugoira
+            if (nextArtwork.IllustType == 2 && nextArtwork.Pages.Count == 0)
+            {
+                _ = LoadUgoiraForArtworkAsync(nextArtwork);
+            }
+            else
+            {
+                GoToPage(_currentPageIndex);
+            }
         }
     }
 
@@ -265,17 +298,26 @@ public partial class ImageEditorWindow : Window
     {
         if (_currentArtworkIndex >= _artworks.Count) return;
         var currentArtwork = _artworks[_currentArtworkIndex];
+        
+        // Validate index bounds
         if (newIndex < 0 || newIndex >= currentArtwork.PageCount) return;
+        
+        // Validate that we have pages loaded
+        if (currentArtwork.Pages == null || currentArtwork.Pages.Count == 0) return;
+        if (newIndex >= currentArtwork.Pages.Count) return;
 
         _currentPageIndex = newIndex;
+        
         // Switch the active source bitmap. The preset stays the same so adjustments
         // are previewed identically across pages.
         _originalBitmap = currentArtwork.Pages[_currentPageIndex];
         _originalAspectRatio = (float)_originalBitmap.Width / _originalBitmap.Height;
+        
         // Invalidate the cached downscaled bitmap so the new page gets resized.
         _cachedPreviewSource?.Dispose();
         _cachedPreviewSource = null;
         _cachedPreviewSourceWidth = -1;
+        
         UpdateNavigationUI();
         _ = UpdatePreviewAsync(immediate: true);
     }
@@ -441,6 +483,20 @@ public partial class ImageEditorWindow : Window
     private async Task UpdatePreviewAsync(bool immediate = false)
     {
         if (_imageResizeService == null || _isUpdating) return;
+
+        // Handle ugoira (animated) - load animated preview instead of processing
+        if (_isUgoira)
+        {
+            await LoadUgoiraPreviewAsync();
+            return;
+        }
+
+        // Not ugoira - ensure static image is visible
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+        });
 
         // Cancel previous preview generation
         _previewDebounceCts?.Cancel();
@@ -690,6 +746,96 @@ public partial class ImageEditorWindow : Window
 
         LoadPresetIntoUI();
         _ = UpdatePreviewAsync();
+    }
+
+    /// <summary>
+    /// Click handler for the Ugoira Mode button - allows switching modes without closing editor.
+    /// </summary>
+    private async void OnUgoiraModeClick(object? sender, RoutedEventArgs e)
+    {
+        // Allow switching even if _isUgoira is false (we might be in frame-edit mode)
+        // Just check if we have an artwork with valid ID
+        var artwork = _artworks[_currentArtworkIndex];
+        if (string.IsNullOrEmpty(artwork.ArtworkId)) return;
+
+        // Show loading while preparing dialog
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (LoadingSpinner != null) LoadingSpinner.IsVisible = true;
+            if (UgoiraModeButton != null) UgoiraModeButton.IsEnabled = false;
+        });
+
+        try
+        {
+            // Prevent double-showing dialog
+            if (_ugoiraDialogShowing) return;
+            _ugoiraDialogShowing = true;
+
+            // Show the mode selection dialog again
+            var dialogMode = await ShowUgoiraModeDialogAsync();
+            _ugoiraDialogShowing = false;
+            _forceShowUgoiraDialog = false; // Reset so we don't show again
+            if (dialogMode == null) return; // User cancelled
+
+            var newMode = dialogMode.Value;
+            if (newMode == _currentPreset?.UgoiraMode) return; // No change
+
+            // Save the new mode
+            _currentPreset.UgoiraMode = newMode;
+
+            // Show loading for extraction
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (LoadingSpinner != null) LoadingSpinner.IsVisible = true;
+                if (ImageInfoText != null) ImageInfoText.Text = "Loading ugoira...";
+            });
+
+            // Reload with the new mode
+            var ugoiraService = _ugoiraService ?? AppServices.Get<UgoiraService>();
+            
+            // Reset visibility flags before loading
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (EditorImage != null) EditorImage.IsVisible = false;
+                if (UgoiraImage != null) UgoiraImage.IsVisible = false;
+            });
+
+            // Reset _isUgoira flag so we can reload fresh
+            _isUgoira = true;
+
+            switch (newMode)
+            {
+                case UgoiraPresetMode.WatchAnimation:
+                    await LoadUgoiraAnimationAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditSingleFrame:
+                    await LoadUgoiraSingleFrameAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditAllFrames:
+                    await LoadUgoiraAllFramesAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditCover:
+                    await LoadUgoiraCoverAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _ugoiraDialogShowing = false; // Reset flag on error
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (ImageInfoText != null) ImageInfoText.Text = $"Error: {ex.Message}";
+            });
+        }
+        finally
+        {
+            _ugoiraDialogShowing = false; // Always reset flag
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (LoadingSpinner != null) LoadingSpinner.IsVisible = false;
+                if (UgoiraModeButton != null) UgoiraModeButton.IsEnabled = true;
+            });
+        }
     }
 
     private void OnSaveAsPresetClick(object? sender, RoutedEventArgs e)
@@ -1063,6 +1209,656 @@ public partial class ImageEditorWindow : Window
             _isPanning = false;
             e.Pointer.Capture(null);
         }
+    }
+
+    /// <summary>
+    /// Loads ugoira with mode selection dialog offering 4 options:
+    /// 1. Watch Animation - plays the animated ugoira
+    /// 2. Edit Single Frame - extracts one frame for editing
+    /// 3. Edit All Frames - extracts all frames for batch processing
+    /// 4. Edit Cover - extracts first frame only
+    /// </summary>
+    private async Task LoadUgoiraPreviewAsync()
+    {
+        try
+        {
+            var artwork = _artworks[_currentArtworkIndex];
+            if (string.IsNullOrEmpty(artwork.ArtworkId)) return;
+
+            // Check if we should show the ugoira mode dialog
+            UgoiraPresetMode mode = _currentPreset?.UgoiraMode ?? default;
+            var showDialog = true;
+
+            // If explicitly requested (Ugoira Options button), always show dialog
+            if (_forceShowUgoiraDialog)
+            {
+                showDialog = true;
+            }
+            // Otherwise, if preset has a saved mode, use it (skip dialog)
+            else if (_currentPreset?.UgoiraMode != null &&
+                     _currentPreset.UgoiraMode != default)
+            {
+                mode = _currentPreset.UgoiraMode;
+                showDialog = false;
+            }
+
+            if (showDialog)
+            {
+                // Prevent double-showing dialog
+                if (_ugoiraDialogShowing) return;
+                _ugoiraDialogShowing = true;
+
+                // Show mode selection dialog
+                var dialogMode = await ShowUgoiraModeDialogAsync();
+                _ugoiraDialogShowing = false;
+                _forceShowUgoiraDialog = false; // Reset so we don't show again
+                if (dialogMode == null) return; // User cancelled
+                mode = dialogMode.Value;
+            }
+
+            // Save the selected mode to the preset
+            _currentPreset.UgoiraMode = mode;
+
+            // Show the mode switcher button in toolbar
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true;
+            });
+
+            var ugoiraService = _ugoiraService ?? AppServices.Get<UgoiraService>();
+
+            switch (mode)
+            {
+                case UgoiraPresetMode.WatchAnimation:
+                    await LoadUgoiraAnimationAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditSingleFrame:
+                    await LoadUgoiraSingleFrameAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditAllFrames:
+                    await LoadUgoiraAllFramesAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditCover:
+                    await LoadUgoiraCoverAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _ugoiraDialogShowing = false; // Reset flag on error
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ImageInfoText.Text = $"Ugoira load failed: {ex.Message}";
+            });
+        }
+    }
+
+    // UgoiraPresetMode is defined in Pixora.Core.Models (UgoiraPresetMode)
+
+    private async Task<UgoiraPresetMode?> ShowUgoiraModeDialogAsync()
+    {
+        var tcs = new TaskCompletionSource<UgoiraPresetMode?>();
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var dialog = new Window
+            {
+                Title = "Ugoira Options",
+                Width = 480,
+                Height = 420,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Background = this.Background
+            };
+
+            var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "This is an animated ugoira. Choose how to open it:",
+                FontSize = 14,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            void AddOption(string title, string desc, UgoiraPresetMode mode)
+            {
+                var btn = new Button
+                {
+                    Content = new StackPanel
+                    {
+                        Children =
+                        {
+                            new TextBlock { Text = title, FontWeight = FontWeight.SemiBold, FontSize = 13 },
+                            new TextBlock { Text = desc, FontSize = 11, Opacity = 0.7 }
+                        }
+                    },
+                    HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = global::Avalonia.Layout.HorizontalAlignment.Left,
+                    Padding = new Thickness(12),
+                    CornerRadius = new CornerRadius(6)
+                };
+                btn.Click += (_, _) =>
+                {
+                    tcs.TrySetResult(mode);
+                    dialog.Close();
+                };
+                panel.Children.Add(btn);
+            }
+
+            // Pre-select the current preset mode if any
+            var currentMode = _currentPreset?.UgoiraMode ?? UgoiraPresetMode.EditSingleFrame;
+
+            AddOption("▶ Watch Animation", "Play the animated ugoira (no editing)", UgoiraPresetMode.WatchAnimation);
+            AddOption("🖼 Edit Single Frame", "Extract one frame to edit as static image", UgoiraPresetMode.EditSingleFrame);
+            AddOption("📑 Edit All Frames", "Extract all frames for batch processing", UgoiraPresetMode.EditAllFrames);
+            AddOption("🎴 Edit Cover", "Extract the first frame (cover image)", UgoiraPresetMode.EditCover);
+
+            dialog.Content = panel;
+            dialog.Closed += (_, _) => tcs.TrySetResult(null);
+            dialog.ShowDialog(this);
+        });
+
+        return await tcs.Task;
+    }
+
+    private async Task LoadUgoiraAnimationAsync(UgoiraService service, string artworkId)
+    {
+        var previewPath = await service.GetOrCreatePreviewAsync(artworkId);
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = false;
+            UgoiraImage.IsVisible = true;
+            UgoiraImage.SourcePath = previewPath;
+            UgoiraImage.IsPlaying = true;
+            LoadingSpinner.IsVisible = false;
+            CropOverlay.IsVisible = false;
+            ImageInfoText.Text = "Ugoira (animated) - watching only";
+        });
+    }
+
+    private async Task LoadUgoiraSingleFrameAsync(UgoiraService service, string artworkId)
+    {
+        // Get metadata to know frame count
+        var pixivClient = AppServices.Get<Pixora.Core.Services.PixivClient>();
+        var meta = await pixivClient.GetUgoiraMetaAsync(artworkId);
+        var frameCount = meta?.Frames?.Count ?? 0;
+        if (frameCount == 0) throw new Exception("Could not determine frame count");
+
+        // Show frame picker dialog with preview
+        var selectedFrame = await ShowFramePickerDialogAsync(artworkId, frameCount);
+        _forceShowUgoiraDialog = false; // Reset after showing picker
+        if (selectedFrame == null) throw new Exception("No frame selected");
+
+        var frameIndex = selectedFrame.Value;
+
+        // Extract selected frame as PNG
+        var framePath = await service.ExtractSingleFrameAsync(artworkId, frameIndex: frameIndex);
+        if (framePath == null) throw new Exception("Failed to extract frame");
+
+        // Load as bitmap and treat as regular static image
+        var bitmap = SKBitmap.Decode(framePath);
+        if (bitmap == null) throw new Exception("Failed to decode frame");
+
+        // Replace the current artwork's pages with this single frame
+        var artwork = _artworks[_currentArtworkIndex];
+        artwork.Pages.Clear();
+        artwork.Pages.Add(bitmap);
+        artwork.PageCount = 1; // Set PageCount to 1 for single frame
+        _currentPageIndex = 0;
+        _originalBitmap = bitmap;
+        _originalAspectRatio = (float)bitmap.Width / bitmap.Height;
+
+        // Mark as non-ugoira so it renders as static image
+        _isUgoira = false;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = $"Ugoira - Editing frame {frameIndex + 1} of {frameCount} (static)";
+            UpdateNavigationUI(); // Update nav to show single page
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true; // Keep mode button visible
+        });
+
+        await UpdatePreviewAsync();
+    }
+
+    /// <summary>
+    /// Shows a dialog to pick which frame to extract from the ugoira with live preview.
+    /// </summary>
+    private async Task<int?> ShowFramePickerDialogAsync(string artworkId, int frameCount)
+    {
+        var tcs = new TaskCompletionSource<int?>();
+        var ugoiraService = _ugoiraService ?? AppServices.Get<UgoiraService>();
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var dialog = new Window
+            {
+                Title = "Select Frame",
+                Width = 500,
+                Height = 420,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Background = this.Background
+            };
+
+            var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"This ugoira has {frameCount} frames. Drag slider to preview:",
+                FontSize = 14,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            // Preview image
+            var previewImage = new Image
+            {
+                Width = 320,
+                Height = 180,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8)
+            };
+            panel.Children.Add(previewImage);
+
+            var frameText = new TextBlock
+            {
+                Text = "Frame 1",
+                FontSize = 13,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center
+            };
+
+            var slider = new Slider
+            {
+                Minimum = 1,
+                Maximum = frameCount,
+                Value = 1,
+                TickFrequency = 1,
+                IsSnapToTickEnabled = true,
+                Width = 400
+            };
+
+            // Debounce timer for preview loading
+            System.Threading.Timer? previewTimer = null;
+
+            slider.ValueChanged += async (_, e) =>
+            {
+                var frameNum = (int)e.NewValue;
+                frameText.Text = $"Frame {frameNum}";
+
+                // Debounce - wait 100ms before loading preview
+                previewTimer?.Dispose();
+                previewTimer = new System.Threading.Timer(async _ =>
+                {
+                    try
+                    {
+                        var framePath = await ugoiraService.ExtractSingleFrameAsync(artworkId, frameNum - 1);
+                        if (framePath != null)
+                        {
+                            var bitmap = SKBitmap.Decode(framePath);
+                            if (bitmap != null)
+                            {
+                                var avaloniaBitmap = SkiaToAvalonia(bitmap);
+                                await Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    previewImage.Source = avaloniaBitmap;
+                                });
+                            }
+                        }
+                    }
+                    catch { /* ignore preview errors */ }
+                }, null, 100, System.Threading.Timeout.Infinite);
+            };
+
+            panel.Children.Add(slider);
+            panel.Children.Add(frameText);
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 12,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+
+            var cancelBtn = new Button { Content = "Cancel", Padding = new Thickness(16, 8) };
+            cancelBtn.Click += (_, _) =>
+            {
+                previewTimer?.Dispose();
+                tcs.TrySetResult(null);
+                dialog.Close();
+            };
+
+            var okBtn = new Button { Content = "OK", Classes = { "accent" }, Padding = new Thickness(16, 8) };
+            okBtn.Click += (_, _) =>
+            {
+                previewTimer?.Dispose();
+                tcs.TrySetResult((int)slider.Value - 1); // Convert to 0-based index
+                dialog.Close();
+            };
+
+            buttonPanel.Children.Add(cancelBtn);
+            buttonPanel.Children.Add(okBtn);
+            panel.Children.Add(buttonPanel);
+
+            dialog.Content = panel;
+            dialog.Closed += (_, _) =>
+            {
+                previewTimer?.Dispose();
+                tcs.TrySetResult(null);
+            };
+
+            dialog.ShowDialog(this);
+
+            // Load initial preview
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var framePath = await ugoiraService.ExtractSingleFrameAsync(artworkId, 0);
+                    if (framePath != null)
+                    {
+                        var bitmap = SKBitmap.Decode(framePath);
+                        if (bitmap != null)
+                        {
+                            var avaloniaBitmap = SkiaToAvalonia(bitmap);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                previewImage.Source = avaloniaBitmap;
+                            });
+                        }
+                    }
+                }
+                catch { /* ignore */ }
+            });
+        });
+
+        return await tcs.Task;
+    }
+
+    private async Task LoadUgoiraAllFramesAsync(UgoiraService service, string artworkId)
+    {
+        var framePaths = await service.ExtractAllFramesAsync(artworkId);
+        if (framePaths.Count == 0) throw new Exception("Failed to extract frames");
+
+        // Load all frames as bitmaps
+        var bitmaps = new System.Collections.Generic.List<SKBitmap>();
+        foreach (var path in framePaths)
+        {
+            var bmp = SKBitmap.Decode(path);
+            if (bmp != null) bitmaps.Add(bmp);
+        }
+
+        if (bitmaps.Count == 0) throw new Exception("Failed to decode any frames");
+
+        // Replace artwork pages with all frames
+        var artwork = _artworks[_currentArtworkIndex];
+        artwork.Pages.Clear();
+        foreach (var bmp in bitmaps)
+            artwork.Pages.Add(bmp);
+        
+        // IMPORTANT: Update PageCount to match the number of frames loaded
+        artwork.PageCount = bitmaps.Count;
+
+        // Reset to first frame
+        _currentPageIndex = 0;
+        _originalBitmap = bitmaps[0];
+        _originalAspectRatio = (float)_originalBitmap.Width / _originalBitmap.Height;
+
+        // Invalidate cached preview
+        _cachedPreviewSource?.Dispose();
+        _cachedPreviewSource = null;
+        _cachedPreviewSourceWidth = -1;
+
+        // CRITICAL: Mark as non-ugoira so UpdatePreviewAsync treats frames as regular images
+        // This prevents it from calling LoadUgoiraPreviewAsync() again
+        _isUgoira = false;
+
+        // Update UI on main thread
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = $"Ugoira - Batch editing {bitmaps.Count} frames";
+            
+            // Force navigation UI update
+            UpdateNavigationUI();
+            
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true; // Keep mode button visible
+        });
+
+        // Generate and display preview for first frame
+        await UpdatePreviewAsync(immediate: true);
+    }
+
+    private async Task LoadUgoiraCoverAsync(UgoiraService service, string artworkId)
+    {
+        // Same as single frame but explicitly for cover
+        var coverPath = await service.GetCoverImageAsync(artworkId);
+        if (coverPath == null) throw new Exception("Failed to extract cover");
+
+        var bitmap = SKBitmap.Decode(coverPath);
+        if (bitmap == null) throw new Exception("Failed to decode cover");
+
+        var artwork = _artworks[_currentArtworkIndex];
+        artwork.Pages.Clear();
+        artwork.Pages.Add(bitmap);
+        artwork.PageCount = 1; // Cover is single image
+        _currentPageIndex = 0;
+        _originalBitmap = bitmap;
+        _originalAspectRatio = (float)bitmap.Width / bitmap.Height;
+
+        // Mark as non-ugoira so it renders as static image
+        _isUgoira = false;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = "Ugoira - Editing cover image (static)";
+            UpdateNavigationUI();
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true; // Keep mode button visible
+        });
+
+        await UpdatePreviewAsync();
+    }
+
+    /// <summary>
+    /// Loads ugoira content for a specific artwork when navigating between multiple artworks.
+    /// Shows dialog if needed, applies preset mode if available.
+    /// </summary>
+    private async Task LoadUgoiraForArtworkAsync(EditableArtwork artwork)
+    {
+        if (string.IsNullOrEmpty(artwork.ArtworkId)) return;
+        if (artwork.Pages.Count > 0) return; // Already loaded
+
+        _isUgoira = true;
+        
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            LoadingSpinner.IsVisible = true;
+            ImageInfoText.Text = "Loading ugoira...";
+        });
+
+        try
+        {
+            var ugoiraService = _ugoiraService ?? AppServices.Get<UgoiraService>();
+            
+            // Determine which mode to use
+            UgoiraPresetMode mode;
+            var showDialog = _currentPreset?.UgoiraMode == null || _currentPreset.UgoiraMode == default;
+            
+            if (showDialog && !_ugoiraDialogShowing)
+            {
+                _ugoiraDialogShowing = true;
+                var dialogMode = await ShowUgoiraModeDialogAsync();
+                _ugoiraDialogShowing = false;
+                _forceShowUgoiraDialog = false;
+                
+                if (dialogMode == null) return; // User cancelled
+                mode = dialogMode.Value;
+                _currentPreset.UgoiraMode = mode; // Save for remaining artworks
+            }
+            else
+            {
+                mode = _currentPreset?.UgoiraMode ?? UgoiraPresetMode.EditSingleFrame;
+            }
+
+            // Process based on selected mode
+            switch (mode)
+            {
+                case UgoiraPresetMode.WatchAnimation:
+                    await LoadUgoiraAnimationAsync(ugoiraService, artwork.ArtworkId);
+                    break;
+                case UgoiraPresetMode.EditSingleFrame:
+                    await LoadUgoiraSingleFrameForArtworkAsync(ugoiraService, artwork);
+                    break;
+                case UgoiraPresetMode.EditAllFrames:
+                    await LoadUgoiraAllFramesForArtworkAsync(ugoiraService, artwork);
+                    break;
+                case UgoiraPresetMode.EditCover:
+                    await LoadUgoiraCoverForArtworkAsync(ugoiraService, artwork);
+                    break;
+            }
+
+            // Update UI after loading
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                UpdateNavigationUI();
+            });
+        }
+        catch (Exception ex)
+        {
+            _ugoiraDialogShowing = false;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ImageInfoText.Text = $"Error loading ugoira: {ex.Message}";
+                LoadingSpinner.IsVisible = false;
+            });
+        }
+    }
+
+    /// <summary>
+    /// Loads single frame for a specific artwork (used in multi-artwork navigation).
+    /// </summary>
+    private async Task LoadUgoiraSingleFrameForArtworkAsync(UgoiraService service, EditableArtwork artwork)
+    {
+        var pixivClient = AppServices.Get<Pixora.Core.Services.PixivClient>();
+        var meta = await pixivClient.GetUgoiraMetaAsync(artwork.ArtworkId);
+        var frameCount = meta?.Frames?.Count ?? 0;
+        
+        // For simplicity in batch mode, always use frame 1
+        var frameIndex = 0;
+        
+        var framePath = await service.ExtractSingleFrameAsync(artwork.ArtworkId, frameIndex);
+        if (framePath == null) throw new Exception("Failed to extract frame");
+
+        var bitmap = SKBitmap.Decode(framePath);
+        if (bitmap == null) throw new Exception("Failed to decode frame");
+
+        artwork.Pages.Clear();
+        artwork.Pages.Add(bitmap);
+        artwork.PageCount = 1;
+        
+        _originalBitmap = bitmap;
+        _originalAspectRatio = (float)bitmap.Width / bitmap.Height;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = $"Ugoira - Frame 1 of {frameCount} (static)";
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true;
+        });
+
+        await UpdatePreviewAsync(immediate: true);
+    }
+
+    /// <summary>
+    /// Loads all frames for a specific artwork (used in multi-artwork navigation).
+    /// </summary>
+    private async Task LoadUgoiraAllFramesForArtworkAsync(UgoiraService service, EditableArtwork artwork)
+    {
+        var framePaths = await service.ExtractAllFramesAsync(artwork.ArtworkId);
+        if (framePaths.Count == 0) throw new Exception("Failed to extract frames");
+
+        var bitmaps = new System.Collections.Generic.List<SKBitmap>();
+        foreach (var path in framePaths)
+        {
+            var bmp = SKBitmap.Decode(path);
+            if (bmp != null) bitmaps.Add(bmp);
+        }
+
+        if (bitmaps.Count == 0) throw new Exception("Failed to decode any frames");
+
+        artwork.Pages.Clear();
+        foreach (var bmp in bitmaps)
+            artwork.Pages.Add(bmp);
+        
+        artwork.PageCount = bitmaps.Count;
+        _currentPageIndex = 0;
+        _originalBitmap = bitmaps[0];
+        _originalAspectRatio = (float)_originalBitmap.Width / _originalBitmap.Height;
+
+        _cachedPreviewSource?.Dispose();
+        _cachedPreviewSource = null;
+        _cachedPreviewSourceWidth = -1;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = $"Ugoira - Batch editing {bitmaps.Count} frames";
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true;
+        });
+
+        await UpdatePreviewAsync(immediate: true);
+    }
+
+    /// <summary>
+    /// Loads cover for a specific artwork (used in multi-artwork navigation).
+    /// </summary>
+    private async Task LoadUgoiraCoverForArtworkAsync(UgoiraService service, EditableArtwork artwork)
+    {
+        var coverPath = await service.GetCoverImageAsync(artwork.ArtworkId);
+        if (coverPath == null) throw new Exception("Failed to extract cover");
+
+        var bitmap = SKBitmap.Decode(coverPath);
+        if (bitmap == null) throw new Exception("Failed to decode cover");
+
+        artwork.Pages.Clear();
+        artwork.Pages.Add(bitmap);
+        artwork.PageCount = 1;
+        
+        _originalBitmap = bitmap;
+        _originalAspectRatio = (float)bitmap.Width / bitmap.Height;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            EditorImage.IsVisible = true;
+            UgoiraImage.IsVisible = false;
+            UgoiraImage.SourcePath = null;
+            LoadingSpinner.IsVisible = false;
+            ImageInfoText.Text = "Ugoira - Cover image (static)";
+            if (UgoiraModePanel != null) UgoiraModePanel.IsVisible = true;
+        });
+
+        await UpdatePreviewAsync(immediate: true);
     }
 }
 

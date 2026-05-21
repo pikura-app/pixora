@@ -36,6 +36,10 @@ public partial class DownloadPresetWindow : Window
     private ImageEditPreset _currentPreset;
     private CancellationTokenSource? _previewDebounceCts;
 
+    // Ugoira (animated) support
+    private bool _isCurrentUgoira;
+    private string? _currentArtworkId;
+
     // Drag-to-pan state for repositioning the Fill-mode crop window. Coords
     // are in PreviewImage local pixels; the delta is converted to a -1..1
     // CropOffset before being applied to the preset.
@@ -224,6 +228,12 @@ public partial class DownloadPresetWindow : Window
         {
             _presets[0].IsSelected = true;
             _currentPreset = _presets[0].Preset;
+
+            // Sync ugoira checkboxes with initial preset
+            if (UgoiraSaveFramesCheck != null)
+                UgoiraSaveFramesCheck.IsChecked = _currentPreset.SaveUgoiraFrames;
+            if (UgoiraFramesOnlyCheck != null)
+                UgoiraFramesOnlyCheck.IsChecked = _currentPreset.UgoiraFramesOnly;
         }
 
         PresetList.ItemsSource = _presets;
@@ -267,6 +277,8 @@ public partial class DownloadPresetWindow : Window
                 MultiPageInfoText.IsVisible = false;
             MultiPageOptions.IsVisible = false;
         }
+
+        // Note: Ugoira handling is now automatic in Custom Edit - no separate button needed
 
         // Show batch mode panel when multiple submissions selected
         if (BatchModePanel != null)
@@ -408,11 +420,27 @@ public partial class DownloadPresetWindow : Window
 
             // Apply current preset for preview (immediate, no debounce for navigation)
             await UpdatePreviewAsync(immediate: true);
+
+            // Update ugoira play button visibility
+            _isCurrentUgoira = artwork.IllustType == 2;
+            _currentArtworkId = artwork.ArtworkId;
+            if (PlayAnimationButton != null)
+            {
+                PlayAnimationButton.IsVisible = _isCurrentUgoira && UgoiraPlayer?.IsVisible != true;
+            }
+
+            // Show/hide ugoira format selection panel
+            if (UgoiraFormatPanel != null)
+            {
+                UgoiraFormatPanel.IsVisible = _isCurrentUgoira;
+            }
         }
         catch (Exception ex)
         {
             NoPreviewText.Text = $"Failed to load image: {ex.Message}";
             NoPreviewText.IsVisible = true;
+            _isCurrentUgoira = false;
+            if (PlayAnimationButton != null) PlayAnimationButton.IsVisible = false;
         }
         finally
         {
@@ -574,6 +602,13 @@ public partial class DownloadPresetWindow : Window
 
         // Update UI
         UpdatePresetInfo();
+
+        // Update ugoira options from preset
+        if (UgoiraSaveFramesCheck != null)
+            UgoiraSaveFramesCheck.IsChecked = _currentPreset.SaveUgoiraFrames;
+        if (UgoiraFramesOnlyCheck != null)
+            UgoiraFramesOnlyCheck.IsChecked = _currentPreset.UgoiraFramesOnly;
+
         _ = LoadCurrentImageAsync();
 
         // Refresh list to update all radio buttons
@@ -680,20 +715,24 @@ public partial class DownloadPresetWindow : Window
                     editor = new ImageEditorWindow(_imageResizeService, _currentOriginalBitmap, _currentPreset);
                 }
             }
-            else if (editableArtworks.Count == 1 && editableArtworks[0].PageCount == 1)
+            else if (editableArtworks.Count == 1 && editableArtworks[0].PageCount == 1 && editableArtworks[0].IllustType != 2)
             {
-                // Single artwork, single page - use simple constructor
+                // Single artwork, single page, NOT ugoira - use simple constructor
                 editor = new ImageEditorWindow(_imageResizeService, editableArtworks[0].Pages[0], _currentPreset);
             }
             else
             {
                 // Multi-artwork or multi-page - use multi-artwork constructor
+                // Check if any artwork is ugoira - if so, force show the ugoira mode dialog
+                var hasUgoira = editableArtworks.Any(a => a.IllustType == 2);
+
                 editor = new ImageEditorWindow(
                     _imageResizeService,
                     editableArtworks,
                     initialArtworkIndex: _currentImageIndex,
                     initialPageIndex: _currentPageIndex,
-                    initialPreset: _currentPreset);
+                    initialPreset: _currentPreset,
+                    forceShowUgoiraDialog: hasUgoira);
             }
 
             // Check if this window is still open and valid before showing dialog
@@ -743,7 +782,8 @@ public partial class DownloadPresetWindow : Window
             var editable = new EditableArtwork
             {
                 ArtworkId = artwork.ArtworkId,
-                PageCount = artwork.PageCount
+                PageCount = artwork.PageCount,
+                IllustType = artwork.IllustType
             };
 
             try
@@ -865,6 +905,14 @@ public partial class DownloadPresetWindow : Window
         if (artwork.PageCount > 1 && _currentPageIndex > 0)
         {
             _currentPageIndex--;
+            // Stop any playing animation before navigating
+            if (UgoiraPlayer != null)
+            {
+                UgoiraPlayer.IsVisible = false;
+                UgoiraPlayer.IsPlaying = false;
+                UgoiraPlayer.SourcePath = null;
+            }
+            if (PreviewImage != null) PreviewImage.IsVisible = true;
             await LoadCurrentImageAsync();
             UpdateSelectedCount();
         }
@@ -879,8 +927,45 @@ public partial class DownloadPresetWindow : Window
         if (artwork.PageCount > 1 && _currentPageIndex < artwork.PageCount - 1)
         {
             _currentPageIndex++;
+            // Stop any playing animation before navigating
+            if (UgoiraPlayer != null)
+            {
+                UgoiraPlayer.IsVisible = false;
+                UgoiraPlayer.IsPlaying = false;
+                UgoiraPlayer.SourcePath = null;
+            }
+            if (PreviewImage != null) PreviewImage.IsVisible = true;
             await LoadCurrentImageAsync();
-            UpdateSelectedCount();
+        }
+    }
+
+    /// <summary>
+    /// Play/Pause the ugoira animation when play button is clicked.
+    /// </summary>
+    private async void OnPlayAnimationClick(object? sender, PointerPressedEventArgs e)
+    {
+        e.Handled = true;
+        if (!_isCurrentUgoira || string.IsNullOrEmpty(_currentArtworkId)) return;
+
+        try
+        {
+            var ugoiraService = AppServices.Get<UgoiraService>();
+            var previewPath = await ugoiraService.GetOrCreatePreviewAsync(_currentArtworkId);
+            if (previewPath == null) return;
+
+            // Switch from static preview to animation player
+            if (PreviewImage != null) PreviewImage.IsVisible = false;
+            if (UgoiraPlayer != null)
+            {
+                UgoiraPlayer.SourcePath = previewPath;
+                UgoiraPlayer.IsVisible = true;
+                UgoiraPlayer.IsPlaying = true;
+            }
+            if (PlayAnimationButton != null) PlayAnimationButton.IsVisible = false;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to play animation: {ex.Message}");
         }
     }
 
@@ -1169,7 +1254,7 @@ public partial class DownloadPresetWindow : Window
 
                 var pagesTextBox = new TextBox
                 {
-                    Watermark = "all",
+                    PlaceholderText = "all",
                     Text = "all", // Default to all pages
                     FontSize = 11,
                     Width = 140,
@@ -1320,6 +1405,26 @@ public partial class DownloadPresetWindow : Window
             _currentPreset.ResizeSettings.JpegQuality = formatIndex == 1 ? 95 : 75;
         }
 
+        // Capture ugoira format selections if this is an ugoira artwork
+        if (_isCurrentUgoira)
+        {
+            var formats = new List<UgoiraFormat>();
+            if (UgoiraMp4Check?.IsChecked == true) formats.Add(UgoiraFormat.Mp4);
+            if (UgoiraGifCheck?.IsChecked == true) formats.Add(UgoiraFormat.Gif);
+            if (UgoiraWebmCheck?.IsChecked == true) formats.Add(UgoiraFormat.WebM);
+            if (UgoiraWebpCheck?.IsChecked == true) formats.Add(UgoiraFormat.WebP);
+            
+            // Only save if at least one format is selected, otherwise use global settings
+            if (formats.Count > 0)
+            {
+                _currentPreset.UgoiraFormats = formats;
+            }
+            
+            // Capture save frames option
+            _currentPreset.SaveUgoiraFrames = UgoiraSaveFramesCheck?.IsChecked == true;
+            _currentPreset.UgoiraFramesOnly = UgoiraFramesOnlyCheck?.IsChecked == true;
+        }
+
         SelectedPreset = _currentPreset;
         DownloadClicked = true;
         Close(_currentPreset);
@@ -1404,6 +1509,7 @@ public class ArtworkPreview
     public string? ImageUrl { get; set; }
     public string? LocalPath { get; set; }
     public int PageCount { get; set; } = 1;
+    public int IllustType { get; set; } // 0=illust, 1=manga, 2=ugoira (animated)
     public System.Collections.Generic.List<string> PageUrls { get; set; } = new();
 }
 
@@ -1417,4 +1523,5 @@ public class EditableArtwork
     public string UserName { get; set; } = "";
     public System.Collections.Generic.List<SkiaSharp.SKBitmap> Pages { get; set; } = new();
     public int PageCount { get; set; }
+    public int IllustType { get; set; } // 2 = ugoira (animated)
 }

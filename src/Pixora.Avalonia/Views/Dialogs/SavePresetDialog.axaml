@@ -15,14 +15,14 @@
             <StackPanel Spacing="8">
                 <TextBlock Text="Preset Name" FontSize="12"/>
                 <TextBox x:Name="PresetNameTextBox"
-                         Watermark="e.g., My Favorite Artists"
+                         PlaceholderText="e.g., My Favorite Artists"
                          CornerRadius="6"/>
             </StackPanel>
 
             <StackPanel Spacing="8">
                 <TextBlock Text="Description (optional)" FontSize="12"/>
                 <TextBox x:Name="DescriptionTextBox"
-                         Watermark="Brief description of this preset..."
+                         PlaceholderText="Brief description of this preset..."
                          CornerRadius="6"/>
             </StackPanel>
 

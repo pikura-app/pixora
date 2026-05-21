@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:anim="using:Pixora.Avalonia.Controls"
         xmlns:vm="clr-namespace:Pixora.Avalonia.ViewModels"
         xmlns:models="clr-namespace:Pixora.Core.Models"
         xmlns:dialogs="clr-namespace:Pixora.Avalonia.Views.Dialogs"
@@ -25,7 +26,7 @@
                 <!-- Search -->
                 <TextBox Grid.Row="1"
                          x:Name="PresetSearchBox"
-                         Watermark="Search presets..."
+                         PlaceholderText="Search presets..."
                          TextChanged="OnPresetSearchChanged"/>
 
                 <!-- Preset List -->
@@ -156,6 +157,12 @@
                                Stretch="Uniform"
                                Margin="20"/>
 
+                        <!-- Ugoira animation player (hidden by default) -->
+                        <anim:AnimatedImage x:Name="UgoiraPlayer"
+                                          Stretch="Uniform"
+                                          Margin="20"
+                                          IsVisible="False"/>
+
                         <!-- Left page navigation overlay -->
                         <Border x:Name="LeftNavOverlay"
                                 Background="Transparent"
@@ -189,6 +196,27 @@
                                     Padding="12,8"
                                     Opacity="0.6">
                                 <TextBlock Text="▶" FontSize="20" Foreground="White"/>
+                            </Border>
+                        </Border>
+
+                        <!-- Play Animation button for ugoira -->
+                        <Border x:Name="PlayAnimationButton"
+                                Background="Transparent"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Cursor="Hand"
+                                PointerPressed="OnPlayAnimationClick"
+                                IsVisible="False">
+                            <Border HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="#80000000"
+                                    CornerRadius="30"
+                                    Padding="20,12"
+                                    Opacity="0.8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="▶" FontSize="24" Foreground="White"/>
+                                    <TextBlock Text="Play" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Border>
                         </Border>
                     </Grid>
@@ -281,6 +309,36 @@
                                     IsVisible="False"/>
                         </StackPanel>
 
+                        <!-- Ugoira (Animated) Format Options -->
+                        <StackPanel x:Name="UgoiraFormatPanel" Spacing="4" IsVisible="False">
+                            <TextBlock Text="Animation Output Formats" FontWeight="SemiBold"/>
+                            <TextBlock Text="Select which formats to create for animated ugoira:"
+                                       FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                            <WrapPanel>
+                                <CheckBox x:Name="UgoiraMp4Check" Content="MP4 (Recommended)" IsChecked="True"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraGifCheck" Content="GIF" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraWebmCheck" Content="WebM" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraWebpCheck" Content="WebP" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                            </WrapPanel>
+                            <StackPanel Spacing="4">
+                                <CheckBox x:Name="UgoiraSaveFramesCheck"
+                                          Content="Save processed frames to subfolder"
+                                          IsChecked="False"
+                                          FontSize="12"
+                                          ToolTip.Tip="Creates a subfolder with each processed frame as individual PNG files"/>
+                                <CheckBox x:Name="UgoiraFramesOnlyCheck"
+                                          Content="Frames only (skip animation)"
+                                          IsChecked="False"
+                                          FontSize="12"
+                                          IsEnabled="{Binding #UgoiraSaveFramesCheck.IsChecked}"
+                                          ToolTip.Tip="Download only the individual frames without creating MP4/GIF animation"/>
+                            </StackPanel>
+                        </StackPanel>
+
                         <!-- Multi-page Options -->
                         <StackPanel x:Name="MultiPageOptions" Spacing="4" IsVisible="False">
                             <TextBlock Text="Multi-page Options" FontWeight="SemiBold"/>
@@ -297,7 +355,7 @@
                                       IsChecked="False"
                                       IsCheckedChanged="OnMultiPageOptionChanged"/>
                             <TextBox x:Name="SelectedPagesTextBox"
-                                     Watermark="e.g., 1,3,5 or 1-3,6 or 5-6"
+                                     PlaceholderText="e.g., 1,3,5 or 1-3,6 or 5-6"
                                      IsVisible="False"/>
                         </StackPanel>
 
@@ -331,7 +389,7 @@
                                       IsChecked="False"
                                       IsCheckedChanged="OnCustomFolderChanged"/>
                             <TextBox x:Name="CustomFolderTextBox"
-                                     Watermark="Select folder..."
+                                     PlaceholderText="Select folder..."
                                      IsReadOnly="True"
                                      IsVisible="False"/>
                             <Button x:Name="BrowseFolderButton"

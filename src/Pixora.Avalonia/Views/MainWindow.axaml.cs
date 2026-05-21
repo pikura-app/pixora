@@ -19,22 +19,107 @@ public partial class MainWindow : Window
 {
     private TrayIcon? _trayIcon;
 
+    // Track normal window bounds before maximize (Avalonia doesn't have RestoreBounds)
+    private double _normalWidth;
+    private double _normalHeight;
+    private int _normalX;
+    private int _normalY;
+
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Closing += OnClosing;
-        PropertyChanged += (_, ev) => { if (ev.Property.Name == nameof(WindowState)) UpdateCaptionIcons(); };
+        PropertyChanged += OnWindowPropertyChanged;
+    }
+
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property.Name == nameof(WindowState))
+        {
+            UpdateCaptionIcons();
+
+            // Before maximizing, save the current normal bounds
+            if (WindowState == WindowState.Normal)
+            {
+                _normalWidth = Width;
+                _normalHeight = Height;
+                _normalX = Position.X;
+                _normalY = Position.Y;
+            }
+        }
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        // Restore window size
+        // Restore window size, position, and state
         try
         {
             var settings = AppServices.Get<SettingsService>();
-            Width  = settings.Current.WindowWidth  >= 800 ? settings.Current.WindowWidth  : 1200;
-            Height = settings.Current.WindowHeight >= 500 ? settings.Current.WindowHeight : 800;
+            var s = settings.Current;
+
+            // Get screen size for bounds checking
+            var screens = Screens;
+            var primaryScreen = screens.Primary;
+            var screenBounds = primaryScreen?.Bounds ?? new PixelRect(0, 0, 1920, 1080);
+
+            // Restore size with minimums
+            var targetWidth = s.WindowWidth >= 1000 ? s.WindowWidth : 1200;
+            var targetHeight = s.WindowHeight >= 600 ? s.WindowHeight : 800;
+
+            // Cap size to screen size
+            targetWidth = Math.Min(targetWidth, screenBounds.Width * 0.9);
+            targetHeight = Math.Min(targetHeight, screenBounds.Height * 0.9);
+
+            Width = targetWidth;
+            Height = targetHeight;
+
+            // Restore position with bounds checking
+            if (s.WindowX >= 0 && s.WindowY >= 0)
+            {
+                var targetX = (int)s.WindowX;
+                var targetY = (int)s.WindowY;
+
+                // Ensure window is at least partially visible on screen
+                // Allow 100px margin so user can grab the edge
+                var minVisible = 100;
+                if (targetX + targetWidth < minVisible) targetX = minVisible; // Too far left
+                if (targetX > screenBounds.Width - minVisible) targetX = screenBounds.Width - minVisible; // Too far right
+                if (targetY + targetHeight < minVisible) targetY = minVisible; // Too far up
+                if (targetY > screenBounds.Height - minVisible) targetY = 50; // Too far down, reset to top
+
+                Position = new PixelPoint(targetX, targetY);
+            }
+            else
+            {
+                // Center on screen if no saved position
+                var centerX = (screenBounds.Width - (int)targetWidth) / 2;
+                var centerY = (screenBounds.Height - (int)targetHeight) / 2;
+                Position = new PixelPoint(screenBounds.X + Math.Max(0, centerX), screenBounds.Y + Math.Max(0, centerY));
+            }
+
+            // Initialize normal bounds from saved settings (before any maximize)
+            _normalWidth = targetWidth;
+            _normalHeight = targetHeight;
+            _normalX = Position.X;
+            _normalY = Position.Y;
+
+            // Restore window state (Maximized only - don't start minimized)
+            if (s.WindowState == 2) // Maximized
+            {
+                WindowState = WindowState.Maximized;
+            }
+
+            // Ensure sidebar is visible on startup (not collapsed)
+            if (RootGrid?.ColumnDefinitions.Count > 0)
+            {
+                var col = RootGrid.ColumnDefinitions[0];
+                if (col.Width.Value < 220)
+                {
+                    col.Width = new GridLength(220);
+                    if (SidebarBorder != null) SidebarBorder.IsVisible = true;
+                }
+            }
         }
         catch
         {
@@ -115,8 +200,39 @@ public partial class MainWindow : Window
         try
         {
             var settings = AppServices.Get<SettingsService>();
-            if (WindowState == WindowState.Normal)
-                settings.Update(s => { s.WindowWidth = Width; s.WindowHeight = Height; });
+            var currentState = WindowState;
+
+            settings.Update(s =>
+            {
+                // Save window state (0=Normal, 1=Minimized, 2=Maximized)
+                s.WindowState = currentState switch
+                {
+                    WindowState.Normal => 0,
+                    WindowState.Minimized => 1,
+                    WindowState.Maximized => 2,
+                    _ => 0
+                };
+
+                // Save size only if not minimized
+                if (currentState != WindowState.Minimized)
+                {
+                    // If maximized, save the normal bounds (tracked before maximize)
+                    if (currentState == WindowState.Maximized)
+                    {
+                        s.WindowWidth = _normalWidth > 0 ? _normalWidth : 1200;
+                        s.WindowHeight = _normalHeight > 0 ? _normalHeight : 800;
+                        s.WindowX = _normalX;
+                        s.WindowY = _normalY;
+                    }
+                    else
+                    {
+                        s.WindowWidth = Width;
+                        s.WindowHeight = Height;
+                        s.WindowX = Position.X;
+                        s.WindowY = Position.Y;
+                    }
+                }
+            });
 
             var s = settings.Current;
             if (s.CloseToTray || s.KeepSchedulesRunningInBackground)

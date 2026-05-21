@@ -24,7 +24,7 @@
             <StackPanel Spacing="8">
                 <TextBlock Text="Select Artists to Download" FontSize="16" FontWeight="SemiBold"/>
                 <TextBox Text="{Binding SearchText, Mode=TwoWay}"
-                         Watermark="Search artists..."
+                         PlaceholderText="Search artists..."
                          CornerRadius="6"/>
             </StackPanel>
         </Border>

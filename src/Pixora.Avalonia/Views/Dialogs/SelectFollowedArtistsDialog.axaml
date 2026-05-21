@@ -17,7 +17,7 @@
 
             <!-- Search -->
             <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
-                <TextBox Grid.Column="0" x:Name="SearchTextBox" Watermark="Search artist name or ID..."
+                <TextBox Grid.Column="0" x:Name="SearchTextBox" PlaceholderText="Search artist name or ID..."
                          CornerRadius="6" Margin="0,0,8,0"/>
                 <Button Grid.Column="1" x:Name="SearchButton" Content="Search"
                         CornerRadius="6" Padding="16,6" Margin="0,0,8,0"/>

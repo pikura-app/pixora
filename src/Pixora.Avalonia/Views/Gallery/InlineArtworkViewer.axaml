@@ -3,6 +3,7 @@
              xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
              xmlns:vm="using:Pixora.Avalonia.ViewModels"
              xmlns:ctrl="using:Pixora.Avalonia.Views.Controls"
+             xmlns:anim="using:Pixora.Avalonia.Controls"
              xmlns:conv="using:Pixora.Avalonia.Converters"
              x:Class="Pixora.Avalonia.Views.Gallery.InlineArtworkViewer"
              x:DataType="vm:GalleryViewModel"
@@ -295,6 +296,21 @@
                         </ContextMenu>
                     </Image.ContextMenu>
                 </Image>
+
+                <!-- Animated image (ugoira) — same transforms, toggled in code-behind -->
+                <anim:AnimatedImage x:Name="UgoiraImage"
+                                    Stretch="Uniform"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    RenderTransformOrigin="0.5,0.5"
+                                    IsVisible="False">
+                    <anim:AnimatedImage.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform X="0" Y="0"/>
+                        </TransformGroup>
+                    </anim:AnimatedImage.RenderTransform>
+                </anim:AnimatedImage>
             </Panel>
         </Border>
 

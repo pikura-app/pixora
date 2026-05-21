@@ -8,10 +8,12 @@ using Pixora.Avalonia.Services;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Avalonia.Views.Artwork;
 using Pixora.Avalonia.Views.Dialogs;
+using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Pixora.Avalonia.Views.Gallery;
 
@@ -382,10 +384,89 @@ public partial class GalleryView : UserControl
         }
     }
 
+    private void OnContextUgoiraOptions(object? sender, RoutedEventArgs e)
+    {
+        if (GetCardFromMenu(sender) is not { } card || VM == null) return;
+        // Open the ugoira in Image Editor which will show the options dialog
+        var window = TopLevel.GetTopLevel(this) as Window;
+        if (window == null) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var ugoiraService = AppServices.Get<UgoiraService>();
+                var imageLoader = AppServices.Get<PixivImageLoader>();
+
+                // Create EditableArtwork with IllustType = 2 (ugoira)
+                var editable = new EditableArtwork
+                {
+                    ArtworkId = card.Id,
+                    Title = card.Title,
+                    UserName = card.UserName,
+                    PageCount = card.PageCount,
+                    IllustType = 2 // Mark as ugoira
+                };
+
+                // Show the Image Editor which will detect ugoira and show options
+                var editor = new ImageEditorWindow(
+                    AppServices.Get<ImageResizeService>(),
+                    new List<EditableArtwork> { editable },
+                    initialArtworkIndex: 0,
+                    initialPageIndex: 0);
+
+                await Dispatcher.UIThread.InvokeAsync(async () => await editor.ShowDialog(window));
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    VM.StatusMessage = $"Ugoira options failed: {ex.Message}";
+                });
+            }
+        });
+    }
+
     private static void OpenUrl(string url)
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
         catch { }
+    }
+
+    private void OnCardContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Show ugoira options only for ugoira artworks (IllustType == 2)
+        if (sender is not ContextMenu menu) return;
+        if (menu.PlacementTarget is not Control ctrl) return;
+        if (ctrl.DataContext is not ArtworkCardViewModel card) return;
+
+        // Find the ugoira menu item by header
+        foreach (var item in menu.Items)
+        {
+            if (item is MenuItem mi && mi.Header is string header && header.Contains("Ugoira"))
+            {
+                mi.IsVisible = card.IllustType == 2;
+                break;
+            }
+        }
+    }
+
+    private void OnListCardContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Show ugoira options only for ugoira artworks (IllustType == 2)
+        if (sender is not ContextMenu menu) return;
+        if (menu.PlacementTarget is not Control ctrl) return;
+        if (ctrl.DataContext is not ArtworkCardViewModel card) return;
+
+        // Find the ugoira menu item by header
+        foreach (var item in menu.Items)
+        {
+            if (item is MenuItem mi && mi.Header is string header && header.Contains("Ugoira"))
+            {
+                mi.IsVisible = card.IllustType == 2;
+                break;
+            }
+        }
     }
 
     private void OnTagClicked(string tag)

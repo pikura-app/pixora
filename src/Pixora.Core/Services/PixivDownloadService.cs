@@ -2,6 +2,8 @@ using Microsoft.Extensions.Logging;
 using Pixora.Core.Http;
 using Pixora.Core.Models;
 using Pixora.Core.Settings;
+using System.Diagnostics;
+using System.Text;
 
 namespace Pixora.Core.Services;
 
@@ -21,6 +23,8 @@ public sealed class PixivDownloadService
     private readonly PixivHttpClientFactory _httpFactory;
     private readonly SettingsService _settings;
     private readonly ImageResizeService _resizeService;
+    private readonly UgoiraService _ugoiraService;
+    private readonly FfmpegService _ffmpegService;
     private readonly ILogger<PixivDownloadService> _logger;
 
     private static readonly string DiagLog = Path.Combine(
@@ -42,12 +46,16 @@ public sealed class PixivDownloadService
         PixivHttpClientFactory httpFactory,
         SettingsService settings,
         ImageResizeService resizeService,
+        UgoiraService ugoiraService,
+        FfmpegService ffmpegService,
         ILogger<PixivDownloadService> logger)
     {
         _client = client;
         _httpFactory = httpFactory;
         _settings = settings;
         _resizeService = resizeService;
+        _ffmpegService = ffmpegService;
+        _ugoiraService = ugoiraService;
         _logger = logger;
     }
 
@@ -79,6 +87,101 @@ public sealed class PixivDownloadService
         SettingsOverride? overrideSettings = null)
     {
         Diag($"=== START artwork {artwork.Id} title='{artwork.Title}' previewPageCount={artwork.PageCount} requestedPages={(pageIndexes is null ? "ALL" : string.Join(",", pageIndexes))}");
+
+        // Ugoira (animated) branch — fetch frame zip, apply preset if specified, run ffmpeg, write configured formats.
+        if (artwork.IllustType == 2)
+        {
+            try
+            {
+                var dir = ResolveOutputDir(artwork, overrideSettings);
+                Directory.CreateDirectory(dir);
+
+                // Get preset first to check for ugoira format overrides
+                var settingsOverride = overrideSettings != null && !overrideSettings.UseGlobalSettings ? overrideSettings : null;
+                var preset = settingsOverride?.ImagePreset;
+
+                // Check if preset has specific ugoira formats, otherwise use global settings
+                var formats = preset?.UgoiraFormats;
+                if (formats == null || formats.Count == 0)
+                {
+                    formats = ResolveUgoiraFormats(_settings.Current);
+                }
+                else
+                {
+                    Diag($"UGOIRA: using preset-specific formats: [{string.Join(",", formats)}]");
+                }
+
+                // Handle global UgoiraFramesOnly setting - if enabled and no preset, skip video formats
+                var settings = _settings.Current;
+                bool saveFrames = preset?.SaveUgoiraFrames ?? settings.SaveUgoiraFrames;
+                bool framesOnly = preset?.UgoiraFramesOnly ?? settings.UgoiraFramesOnly;
+
+                if (framesOnly && saveFrames)
+                {
+                    Diag("UGOIRA: FramesOnly mode enabled — skipping video generation, extracting frames only");
+                    formats = []; // Clear formats to skip video encoding
+                }
+
+                if (formats.Count == 0 && !saveFrames)
+                {
+                    Diag("UGOIRA: no formats enabled in settings — defaulting to MP4.");
+                    formats = [UgoiraFormat.Mp4];
+                }
+
+                Diag($"UGOIRA: formats=[{string.Join(",", formats)}] outputDir={dir} saveFrames={saveFrames} framesOnly={framesOnly}");
+                bool needsProcessing = preset != null
+                    && (preset.DevicePreset != DevicePreset.Original && preset.DevicePreset != DevicePreset.None
+                        || preset.Adjustments?.HasAdjustments == true
+                        || preset.CropRegion != null);
+
+                IReadOnlyList<string> produced;
+                if (needsProcessing)
+                {
+                    Diag($"UGOIRA: preset '{preset!.Name}' requires processing — extracting and processing frames");
+                    produced = await ExportUgoiraWithPresetAsync(artwork.Id, formats, dir, preset, ct).ConfigureAwait(false);
+                }
+                else if (saveFrames && formats.Count == 0)
+                {
+                    // Frames-only mode without preset processing
+                    Diag("UGOIRA: extracting frames without video encoding");
+                    produced = await ExportUgoiraFramesOnlyAsync(artwork.Id, dir, ct).ConfigureAwait(false);
+                }
+                else if (saveFrames)
+                {
+                    // Both video and frames
+                    Diag("UGOIRA: exporting video formats and extracting frames");
+                    produced = await ExportUgoiraWithFramesAsync(artwork.Id, formats, dir, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    Diag("UGOIRA: no preset processing needed — direct export");
+                    produced = await _ugoiraService
+                        .ExportAsync(artwork.Id, formats, dir, ct)
+                        .ConfigureAwait(false);
+                }
+                Diag($"UGOIRA: produced {produced.Count} file(s)");
+
+                // Optionally keep the source frame zip alongside the outputs.
+                if (_settings.Current.KeepUgoiraZip)
+                {
+                    try
+                    {
+                        var zip = await _ugoiraService.GetOrDownloadFrameZipAsync(artwork.Id, ct).ConfigureAwait(false);
+                        var zipDest = Path.Combine(dir, artwork.Id + "_frames.zip");
+                        if (!File.Exists(zipDest)) File.Copy(zip, zipDest);
+                    }
+                    catch (Exception ex) { Diag($"UGOIRA: keep-zip failed: {ex.Message}"); }
+                }
+                return produced;
+            }
+            catch (Exception ex)
+            {
+                Diag($"UGOIRA: pipeline failed: {ex.GetType().Name}: {ex.Message}");
+                _logger.LogError(ex, "Ugoira pipeline failed for {Id}", artwork.Id);
+                throw;
+            }
+        }
+
         var pages = await _client.GetArtworkPagesAsync(artwork.Id, ct).ConfigureAwait(false);
         Diag($"GetArtworkPagesAsync returned {pages.Count} pages");
         for (var pi = 0; pi < pages.Count; pi++)
@@ -367,6 +470,395 @@ public sealed class PixivDownloadService
     }
 
     /// <summary>
+    /// Exports ugoira with preset processing applied to each frame.
+    /// Extracts frames, processes each with the preset, then re-encodes to output formats.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ExportUgoiraWithPresetAsync(
+        string artworkId,
+        IEnumerable<UgoiraFormat> formats,
+        string outputDir,
+        ImageEditPreset preset,
+        CancellationToken ct)
+    {
+        var produced = new List<string>();
+        var workDir = Path.Combine(Path.GetTempPath(), $"pixora_ugoira_{artworkId}_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workDir);
+
+        try
+        {
+            // Step 1: Extract all frames
+            Diag($"UGOIRA: extracting all frames for preset processing");
+            var framePaths = await _ugoiraService.ExtractAllFramesAsync(artworkId, ct).ConfigureAwait(false);
+            if (framePaths.Count == 0)
+            {
+                Diag("UGOIRA: failed to extract frames, falling back to direct export");
+                return await _ugoiraService.ExportAsync(artworkId, formats, outputDir, ct).ConfigureAwait(false);
+            }
+            Diag($"UGOIRA: extracted {framePaths.Count} frames");
+
+            // Step 2: Process each frame with the preset
+            var processedFramesDir = Path.Combine(workDir, "processed_frames");
+            Directory.CreateDirectory(processedFramesDir);
+            var processedFramePaths = new List<string>();
+
+            for (int i = 0; i < framePaths.Count; i++)
+            {
+                var framePath = framePaths[i];
+                var processedPath = Path.Combine(processedFramesDir, $"frame_{i:D4}.png");
+
+                try
+                {
+                    var result = await _resizeService.ProcessAsync(framePath, preset, ct).ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                    {
+                        // If processed file is in a different location, copy it to our work dir
+                        if (!string.Equals(result, processedPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Copy(result, processedPath, overwrite: true);
+                        }
+                        processedFramePaths.Add(processedPath);
+                        Diag($"UGOIRA: processed frame {i + 1}/{framePaths.Count}");
+                    }
+                    else
+                    {
+                        // Processing failed, use original frame
+                        File.Copy(framePath, processedPath, overwrite: true);
+                        processedFramePaths.Add(processedPath);
+                        Diag($"UGOIRA: frame {i + 1} processing failed, using original");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Diag($"UGOIRA: frame {i + 1} processing error: {ex.Message}, using original");
+                    File.Copy(framePath, processedPath, overwrite: true);
+                    processedFramePaths.Add(processedPath);
+                }
+            }
+
+            if (processedFramePaths.Count == 0)
+            {
+                Diag("UGOIRA: no frames processed successfully, falling back to direct export");
+                return await _ugoiraService.ExportAsync(artworkId, formats, outputDir, ct).ConfigureAwait(false);
+            }
+
+            // Step 3: Get frame delays for re-encoding
+            var meta = await _client.GetUgoiraMetaAsync(artworkId, ct).ConfigureAwait(false);
+            if (meta == null || meta.Frames.Count == 0)
+            {
+                Diag("UGOIRA: failed to get frame metadata, falling back to direct export");
+                return await _ugoiraService.ExportAsync(artworkId, formats, outputDir, ct).ConfigureAwait(false);
+            }
+
+            // Step 4: Re-encode processed frames to each format (skip if Frames Only mode)
+            if (!preset.UgoiraFramesOnly)
+            {
+                var ffmpegPath = _ffmpegService.GetExecutablePath();
+                if (ffmpegPath == null)
+                {
+                    Diag("UGOIRA: ffmpeg not available, falling back to direct export");
+                    return await _ugoiraService.ExportAsync(artworkId, formats, outputDir, ct).ConfigureAwait(false);
+                }
+
+                foreach (var fmt in formats.Distinct())
+            {
+                var destPath = Path.Combine(outputDir, artworkId + ExtensionFor(fmt));
+                try
+                {
+                    string? encodedPath = null;
+                    switch (fmt)
+                    {
+                        case UgoiraFormat.Mp4:
+                            encodedPath = await EncodeProcessedFramesToMp4Async(
+                                processedFramePaths, meta, destPath, ffmpegPath, ct).ConfigureAwait(false);
+                            break;
+                        case UgoiraFormat.WebM:
+                            encodedPath = await EncodeProcessedFramesToWebmAsync(
+                                processedFramePaths, meta, destPath, ffmpegPath, ct).ConfigureAwait(false);
+                            break;
+                        case UgoiraFormat.Gif:
+                            encodedPath = await EncodeProcessedFramesToGifAsync(
+                                processedFramePaths, meta, destPath, ffmpegPath, ct).ConfigureAwait(false);
+                            break;
+                    }
+
+                    if (!string.IsNullOrEmpty(encodedPath) && File.Exists(encodedPath))
+                    {
+                        produced.Add(encodedPath);
+                        Diag($"UGOIRA: produced {fmt} with preset -> {encodedPath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Diag($"UGOIRA: failed to encode {fmt}: {ex.Message}");
+                }
+            }
+            }
+
+            // Step 5: Optionally save individual processed frames to subfolder
+            if (preset.SaveUgoiraFrames && processedFramePaths.Count > 0)
+            {
+                try
+                {
+                    var framesDir = Path.Combine(outputDir, $"{artworkId}_frames");
+                    Directory.CreateDirectory(framesDir);
+                    
+                    for (int i = 0; i < processedFramePaths.Count; i++)
+                    {
+                        var sourcePath = processedFramePaths[i];
+                        var destFileName = $"frame_{i:D4}.png";
+                        var destPath = Path.Combine(framesDir, destFileName);
+                        File.Copy(sourcePath, destPath, overwrite: true);
+                    }
+                    
+                    produced.Add(framesDir);
+                    Diag($"UGOIRA: saved {processedFramePaths.Count} processed frames to {framesDir}");
+                }
+                catch (Exception ex)
+                {
+                    Diag($"UGOIRA: failed to save individual frames: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            // Cleanup temp directory
+            try { Directory.Delete(workDir, recursive: true); } catch { }
+        }
+
+        return produced;
+    }
+
+    /// <summary>
+    /// Extracts all ugoira frames as individual PNG files without encoding video formats.
+    /// Used when UgoiraFramesOnly setting is enabled.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ExportUgoiraFramesOnlyAsync(
+        string artworkId,
+        string outputDir,
+        CancellationToken ct)
+    {
+        var produced = new List<string>();
+        try
+        {
+            // Extract all frames as PNG
+            var framePaths = await _ugoiraService.ExtractAllFramesAsync(artworkId, ct).ConfigureAwait(false);
+            if (framePaths.Count == 0)
+            {
+                Diag("UGOIRA: failed to extract any frames");
+                return produced;
+            }
+
+            // Create frames subfolder and copy frames there
+            var framesDir = Path.Combine(outputDir, $"{artworkId}_frames");
+            Directory.CreateDirectory(framesDir);
+
+            for (int i = 0; i < framePaths.Count; i++)
+            {
+                var sourcePath = framePaths[i];
+                var destFileName = $"frame_{i:D4}.png";
+                var destPath = Path.Combine(framesDir, destFileName);
+                File.Copy(sourcePath, destPath, overwrite: true);
+            }
+
+            produced.Add(framesDir);
+            Diag($"UGOIRA: saved {framePaths.Count} frames to {framesDir}");
+        }
+        catch (Exception ex)
+        {
+            Diag($"UGOIRA: ExportUgoiraFramesOnlyAsync failed: {ex.Message}");
+            _logger.LogError(ex, "Failed to extract ugoira frames only for {Id}", artworkId);
+        }
+        return produced;
+    }
+
+    /// <summary>
+    /// Exports ugoira to video formats AND saves individual frames as PNG.
+    /// Used when SaveUgoiraFrames setting is enabled alongside video formats.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ExportUgoiraWithFramesAsync(
+        string artworkId,
+        IEnumerable<UgoiraFormat> formats,
+        string outputDir,
+        CancellationToken ct)
+    {
+        var produced = new List<string>();
+        try
+        {
+            // First, export video formats
+            var videoPaths = await _ugoiraService.ExportAsync(artworkId, formats, outputDir, ct).ConfigureAwait(false);
+            produced.AddRange(videoPaths);
+            Diag($"UGOIRA: exported {videoPaths.Count} video file(s)");
+
+            // Then, extract and save individual frames
+            var framePaths = await _ugoiraService.ExtractAllFramesAsync(artworkId, ct).ConfigureAwait(false);
+            if (framePaths.Count > 0)
+            {
+                var framesDir = Path.Combine(outputDir, $"{artworkId}_frames");
+                Directory.CreateDirectory(framesDir);
+
+                for (int i = 0; i < framePaths.Count; i++)
+                {
+                    var sourcePath = framePaths[i];
+                    var destFileName = $"frame_{i:D4}.png";
+                    var destPath = Path.Combine(framesDir, destFileName);
+                    File.Copy(sourcePath, destPath, overwrite: true);
+                }
+
+                produced.Add(framesDir);
+                Diag($"UGOIRA: saved {framePaths.Count} frames to {framesDir}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Diag($"UGOIRA: ExportUgoiraWithFramesAsync failed: {ex.Message}");
+            _logger.LogError(ex, "Failed to export ugoira with frames for {Id}", artworkId);
+        }
+        return produced;
+    }
+
+    private static string ExtensionFor(UgoiraFormat fmt) => fmt switch
+    {
+        UgoiraFormat.Mp4 => ".mp4",
+        UgoiraFormat.WebM => ".webm",
+        UgoiraFormat.Gif => ".gif",
+        _ => ".mp4"
+    };
+
+    private async Task<string?> EncodeProcessedFramesToMp4Async(
+        List<string> framePaths, UgoiraMeta meta, string destPath, string ffmpegPath, CancellationToken ct)
+    {
+        // Write concat file with processed frames
+        var concatPath = Path.Combine(Path.GetTempPath(), $"concat_{Guid.NewGuid():N}.txt");
+        try
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
+            {
+                var delayMs = meta.Frames[i].DelayMs;
+                sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
+                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+            }
+            sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
+            await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);
+
+            // Encode with ffmpeg - use same args as working UgoiraService
+            var args = $"-y -f concat -safe 0 -i \"{concatPath}\" -vsync vfr -pix_fmt yuv420p -c:v libx264 -preset fast -crf 23 -movflags +faststart \"{destPath}\"";
+            var psi = new ProcessStartInfo(ffmpegPath, args)
+            {
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return null;
+            
+            var stderr = await p.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            await p.WaitForExitAsync(ct).ConfigureAwait(false);
+            
+            if (p.ExitCode != 0)
+            {
+                Diag($"UGOIRA: ffmpeg MP4 encoding failed with exit code {p.ExitCode}: {stderr}");
+                return null;
+            }
+
+            return File.Exists(destPath) ? destPath : null;
+        }
+        finally
+        {
+            try { File.Delete(concatPath); } catch { }
+        }
+    }
+
+    private async Task<string?> EncodeProcessedFramesToWebmAsync(
+        List<string> framePaths, UgoiraMeta meta, string destPath, string ffmpegPath, CancellationToken ct)
+    {
+        // Similar to MP4 but with WebM codec
+        var concatPath = Path.Combine(Path.GetTempPath(), $"concat_{Guid.NewGuid():N}.txt");
+        try
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
+            {
+                var delayMs = meta.Frames[i].DelayMs;
+                sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
+                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+            }
+            sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
+            await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);
+
+            var args = $"-y -f concat -safe 0 -i \"{concatPath}\" -c:v libvpx-vp9 -b:v 0 -crf 30 -pix_fmt yuv420p \"{destPath}\"";
+            var psi = new ProcessStartInfo(ffmpegPath, args)
+            {
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return null;
+            
+            var stderr = await p.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            await p.WaitForExitAsync(ct).ConfigureAwait(false);
+            
+            if (p.ExitCode != 0)
+            {
+                Diag($"UGOIRA: ffmpeg WebM encoding failed with exit code {p.ExitCode}: {stderr}");
+                return null;
+            }
+
+            return File.Exists(destPath) ? destPath : null;
+        }
+        finally
+        {
+            try { File.Delete(concatPath); } catch { }
+        }
+    }
+
+    private async Task<string?> EncodeProcessedFramesToGifAsync(
+        List<string> framePaths, UgoiraMeta meta, string destPath, string ffmpegPath, CancellationToken ct)
+    {
+        // Use palettegen and paletteuse for better GIF quality
+        var concatPath = Path.Combine(Path.GetTempPath(), $"concat_{Guid.NewGuid():N}.txt");
+        try
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
+            {
+                var delayMs = meta.Frames[i].DelayMs;
+                sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
+                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+            }
+            sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
+            await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);
+
+            // GIF encoding with optimized palette
+            var args = $"-y -f concat -safe 0 -i \"{concatPath}\" -vf \"fps=30,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse\" -loop 0 \"{destPath}\"";
+            var psi = new ProcessStartInfo(ffmpegPath, args)
+            {
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return null;
+            
+            var stderr = await p.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            await p.WaitForExitAsync(ct).ConfigureAwait(false);
+            
+            if (p.ExitCode != 0)
+            {
+                Diag($"UGOIRA: ffmpeg GIF encoding failed with exit code {p.ExitCode}: {stderr}");
+                return null;
+            }
+
+            return File.Exists(destPath) ? destPath : null;
+        }
+        finally
+        {
+            try { File.Delete(concatPath); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Returns true if any file whose name starts with <paramref name="artworkId"/> exists
     /// inside the download directory (recursive). Checks both DownloadRoot and CustomOutputFolder.
     /// Used to detect already-downloaded artworks before showing a re-download confirmation dialog.
@@ -472,5 +964,50 @@ public sealed class PixivDownloadService
             cleaned = cleaned[..MaxSegment].TrimEnd('.', ' ');
 
         return cleaned;
+    }
+
+    /// <summary>
+    /// Resolves the output directory for a ugoira artwork using the same folder
+    /// template / R-18 / per-submission rules as regular artwork downloads, but
+    /// without page-count logic (ugoira always have one logical "page").
+    /// </summary>
+    private string ResolveOutputDir(ArtworkPreview artwork, SettingsOverride? overrideSettings)
+    {
+        var s = _settings.Current;
+        var ovr = overrideSettings != null && !overrideSettings.UseGlobalSettings ? overrideSettings : null;
+
+        var effectiveDownloadRoot = !string.IsNullOrWhiteSpace(ovr?.DownloadRoot) ? ovr!.DownloadRoot! : s.DownloadRoot;
+        var effectiveFolderTemplate = ovr?.FolderTemplate ?? s.FolderTemplate;
+        var effectiveDateFormat = ovr?.DateFormat ?? s.DateFormat;
+        var effectiveSeparateR18 = ovr?.SeparateR18Folder ?? s.SeparateR18Folder;
+
+        var template = new FilenameTemplate(effectiveDateFormat);
+        var ctx = new FilenameContext
+        {
+            Artwork = artwork,
+            PageIndex = 0,
+            PageCount = 1,
+            OriginalUrl = string.Empty,
+        };
+        var folderPath = template.Resolve(effectiveFolderTemplate, ctx);
+        var dir = Path.Combine(effectiveDownloadRoot, folderPath);
+        if (effectiveSeparateR18 && artwork.IsR18) dir = Path.Combine(dir, "R-18");
+        if (!string.IsNullOrWhiteSpace(ovr?.CustomOutputFolder)) dir = ovr!.CustomOutputFolder!;
+        return dir;
+    }
+
+    /// <summary>
+    /// Maps the user's per-format checkboxes onto the <see cref="UgoiraFormat"/>
+    /// list that <see cref="UgoiraService.ExportAsync"/> will iterate.
+    /// </summary>
+    private static List<UgoiraFormat> ResolveUgoiraFormats(AppSettings s)
+    {
+        var formats = new List<UgoiraFormat>();
+        if (s.CreateUgoiraMp4)  formats.Add(UgoiraFormat.Mp4);
+        if (s.CreateUgoiraWebm) formats.Add(UgoiraFormat.WebM);
+        if (s.CreateUgoiraGif)  formats.Add(UgoiraFormat.Gif);
+        if (s.CreateUgoiraWebp) formats.Add(UgoiraFormat.WebP);
+        if (s.CreateUgoiraApng) formats.Add(UgoiraFormat.Apng);
+        return formats;
     }
 }

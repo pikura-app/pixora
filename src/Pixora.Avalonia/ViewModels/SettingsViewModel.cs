@@ -12,6 +12,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -133,13 +134,21 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _useRobots = true;
 
     // Ugoira (Animated Images)
+    [ObservableProperty] private bool _createUgoiraMp4 = true;
     [ObservableProperty] private bool _createUgoiraWebm;
     [ObservableProperty] private bool _createUgoiraGif;
     [ObservableProperty] private bool _createUgoiraWebp;
     [ObservableProperty] private bool _createUgoiraApng;
     [ObservableProperty] private bool _keepUgoiraZip = true;
+    [ObservableProperty] private bool _saveUgoiraFrames;
+    [ObservableProperty] private bool _ugoiraFramesOnly;
     [ObservableProperty] private string _ffMpegCodec = "libvpx-vp9";
     [ObservableProperty] private int _ffMpegCRF = 15;
+
+    // FFmpeg status (computed)
+    [ObservableProperty] private bool _isFfmpegInstalled;
+    [ObservableProperty] private string _ffmpegStatusText = "Checking…";
+    [ObservableProperty] private string _ffmpegVersionText = "";
 
     // FANBOX
     [ObservableProperty] private string _filenameFanboxCover = "FANBOX %artist% (%member_id%)\\%urlFilename% - %title%";
@@ -420,13 +429,16 @@ public partial class SettingsViewModel : ViewModelBase
         "llama3.2", "llama3.1", "llava", "moondream", "qwen2.5", "phi3", "gemma2", "mistral"
     };
 
+    private readonly FfmpegService _ffmpegService;
+
     public SettingsViewModel(
         SettingsService settingsService,
         DialogService dialogService,
         PixivClient pixivClient,
         FilePickerService filePickerService,
         OllamaService ollama,
-        AccountService accountService)
+        AccountService accountService,
+        FfmpegService ffmpegService)
     {
         _settingsService = settingsService;
         _dialogService = dialogService;
@@ -434,6 +446,7 @@ public partial class SettingsViewModel : ViewModelBase
         _filePickerService = filePickerService;
         _ollama = ollama;
         _accountService = accountService;
+        _ffmpegService = ffmpegService;
 
         LoadSettings();
         LoadAccountSettings();
@@ -446,6 +459,9 @@ public partial class SettingsViewModel : ViewModelBase
             RefreshProfiles();
         };
         IsLightTheme = settingsService.Current.Theme == "Light";
+
+        // Check ffmpeg status on startup
+        _ = CheckFfmpegAsync();
 
         // Kick off an installed-models refresh in the background so the Hoshi AI
         // tab shows results without blocking startup or the UI thread.
@@ -544,11 +560,14 @@ public partial class SettingsViewModel : ViewModelBase
         ReduceMotion = s.ReduceMotion;
 
         // Ugoira
+        CreateUgoiraMp4 = s.CreateUgoiraMp4;
         CreateUgoiraWebm = s.CreateUgoiraWebm;
         CreateUgoiraGif = s.CreateUgoiraGif;
         CreateUgoiraWebp = s.CreateUgoiraWebp;
         CreateUgoiraApng = s.CreateUgoiraApng;
         KeepUgoiraZip = s.KeepUgoiraZip;
+        SaveUgoiraFrames = s.SaveUgoiraFrames;
+        UgoiraFramesOnly = s.UgoiraFramesOnly;
         FfMpegCodec = s.FFmpegCodec;
         FfMpegCRF = s.FFmpegCRF;
 
@@ -960,6 +979,9 @@ public partial class SettingsViewModel : ViewModelBase
         => _settingsService.Update(s => s.ReduceMotion = value);
 
     // Ugoira
+    partial void OnCreateUgoiraMp4Changed(bool value)
+        => _settingsService.Update(s => s.CreateUgoiraMp4 = value);
+
     partial void OnCreateUgoiraWebmChanged(bool value)
         => _settingsService.Update(s => s.CreateUgoiraWebm = value);
 
@@ -974,6 +996,12 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnKeepUgoiraZipChanged(bool value)
         => _settingsService.Update(s => s.KeepUgoiraZip = value);
+
+    partial void OnSaveUgoiraFramesChanged(bool value)
+        => _settingsService.Update(s => s.SaveUgoiraFrames = value);
+
+    partial void OnUgoiraFramesOnlyChanged(bool value)
+        => _settingsService.Update(s => s.UgoiraFramesOnly = value);
 
     partial void OnFfMpegCodecChanged(string value)
         => _settingsService.Update(s => s.FFmpegCodec = value);
@@ -1003,9 +1031,13 @@ public partial class SettingsViewModel : ViewModelBase
         // Save any pending changes
         _settingsService.Save();
 
-        // Get the current executable path
-        var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-        if (string.IsNullOrEmpty(exePath)) return;
+        // Get the current executable path (entry assembly is .dll, need .exe)
+        var dllPath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+        if (string.IsNullOrEmpty(dllPath)) return;
+
+        // Replace .dll with .exe to get the actual executable path
+        var exePath = dllPath.Replace(".dll", ".exe", StringComparison.OrdinalIgnoreCase);
+        if (!File.Exists(exePath)) return;
 
         // Start new instance
         var psi = new System.Diagnostics.ProcessStartInfo
@@ -1124,6 +1156,60 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (BlacklistMembers.Remove(member))
             _settingsService.Update(s => s.BlacklistMembers = BlacklistMembers.ToList());
+    }
+
+    // FFmpeg commands
+    private async Task CheckFfmpegAsync()
+    {
+        try
+        {
+            var isAvailable = _ffmpegService.IsAvailable();
+            IsFfmpegInstalled = isAvailable;
+            if (isAvailable)
+            {
+                FfmpegStatusText = "Installed";
+                var version = await _ffmpegService.ProbeVersionAsync();
+                FfmpegVersionText = version != null ? $"Version {version}" : "";
+            }
+            else
+            {
+                FfmpegStatusText = "Not installed (required for ugoira conversion)";
+                FfmpegVersionText = "";
+            }
+        }
+        catch
+        {
+            IsFfmpegInstalled = false;
+            FfmpegStatusText = "Check failed";
+            FfmpegVersionText = "";
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckFfmpeg()
+    {
+        FfmpegStatusText = "Checking…";
+        await CheckFfmpegAsync();
+    }
+
+    [RelayCommand]
+    private async Task InstallFfmpeg()
+    {
+        try
+        {
+            FfmpegStatusText = "Downloading…";
+            var progress = new Progress<string>(msg => FfmpegStatusText = msg);
+            var path = await _ffmpegService.InstallAsync(progress);
+            IsFfmpegInstalled = true;
+            FfmpegStatusText = "Installed";
+            var version = await _ffmpegService.ProbeVersionAsync();
+            FfmpegVersionText = version != null ? $"Version {version}" : "";
+        }
+        catch (Exception ex)
+        {
+            FfmpegStatusText = $"Install failed: {ex.Message}";
+            IsFfmpegInstalled = _ffmpegService.IsAvailable();
+        }
     }
 
     // Template preview - generates sample output

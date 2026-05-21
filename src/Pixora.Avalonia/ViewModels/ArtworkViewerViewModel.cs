@@ -23,6 +23,7 @@ public partial class ArtworkViewerViewModel : ObservableObject
     private readonly PixivClient _pixivClient;
     private readonly PixivImageLoader _imageLoader;
     private readonly PixivDownloadService _downloader;
+    private readonly UgoiraService _ugoiraService;
     private readonly DownloadCoordinator _coordinator;
     private readonly DownloadJobRepository _jobRepository;
 
@@ -33,11 +34,16 @@ public partial class ArtworkViewerViewModel : ObservableObject
     [ObservableProperty] private bool _isLoadingPage;
     [ObservableProperty] private bool _isDownloading;
 
+    // Ugoira (animated) playback
+    [ObservableProperty] private string? _ugoiraPreviewPath;
+    [ObservableProperty] private bool _isUgoira;
+    [ObservableProperty] private bool _isPlayingUgoira = true;
+
     public string Title => _artwork.Title;
     public string ArtistName => _artwork.UserName;
     public string TypeLabel => _artwork.TypeLabel;
     public int PageCount => _pages.Count > 0 ? _pages.Count : _artwork.PageCount;
-    public bool HasMultiplePages => PageCount > 1;
+    public bool HasMultiplePages => PageCount > 1 && !IsUgoira;
     public bool IsR18 => _artwork.IsR18;
     public string PageIndicator => $"{CurrentPageIndex + 1} / {PageCount}";
     public string TagsText => _artwork.Tags.Count > 0 ? string.Join("  ·  ", _artwork.Tags.Take(8)) : string.Empty;
@@ -50,6 +56,7 @@ public partial class ArtworkViewerViewModel : ObservableObject
         _pixivClient   = AppServices.Get<PixivClient>();
         _imageLoader   = AppServices.Get<PixivImageLoader>();
         _downloader    = AppServices.Get<PixivDownloadService>();
+        _ugoiraService = AppServices.Get<UgoiraService>();
         _coordinator   = AppServices.Get<DownloadCoordinator>();
         _jobRepository = AppServices.Get<DownloadJobRepository>();
     }
@@ -59,11 +66,24 @@ public partial class ArtworkViewerViewModel : ObservableObject
         IsLoadingPage = true;
         try
         {
-            _pages = await _pixivClient.GetArtworkPagesAsync(_artwork.Id);
-            OnPropertyChanged(nameof(PageCount));
-            OnPropertyChanged(nameof(HasMultiplePages));
-            OnPropertyChanged(nameof(PageIndicator));
-            await LoadPageAsync(0);
+            // Ugoira — animated, fetch preview via ffmpeg
+            if (_artwork.IllustType == 2)
+            {
+                IsUgoira = true;
+                OnPropertyChanged(nameof(HasMultiplePages));
+                var path = await _ugoiraService.GetOrCreatePreviewAsync(_artwork.Id);
+                UgoiraPreviewPath = path;
+                IsPlayingUgoira = true;
+            }
+            else
+            {
+                IsUgoira = false;
+                _pages = await _pixivClient.GetArtworkPagesAsync(_artwork.Id);
+                OnPropertyChanged(nameof(PageCount));
+                OnPropertyChanged(nameof(HasMultiplePages));
+                OnPropertyChanged(nameof(PageIndicator));
+                await LoadPageAsync(0);
+            }
         }
         catch (Exception ex)
         {

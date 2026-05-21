@@ -2128,6 +2128,7 @@ public partial class ArtworkCardViewModel : ObservableObject
     public string? ThumbnailUrl { get; }
     public string TypeLabel { get; }
     public int PageCount { get; }
+    public int IllustType { get; }
     public bool IsMultiPage => PageCount > 1;
     [ObservableProperty] private double _aspectRatio;
     partial void OnAspectRatioChanged(double v) => OnPropertyChanged(nameof(ClampedAspectRatio));
@@ -2157,6 +2158,7 @@ public partial class ArtworkCardViewModel : ObservableObject
         ThumbnailUrl = GetHighQualityThumbnailUrl(artwork.ThumbnailUrl);
         TypeLabel = artwork.TypeLabel;
         PageCount = artwork.PageCount;
+        IllustType = artwork.IllustType;
         _aspectRatio = artwork.AspectRatio;
         IsR18 = artwork.IsR18;
         IsR18G = artwork.IsR18G;

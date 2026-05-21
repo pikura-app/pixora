@@ -1,3 +1,18 @@
+## Pixora 1.6.0
+
+Enhanced ugoira (animated illustration) support and UI improvements.
+
+### New features
+- **Ugoira individual frames extraction** — New global settings to download ugoira frames as individual PNG images without creating video files.
+  - Settings → Storage & Naming → "Save individual frames as PNG images" — Extracts all frames to a `{artworkId}_frames/` subfolder
+  - "Frames only (skip video/GIF generation)" — When enabled alongside the above, skips MP4/GIF/WebM/WebP/APNG creation entirely
+- **Download preset ugoira options** — Presets now support "Save processed frames to subfolder" and "Frames only" modes for ugoira downloads.
+
+### Improvements
+- Better preset UI synchronization — ugoira checkbox states now properly sync when selecting or saving presets.
+
+---
+
 ## Pixora 1.5.1
 
 Hotfix for v1.5.0.

@@ -82,6 +82,7 @@ public partial class InlineArtworkViewer : UserControl
     private readonly PixivClient _pixivClient;
     private readonly PixivImageLoader _imageLoader;
     private readonly PixivDownloadService _downloader;
+    private readonly UgoiraService _ugoiraService;
     private readonly Pixora.Core.Services.LocalFavoritesService _favorites;
     private readonly AiViewModel _aiVm;
 
@@ -110,6 +111,7 @@ public partial class InlineArtworkViewer : UserControl
         _pixivClient = AppServices.Get<PixivClient>();
         _imageLoader = AppServices.Get<PixivImageLoader>();
         _downloader = AppServices.Get<PixivDownloadService>();
+        _ugoiraService = AppServices.Get<UgoiraService>();
         _favorites  = AppServices.Get<Pixora.Core.Services.LocalFavoritesService>();
         _aiVm       = AppServices.Get<AiViewModel>();
 
@@ -256,6 +258,7 @@ public partial class InlineArtworkViewer : UserControl
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (ViewerImage != null) { ViewerImage.Source = null; ViewerImage.IsVisible = false; }
+            if (UgoiraImage != null) { UgoiraImage.SourcePath = null; UgoiraImage.IsVisible = false; }
             if (LoadingPanel != null) LoadingPanel.IsVisible = false;
         });
     }
@@ -289,11 +292,19 @@ public partial class InlineArtworkViewer : UserControl
 
         try
         {
-            var pages = await _pixivClient.GetArtworkPagesAsync(card.Id);
-            if (ct.IsCancellationRequested) return; // stale — a newer tab won
-            _pages = pages;
-            UpdatePageIndicator();
-            await RenderPageAsync(_currentPageIndex, ct);
+            // Ugoira (animated) — fetch animated preview via ffmpeg conversion
+            if (card.IllustType == 2)
+            {
+                await LoadUgoiraAsync(card.Id, ct);
+            }
+            else
+            {
+                var pages = await _pixivClient.GetArtworkPagesAsync(card.Id);
+                if (ct.IsCancellationRequested) return; // stale — a newer tab won
+                _pages = pages;
+                UpdatePageIndicator();
+                await RenderPageAsync(_currentPageIndex, ct);
+            }
         }
         catch (OperationCanceledException) { /* expected on tab switch */ }
         catch { /* non-fatal */ }
@@ -339,8 +350,34 @@ public partial class InlineArtworkViewer : UserControl
         {
             var hasCard = VM?.InlineViewerCard != null;
             if (LoadingPanel != null) LoadingPanel.IsVisible = loading && hasCard;
-            if (ViewerImage != null) ViewerImage.IsVisible = !loading && hasCard;
+            var isUgoira = _currentCard?.IllustType == 2;
+            if (ViewerImage != null) ViewerImage.IsVisible = !loading && hasCard && !isUgoira;
+            if (UgoiraImage != null) UgoiraImage.IsVisible = !loading && hasCard && isUgoira;
         });
+    }
+
+    private async Task LoadUgoiraAsync(string artworkId, CancellationToken ct)
+    {
+        try
+        {
+            var previewPath = await _ugoiraService.GetOrCreatePreviewAsync(artworkId, ct).ConfigureAwait(false);
+            if (ct.IsCancellationRequested) return;
+            if (previewPath != null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (ct.IsCancellationRequested) return;
+                    UgoiraImage.SourcePath = previewPath;
+                    UgoiraImage.IsPlaying = true;
+                    ResetZoom();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            // Fallback to static thumbnail on error
+            System.Diagnostics.Debug.WriteLine($"Ugoira load failed: {ex.Message}");
+        }
     }
 
     private void UpdatePageIndicator()
@@ -385,11 +422,16 @@ public partial class InlineArtworkViewer : UserControl
 
     private void ApplyTransform()
     {
-        if (ViewerImage.RenderTransform is TransformGroup tg)
+        void ApplyTo(Image img)
         {
-            if (tg.Children[0] is ScaleTransform s) { s.ScaleX = _scale; s.ScaleY = _scale; }
-            if (tg.Children[1] is TranslateTransform t) { t.X = _translateX; t.Y = _translateY; }
+            if (img.RenderTransform is TransformGroup tg)
+            {
+                if (tg.Children[0] is ScaleTransform s) { s.ScaleX = _scale; s.ScaleY = _scale; }
+                if (tg.Children[1] is TranslateTransform t) { t.X = _translateX; t.Y = _translateY; }
+            }
         }
+        ApplyTo(ViewerImage);
+        ApplyTo(UgoiraImage);
         if (ZoomLabel != null) ZoomLabel.Text = $"{_scale * 100:0}%";
         if (_scale >= FullResThreshold && !_fullResLoaded && !string.IsNullOrEmpty(_currentOriginalUrl))
             _ = LoadFullResAsync(_currentOriginalUrl!);
@@ -539,7 +581,8 @@ var artworks = new List<global::Pixora.Avalonia.Views.Dialogs.ArtworkPreview>
         Title = artwork.Title ?? "",
         ArtistName = artwork.UserName ?? "",
         ThumbnailUrl = artwork.ThumbnailUrl,
-        PageCount = artwork.PageCount
+        PageCount = artwork.PageCount,
+        IllustType = artwork.IllustType
     }
 };
 

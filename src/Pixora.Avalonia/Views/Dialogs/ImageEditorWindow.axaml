@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:anim="using:Pixora.Avalonia.Controls"
         x:Class="Pixora.Avalonia.Views.Dialogs.ImageEditorWindow"
         Title="Pixora — Image Editor"
         Width="1500"
@@ -53,6 +54,11 @@
                         <Button x:Name="ResetAllButton" Content="Reset All" Classes="accent" Click="OnResetAllClick"/>
                     </StackPanel>
 
+                    <!-- Ugoira Mode Switcher (only visible for ugoira artworks) -->
+                    <StackPanel x:Name="UgoiraModePanel" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,12,4" IsVisible="False">
+                        <Button x:Name="UgoiraModeButton" Content="🎬 Ugoira Mode" Classes="accent" Click="OnUgoiraModeClick" ToolTip.Tip="Change how to handle this animated ugoira"/>
+                    </StackPanel>
+
                     <!-- Submission/Page navigation -->
                     <StackPanel x:Name="PageNavPanel" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,0,4" IsVisible="False">
                         <Button x:Name="PrevPageButton" Content="◄" Click="OnPrevPageClick" ToolTip.Tip="Previous (←)" Width="32"/>
@@ -88,11 +94,19 @@
                               PointerPressed="OnCanvasPointerPressed"
                               PointerMoved="OnCanvasPointerMoved"
                               PointerReleased="OnCanvasPointerReleased">
-                            <!-- The Image -->
+                            <!-- Static Image -->
                             <Image x:Name="EditorImage"
                                    Stretch="Uniform"
                                    MaxWidth="1100"
-                                   MaxHeight="780"/>
+                                   MaxHeight="780"
+                                   IsVisible="True"/>
+                            <!-- Animated Image (Ugoira) -->
+                            <anim:AnimatedImage x:Name="UgoiraImage"
+                                                Stretch="Uniform"
+                                                MaxWidth="1100"
+                                                MaxHeight="780"
+                                                IsVisible="False"
+                                                IsPlaying="True"/>
                             <!-- Traditional Crop Overlay: white border with handles -->
                             <Grid x:Name="CropOverlay" IsVisible="False" IsHitTestVisible="True">
                                 <!-- Crop frame border (white with black outline for visibility on any image) -->
@@ -340,7 +354,7 @@
                     <!-- Preset Name -->
                     <StackPanel Spacing="8">
                         <TextBlock Text="Save as Preset" FontWeight="SemiBold" FontSize="14"/>
-                        <TextBox x:Name="PresetNameTextBox" Watermark="Enter preset name..."/>
+                        <TextBox x:Name="PresetNameTextBox" PlaceholderText="Enter preset name..."/>
                         <Button x:Name="SaveAsPresetButton" Content="💾 Save Preset" HorizontalAlignment="Stretch" Click="OnSaveAsPresetClick"/>
                     </StackPanel>
                 </StackPanel>

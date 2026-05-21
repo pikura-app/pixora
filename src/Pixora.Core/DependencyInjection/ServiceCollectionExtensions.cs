@@ -16,6 +16,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<PixivHttpClientFactory>();
         services.TryAddSingleton<PixivClient>();
         services.TryAddSingleton<ImageResizeService>();
+        services.TryAddSingleton<FfmpegService>();
+        services.TryAddSingleton<UgoiraService>();
         services.TryAddSingleton<PixivDownloadService>();
         services.TryAddSingleton<PixivImageLoader>();
         return services;

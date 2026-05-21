@@ -249,6 +249,63 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- FFmpeg & Ugoira (Animated) Settings -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="28" Margin="0,0,0,8">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="FFmpeg &amp; Animated (Ugoira)" FontWeight="SemiBold" FontSize="14"/>
+
+                                <!-- FFmpeg status row -->
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                                        <TextBlock FontSize="12">
+                                            <Run Text="Status: " FontWeight="SemiBold"/>
+                                            <Run Text="{Binding FfmpegStatusText}"/>
+                                        </TextBlock>
+                                        <TextBlock FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                   Text="{Binding FfmpegVersionText}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Install FFmpeg" Command="{Binding InstallFfmpegCommand}"
+                                                IsVisible="{Binding !IsFfmpegInstalled}"
+                                                CornerRadius="6" FontSize="12" Padding="12,6"/>
+                                        <Button Content="Check Again" Command="{Binding CheckFfmpegCommand}"
+                                                CornerRadius="6" FontSize="12" Padding="12,6"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}"/>
+
+                                <!-- Ugoira format toggles -->
+                                <TextBlock Text="When downloading ugoira (animated illustrations), also create:"
+                                           FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                <WrapPanel>
+                                    <CheckBox Content="MP4 (H.264) — Recommended" IsChecked="{Binding CreateUgoiraMp4, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="WebM (VP9)" IsChecked="{Binding CreateUgoiraWebm, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="GIF" IsChecked="{Binding CreateUgoiraGif, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="WebP" IsChecked="{Binding CreateUgoiraWebp, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                    <CheckBox Content="APNG" IsChecked="{Binding CreateUgoiraApng, Mode=TwoWay}"
+                                              FontSize="13" Margin="0,0,24,8"/>
+                                </WrapPanel>
+                                <CheckBox Content="Keep original frame ZIP after conversion"
+                                          IsChecked="{Binding KeepUgoiraZip, Mode=TwoWay}"
+                                          FontSize="13" Margin="0,4,0,0"/>
+                                <Separator Background="{actipro:ThemeResource Container1BorderBrush}" Margin="0,8"/>
+                                <CheckBox Content="Save individual frames as PNG images"
+                                          IsChecked="{Binding SaveUgoiraFrames, Mode=TwoWay}"
+                                          FontSize="13" Margin="0,4,0,0"/>
+                                <CheckBox Content="Frames only (skip video/GIF generation)"
+                                          IsChecked="{Binding UgoiraFramesOnly, Mode=TwoWay}"
+                                          FontSize="13" Margin="0,4,0,0"
+                                          IsEnabled="{Binding SaveUgoiraFrames}"/>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Per-Account Download Settings (only when multiple accounts) -->
                         <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"

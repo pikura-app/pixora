@@ -619,7 +619,7 @@
                                                 Cursor="Hand"
                                                 PointerPressed="OnArtworkCardClicked">
                                                 <Border.ContextMenu>
-                                                    <ContextMenu>
+                                                    <ContextMenu Opening="OnCardContextMenuOpening">
                                                         <MenuItem Header="☑ Select" Click="OnContextToggleSelection"
                                                                   IsVisible="{Binding !IsSelected}"/>
                                                         <MenuItem Header="☒ Deselect" Click="OnContextToggleSelection"
@@ -743,7 +743,7 @@
                                                 Cursor="Hand"
                                                 PointerPressed="OnArtworkCardClicked">
                                                 <Border.ContextMenu>
-                                                    <ContextMenu>
+                                                    <ContextMenu Opening="OnListCardContextMenuOpening">
                                                         <MenuItem Header="☑ Select" Click="OnContextToggleSelection"
                                                                   IsVisible="{Binding !IsSelected}"/>
                                                         <MenuItem Header="☒ Deselect" Click="OnContextToggleSelection"

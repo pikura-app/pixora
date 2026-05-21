@@ -308,6 +308,16 @@ public sealed partial class PixivClient
         return await GetAjaxAsync<ArtworkDetailBody>(url, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// GET /ajax/illust/{id}/ugoira_meta — frame-zip URL + per-frame delays for an
+    /// animated ugoira (illustType==2). Returns null when the artwork is not a ugoira.
+    /// </summary>
+    public async Task<UgoiraMeta?> GetUgoiraMetaAsync(string artworkId, CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/ajax/illust/{artworkId}/ugoira_meta?lang={_settings.Current.Locale}";
+        return await GetAjaxAsync<UgoiraMeta>(url, ct).ConfigureAwait(false);
+    }
+
     // ─── Rankings ──────────────────────────────────────────────────────────
 
     /// <summary>

@@ -12,7 +12,7 @@ public partial class ChangelogDialog : Window
         InitializeComponent();
 
         VersionLabel.Text = $"Pixora v{version}";
-        NotesText.Text    = string.IsNullOrWhiteSpace(releaseNotes)
+        NotesText.Markdown    = string.IsNullOrWhiteSpace(releaseNotes)
             ? "No release notes available for this version."
             : releaseNotes;
 

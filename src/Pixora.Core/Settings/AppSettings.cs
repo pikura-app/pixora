@@ -242,14 +242,29 @@ public sealed class AppSettings
     /// <summary>When true, converts ugoira to APNG format.</summary>
     public bool CreateUgoiraApng { get; set; } = false;
 
+    /// <summary>When true, converts ugoira to MP4 (h264 + yuv420p).</summary>
+    public bool CreateUgoiraMp4 { get; set; } = true;
+
     /// <summary>When true, keeps original ugoira ZIP after conversion.</summary>
     public bool KeepUgoiraZip { get; set; } = true;
+
+    /// <summary>When true, saves individual frames as separate PNG images in a subfolder.</summary>
+    public bool SaveUgoiraFrames { get; set; } = false;
+
+    /// <summary>When true, only saves frames without encoding animation (no MP4/GIF/WebM).</summary>
+    public bool UgoiraFramesOnly { get; set; } = false;
 
     /// <summary>FFmpeg codec for WebM conversion (default: libvpx-vp9).</summary>
     public string FFmpegCodec { get; set; } = "libvpx-vp9";
 
     /// <summary>FFmpeg quality CRF value (lower = better quality, 15-35).</summary>
     public int FFmpegCRF { get; set; } = 15;
+
+    /// <summary>Absolute path to the ffmpeg executable. Empty = auto-detect (PATH or app-managed install).</summary>
+    public string FfmpegPath { get; set; } = string.Empty;
+
+    /// <summary>Reported ffmpeg version (e.g. "n6.1") after a successful detect/install. Empty when unknown.</summary>
+    public string FfmpegInstalledVersion { get; set; } = string.Empty;
 
     #endregion
 
@@ -551,6 +566,15 @@ public sealed class AppSettings
 
     /// <summary>Last saved window height (0 = use default).</summary>
     public double WindowHeight { get; set; } = 0;
+
+    /// <summary>Last saved window X position (-1 = use default/center).</summary>
+    public double WindowX { get; set; } = -1;
+
+    /// <summary>Last saved window Y position (-1 = use default/center).</summary>
+    public double WindowY { get; set; } = -1;
+
+    /// <summary>Last saved window state (0=Normal, 1=Minimized, 2=Maximized).</summary>
+    public int WindowState { get; set; } = 0;
 
     #endregion
 

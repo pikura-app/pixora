@@ -164,7 +164,8 @@ public class DialogService
                     Title = artwork.Title ?? "",
                     ArtistName = artwork.UserName ?? "",
                     ThumbnailUrl = artwork.ThumbnailUrl,
-                    PageCount = artwork.PageCount
+                    PageCount = artwork.PageCount,
+                    IllustType = artwork.IllustType
                 }
             };
 
@@ -176,7 +177,8 @@ public class DialogService
                     Title = a.Title ?? "",
                     ArtistName = a.UserName ?? "",
                     ThumbnailUrl = a.ThumbnailUrl,
-                    PageCount = a.PageCount
+                    PageCount = a.PageCount,
+                    IllustType = a.IllustType
                 }));
             }
 

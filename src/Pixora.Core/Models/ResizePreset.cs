@@ -295,6 +295,21 @@ public class CropRegion
 }
 
 /// <summary>
+/// How to handle ugoira (animated) artworks.
+/// </summary>
+public enum UgoiraPresetMode
+{
+    /// <summary>Export as animated format (WebP/MP4/GIF).</summary>
+    WatchAnimation,
+    /// <summary>Extract and edit a single frame as static image.</summary>
+    EditSingleFrame,
+    /// <summary>Extract and edit all frames for batch processing.</summary>
+    EditAllFrames,
+    /// <summary>Extract only the cover (first) frame.</summary>
+    EditCover
+}
+
+/// <summary>
 /// Complete image edit preset including resize settings and adjustments.
 /// </summary>
 public class ImageEditPreset
@@ -314,6 +329,15 @@ public class ImageEditPreset
 
     // Crop
     public CropRegion? CropRegion { get; set; }
+
+    // Ugoira (animated) handling
+    public UgoiraPresetMode UgoiraMode { get; set; } = UgoiraPresetMode.EditSingleFrame;
+    /// <summary>Which formats to create for ugoira downloads (null = use global settings).</summary>
+    public List<UgoiraFormat>? UgoiraFormats { get; set; }
+    /// <summary>When true, saves individual processed frames to a subfolder.</summary>
+    public bool SaveUgoiraFrames { get; set; } = false;
+    /// <summary>When true, only saves frames without encoding animation.</summary>
+    public bool UgoiraFramesOnly { get; set; } = false;
 
     // Output options
     public bool SaveAsNew { get; set; } = true;
