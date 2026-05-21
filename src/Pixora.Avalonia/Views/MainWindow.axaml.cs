@@ -355,12 +355,13 @@ public partial class MainWindow : Window
 
     private void UpdateCaptionIcons()
     {
-        // Maximize: E922 = maximize, E923 = restore
+        // Cross-platform Unicode glyphs (Segoe MDL2 isn't available on Linux/macOS).
+        // Maximize: U+25A1 (white square) = maximize, U+29C9 (two joined squares) = restore
         if (MaximizeBtn is { } max)
-            max.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
-        // Fullscreen: E1D9 = enter fullscreen, E1D8 = exit fullscreen
+            max.Content = WindowState == WindowState.Maximized ? "\u29C9" : "\u25A1";
+        // Fullscreen: U+26F6 (square four corners) = enter, U+2922 (NE-SW arrow) = exit
         if (FullscreenBtn is { } fs)
-            fs.Content = WindowState == WindowState.FullScreen ? "\uE1D8" : "\uE1D9";
+            fs.Content = WindowState == WindowState.FullScreen ? "\u2922" : "\u26F6";
     }
 
     private void AccountChip_Click(object? sender, RoutedEventArgs e)

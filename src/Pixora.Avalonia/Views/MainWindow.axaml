@@ -46,8 +46,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="0"/>
-            <Setter Property="FontFamily" Value="Segoe Fluent Icons,Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
         </Style>
         <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
@@ -294,17 +293,17 @@
             <!-- Window caption buttons — ZIndex=20 sits above the draggable panel -->
             <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top"
                         Orientation="Horizontal" ZIndex="20" Height="32">
-                <!-- Fullscreen toggle: E1D9 = full screen arrows, E1D8 = exit fullscreen -->
-                <Button x:Name="FullscreenBtn" Classes="caption" Content="&#xE1D9;"
+                <!-- Fullscreen toggle (cross-platform glyphs; toggled in code-behind) -->
+                <Button x:Name="FullscreenBtn" Classes="caption" Content="&#x26F6;"
                         ToolTip.Tip="Fullscreen" Click="FullscreenBtn_Click"/>
                 <!-- Minimize -->
-                <Button x:Name="MinimizeBtn" Classes="caption" Content="&#xE921;"
+                <Button x:Name="MinimizeBtn" Classes="caption" Content="&#x2014;"
                         ToolTip.Tip="Minimize" Click="MinimizeBtn_Click"/>
                 <!-- Maximize/Restore -->
-                <Button x:Name="MaximizeBtn" Classes="caption" Content="&#xE922;"
+                <Button x:Name="MaximizeBtn" Classes="caption" Content="&#x25A1;"
                         ToolTip.Tip="Maximize" Click="MaximizeBtn_Click"/>
                 <!-- Close -->
-                <Button x:Name="CloseBtn" Classes="caption" Content="&#xE8BB;"
+                <Button x:Name="CloseBtn" Classes="caption" Content="&#x2715;"
                         ToolTip.Tip="Close" Click="CloseBtn_Click"/>
             </StackPanel>
 
