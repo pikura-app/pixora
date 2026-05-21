@@ -1,3 +1,15 @@
+## Pixora 1.5.1
+
+Hotfix for v1.5.0.
+
+### Fixes
+- **Linux / macOS**: window caption icons (fullscreen, minimize, maximize, close) showed up as empty squares because they relied on the Windows-only `Segoe Fluent Icons` / `Segoe MDL2 Assets` fonts. Replaced with cross-platform Unicode glyphs so they render correctly on every platform.
+
+> Tip for Linux users whose sidebar emoji icons (🔖 📥 🕐 📊 …) still appear blank: install an emoji font, e.g. on Arch:
+> `sudo pacman -S noto-fonts noto-fonts-emoji`
+
+---
+
 ## Pixora 1.5.0
 
 A big quality-of-life release focused on downloads, image tooling and stability.
