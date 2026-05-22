@@ -25,20 +25,24 @@
 
 ## Features
 
-- **Gallery browser** — browse your Pixiv feed, bookmarks, and followed artists
-- **Side panel** — expand any artwork inline with metadata, tags, and quick actions (Prev/Next, Artist, Popup, Copy, Favorite, Hoshi)
-- **Rankings** — browse daily/weekly/AI/male/female Pixiv rankings with grid or list view
-- **Batch download** — download entire artist galleries or bookmark collections in one click
-- **Schedules** — set recurring auto-downloads with per-schedule content filters
-- **Content filters** — skip AI-generated, Manga, Ugoira, R-18, R-18G content
+- **Gallery browser** — browse your Pixiv feed and followed artists with grid or list view; expand any artwork inline via the side panel with metadata, tags, and quick actions (Prev/Next, Artist, Popup, Copy, Favorite, Hoshi)
+- **Bookmarks** — browse and manage your Pixiv bookmarks (public and private) in one place
+- **Rankings** — browse daily/weekly/AI/male/female Pixiv rankings
+- **Discover** — explore recommended and trending artwork from Pixiv
+- **History** — view your previously downloaded artworks with timestamps
+- **Analytics** — charts and stats for your download history and collection
+- **Image editor** — non-destructive adjustments (brightness, contrast, saturation, hue, temperature, tint, highlights, shadows, blur, sharpness), color overlay, opacity slider, and live GPU-accelerated preview; export to PNG with alpha preserved
+- **Batch download** — download entire artist galleries, bookmark collections, or search results; paginates through Pixiv's API to honour your Max Results setting
+- **Schedules** — set recurring auto-downloads with per-schedule content filters and tag rules
+- **Content filters** — skip AI-generated, Manga, Ugoira, R-18, R-18G content globally or per schedule
 - **Tag filters** — include/exclude artworks by tag
 - **FANBOX support** — download FANBOX posts alongside Pixiv artwork
 - **Multi-account** — switch between multiple Pixiv accounts from the sidebar
-- **Per-account settings** — override download root, templates, and filters per account
-- **Hoshi AI** — ask questions about artworks using a local Ollama vision model
-- **Auto-updater** — checks for updates on startup, downloads and installs with one click
-- **System tray** — runs quietly in the background
-- **Themes** — light and dark mode
+- **Per-account settings** — override download root, filename templates, and filters per account
+- **Hoshi AI** — ask questions about artworks using a local Ollama vision model (text + vision)
+- **Auto-updater** — checks for updates on startup, downloads silently in the background, and installs with one click
+- **System tray** — runs quietly in the background with tray icon and notifications
+- **Themes** — light, dark, and system-default mode
 
 ## Download
 
