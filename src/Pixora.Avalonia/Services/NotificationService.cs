@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -14,6 +15,7 @@ public class NotificationService
     private readonly ILogger<NotificationService> _logger;
     private bool _isInitialized;
     private string? _iconPath;
+    private static readonly HttpClient _thumbClient = new HttpClient();
 
     public NotificationService(ILogger<NotificationService> logger)
     {
@@ -129,8 +131,12 @@ public class NotificationService
             var iconUri  = hasIcon ? new Uri(iconPath!).AbsoluteUri : null;
             var iconPathEscaped = iconPath?.Replace("'", "''");
 
-            // Use thumbnail as hero image if provided (shows artist/artwork image in toast body)
-            var thumbUri = !string.IsNullOrEmpty(thumbnailUrl) ? thumbnailUrl : null;
+            // Use thumbnail as hero image if provided (shows artist/artwork image in toast body).
+            // pximg.net requires Referer header — download to temp file so the toast XML
+            // image loader (which sends no headers) can read it via file:/// URI.
+            var thumbUri = !string.IsNullOrEmpty(thumbnailUrl)
+                ? DownloadThumbnailToTemp(thumbnailUrl)
+                : null;
 
             var script = $@"
                 try {{
@@ -167,6 +173,27 @@ public class NotificationService
         {
             _logger.LogError(ex, "Failed to show Windows notification");
         }
+    }
+
+    private static string? DownloadThumbnailToTemp(string url)
+    {
+        try
+        {
+            var ext      = Path.GetExtension(new Uri(url).AbsolutePath);
+            if (string.IsNullOrEmpty(ext)) ext = ".jpg";
+            var tmpPath  = Path.Combine(Path.GetTempPath(), $"pixora-thumb-{Math.Abs(url.GetHashCode())}{ext}");
+            if (File.Exists(tmpPath)) return new Uri(tmpPath).AbsoluteUri;
+
+            using var req  = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("Referer", "https://www.pixiv.net/");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+            using var resp = _thumbClient.Send(req);
+            if (!resp.IsSuccessStatusCode) return null;
+            using var fs   = File.Create(tmpPath);
+            resp.Content.ReadAsStream().CopyTo(fs);
+            return new Uri(tmpPath).AbsoluteUri;
+        }
+        catch { return null; }
     }
 
     private static string BuildWinRtToastXmlScript(bool hasIcon, string? iconUri, string? thumbUri, string escapedTitle, string escapedMessage)
