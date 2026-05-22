@@ -54,15 +54,26 @@ public partial class DownloadBySearchViewModel : ViewModelBase
             IsSearching = true;
             SearchResults.Clear();
 
-            var result = await _client.SearchArtworksAsync(
-                SearchKeyword,
-                SortOrder,
-                SearchMode,
-                page: 1);
-
-            if (result?.IllustManga?.Data != null)
+            // Pixiv returns 60 items per page; loop pages until MaxResults is hit
+            // or the API runs out of results.
+            var collected = new List<Pixora.Core.Models.ArtworkPreview>();
+            for (int page = 1; collected.Count < MaxResults; page++)
             {
-                var artworks = result.IllustManga.Data.Take(MaxResults).ToList();
+                var result = await _client.SearchArtworksAsync(
+                    SearchKeyword,
+                    SortOrder,
+                    SearchMode,
+                    page);
+
+                var data = result?.IllustManga?.Data;
+                if (data == null || data.Count == 0) break;
+                collected.AddRange(data);
+                if (data.Count < 60) break; // last page
+            }
+
+            if (collected.Count > 0)
+            {
+                var artworks = collected.Take(MaxResults).ToList();
                 foreach (var artwork in artworks)
                 {
                     var item = new SearchResultItem

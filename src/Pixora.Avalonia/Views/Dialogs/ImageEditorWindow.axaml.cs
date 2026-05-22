@@ -348,12 +348,21 @@ public partial class ImageEditorWindow : Window
         }
     }
 
+    private global::Avalonia.Media.SolidColorBrush? OverlaySwatchBrush
+        => OverlayColorButton?.Background as global::Avalonia.Media.SolidColorBrush;
+
     private void OnOverlayColorPickerChanged(object? sender, global::Avalonia.Controls.ColorChangedEventArgs e)
     {
-        if (_isUpdating) return;
-        // Convert Avalonia Color → #RRGGBB hex string
         var c = e.NewColor;
-        _currentPreset.Adjustments.ColorOverlayHex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        var hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+        // Always reflect the chosen colour in the swatch + label so the UI
+        // stays in sync even when this fires during LoadPresetIntoUI().
+        if (OverlaySwatchBrush is { } brush) brush.Color = c;
+        if (OverlayColorHexLabel != null) OverlayColorHexLabel.Text = hex;
+
+        if (_isUpdating) return;
+        _currentPreset.Adjustments.ColorOverlayHex = hex;
         _ = UpdatePreviewAsync();
     }
 
@@ -382,6 +391,9 @@ public partial class ImageEditorWindow : Window
         HueSlider.Value = adj.HueRotation;
         HueValue.Text = $"{adj.HueRotation}°";
 
+        OpacitySlider.Value = adj.Opacity;
+        OpacityValue.Text = $"{adj.Opacity}%";
+
         // Color adjustments
         TemperatureSlider.Value = adj.Temperature;
         TintSlider.Value = adj.Tint;
@@ -406,11 +418,15 @@ public partial class ImageEditorWindow : Window
         OverlayOpacitySlider.Value = adj.ColorOverlayOpacity;
         OverlayOpacityValue.Text = adj.ColorOverlayOpacity.ToString();
 
-        if (!string.IsNullOrEmpty(adj.ColorOverlayHex) && OverlayColorPicker != null)
+        var overlayHex = string.IsNullOrEmpty(adj.ColorOverlayHex) ? "#000000" : adj.ColorOverlayHex;
+        try
         {
-            try { OverlayColorPicker.Color = global::Avalonia.Media.Color.Parse(adj.ColorOverlayHex); }
-            catch { /* invalid hex - leave default */ }
+            var parsed = global::Avalonia.Media.Color.Parse(overlayHex);
+            if (OverlayColorView != null) OverlayColorView.Color = parsed;
+            if (OverlaySwatchBrush is { } brush) brush.Color = parsed;
+            if (OverlayColorHexLabel != null) OverlayColorHexLabel.Text = overlayHex.ToUpperInvariant();
         }
+        catch { /* invalid hex - leave default */ }
 
         // Image info
         var fileSize = EstimateFileSize(_originalBitmap);
@@ -438,6 +454,16 @@ public partial class ImageEditorWindow : Window
     /// Convert SKBitmap to Avalonia Bitmap via direct pixel copy (faster than encode/decode).
     /// </summary>
     public static Bitmap SkiaToAvalonia(SKBitmap skBitmap)
+        => SkiaToWriteable(skBitmap, null);
+
+    /// <summary>
+    /// Convert an SKBitmap into an Avalonia WriteableBitmap, reusing the supplied
+    /// existing instance when its pixel size matches. Reusing avoids a ~6 MB
+    /// allocation+free per frame during slider drags.
+    /// </summary>
+    private static global::Avalonia.Media.Imaging.WriteableBitmap SkiaToWriteable(
+        SKBitmap skBitmap,
+        global::Avalonia.Media.Imaging.WriteableBitmap? reuse)
     {
         // Ensure pixels are in BGRA8888 format that Avalonia uses
         SKBitmap source = skBitmap;
@@ -456,14 +482,21 @@ public partial class ImageEditorWindow : Window
 
         var size = new global::Avalonia.PixelSize(source.Width, source.Height);
         var dpi = new global::Avalonia.Vector(96, 96);
-        var writeable = new global::Avalonia.Media.Imaging.WriteableBitmap(
-            size, dpi,
-            global::Avalonia.Platform.PixelFormat.Bgra8888,
-            global::Avalonia.Platform.AlphaFormat.Premul);
+        global::Avalonia.Media.Imaging.WriteableBitmap writeable;
+        if (reuse != null && reuse.PixelSize == size)
+        {
+            writeable = reuse;
+        }
+        else
+        {
+            writeable = new global::Avalonia.Media.Imaging.WriteableBitmap(
+                size, dpi,
+                global::Avalonia.Platform.PixelFormat.Bgra8888,
+                global::Avalonia.Platform.AlphaFormat.Premul);
+        }
 
         using (var fb = writeable.Lock())
         {
-            // Copy pixels row by row to handle stride differences
             int rowBytes = source.Width * 4;
             unsafe
             {
@@ -479,6 +512,9 @@ public partial class ImageEditorWindow : Window
         if (ownsSource) source.Dispose();
         return writeable;
     }
+
+    // Reused WriteableBitmap for live preview to avoid per-frame allocation.
+    private global::Avalonia.Media.Imaging.WriteableBitmap? _reusableWriteable;
 
     private async Task UpdatePreviewAsync(bool immediate = false)
     {
@@ -514,10 +550,12 @@ public partial class ImageEditorWindow : Window
                 await Dispatcher.UIThread.InvokeAsync(() => LoadingSpinner.IsVisible = true);
             }
 
-            // Quick debounce for live feel (5ms), skip if immediate
+            // Coalesce rapid slider ticks into ~60 fps (16 ms) so we don't fire a
+            // full render for every micro-step of the slider thumb. Skip when
+            // immediate is requested (e.g. on page change / drag end).
             if (!immediate)
             {
-                await Task.Delay(5, ct);
+                await Task.Delay(16, ct);
                 if (ct.IsCancellationRequested) return;
             }
 
@@ -525,7 +563,7 @@ public partial class ImageEditorWindow : Window
             // is expensive (50-100ms in Skia); we don't want to redo it just because the
             // user started panning. The cache is invalidated only when the page/artwork
             // changes (see _cachedPreviewSource handling on navigation).
-            const int previewWidth = 1100;
+            const int previewWidth = 600;
             if (_cachedPreviewSource == null || _cachedPreviewSourceWidth != previewWidth)
             {
                 _cachedPreviewSource?.Dispose();
@@ -554,13 +592,16 @@ public partial class ImageEditorWindow : Window
             var previewBitmap = await _imageResizeService.ProcessForPreviewAsync(_cachedPreviewSource!, _currentPreset, ct, previewWidth);
             if (previewBitmap == null || ct.IsCancellationRequested) return;
 
-            // Direct pixel copy to Avalonia WriteableBitmap (no JPEG/PNG encoding overhead)
-            var avaloniaBitmap = SkiaToAvalonia(previewBitmap);
+            // Direct pixel copy into a reused WriteableBitmap (no JPEG/PNG
+            // encoding overhead and no per-frame allocation when size matches).
+            _reusableWriteable = SkiaToWriteable(previewBitmap, _reusableWriteable);
+            var avaloniaBitmap = _reusableWriteable;
             previewBitmap.Dispose();
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 EditorImage.Source = avaloniaBitmap;
+                EditorImage.InvalidateVisual();
                 _isFirstPreview = false;
             });
         }
@@ -608,6 +649,7 @@ public partial class ImageEditorWindow : Window
         adj.Contrast = (int)ContrastSlider.Value;
         adj.Saturation = (int)SaturationSlider.Value;
         adj.HueRotation = (int)HueSlider.Value;
+        adj.Opacity = (int)OpacitySlider.Value;
 
         // Color adjustments
         adj.Temperature = (int)TemperatureSlider.Value;
@@ -649,6 +691,7 @@ public partial class ImageEditorWindow : Window
         ContrastValue.Text = ((int)ContrastSlider.Value).ToString();
         SaturationValue.Text = ((int)SaturationSlider.Value).ToString();
         HueValue.Text = $"{(int)HueSlider.Value}°";
+        OpacityValue.Text = $"{(int)OpacitySlider.Value}%";
         HighlightsValue.Text = ((int)HighlightsSlider.Value).ToString();
         ShadowsValue.Text = ((int)ShadowsSlider.Value).ToString();
         SharpnessValue.Text = ((int)SharpnessSlider.Value).ToString();

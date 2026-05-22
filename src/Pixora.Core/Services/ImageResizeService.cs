@@ -88,16 +88,21 @@ public class ImageResizeService
         try
         {
             SKBitmap previewBitmap;
+            bool ownsPreviewBitmap;
 
             if (original.Width > maxPreviewWidth)
             {
                 var scale = (float)maxPreviewWidth / original.Width;
                 var newHeight = (int)(original.Height * scale);
                 previewBitmap = original.Resize(new SKImageInfo(maxPreviewWidth, newHeight), SKFilterQuality.High);
+                ownsPreviewBitmap = true;
             }
             else
             {
-                previewBitmap = original.Copy();
+                // Source is already at or below preview size - reuse it directly.
+                // ProcessBitmapAsync makes its own working copy internally.
+                previewBitmap = original;
+                ownsPreviewBitmap = false;
             }
 
             // Scale down the crop region for preview if needed
@@ -124,7 +129,7 @@ public class ImageResizeService
             }
 
             var result = await ProcessBitmapAsync(previewBitmap, previewPreset, ct);
-            previewBitmap.Dispose(); // Dispose the temporary preview bitmap
+            if (ownsPreviewBitmap) previewBitmap.Dispose();
             return result;
         }
         catch (Exception ex)
@@ -255,67 +260,157 @@ public class ImageResizeService
     }
 
     /// <summary>
-    /// Applies all image adjustments.
+    /// Applies all image adjustments. Color-matrix filters (brightness, contrast,
+    /// saturation, hue rotation, temperature/tint, highlights/shadows) are composed
+    /// into a SINGLE SKColorFilter and applied in one bitmap pass for performance.
+    /// Spatial filters (sharpness, blur, vignette, overlay) run sequentially.
     /// </summary>
     private SKBitmap ApplyAdjustments(SKBitmap source, ImageAdjustments adj)
     {
-        var result = source.Copy();
+        // Stage 1: Compose all color-matrix filters into one paint pass.
+        SKColorFilter? composed = null;
 
-        // Apply brightness and contrast
         if (adj.Brightness != 0 || adj.Contrast != 0)
-        {
-            result = ApplyBrightnessContrast(result, adj.Brightness, adj.Contrast);
-        }
-
-        // Apply saturation
+            composed = ComposeFilters(composed, BuildBrightnessContrastFilter(adj.Brightness, adj.Contrast));
         if (adj.Saturation != 100)
-        {
-            result = ApplySaturation(result, adj.Saturation);
-        }
-
-        // Apply hue rotation
+            composed = ComposeFilters(composed, BuildSaturationFilter(adj.Saturation));
         if (adj.HueRotation != 0)
-        {
-            result = ApplyHueRotation(result, adj.HueRotation);
-        }
-
-        // Apply temperature and tint
+            composed = ComposeFilters(composed, BuildHueFilter(adj.HueRotation));
         if (adj.Temperature != 0 || adj.Tint != 0)
-        {
-            result = ApplyTemperatureTint(result, adj.Temperature, adj.Tint);
-        }
-
-        // Apply highlights and shadows
+            composed = ComposeFilters(composed, BuildTemperatureTintFilter(adj.Temperature, adj.Tint));
         if (adj.Highlights != 0 || adj.Shadows != 0)
+            composed = ComposeFilters(composed, BuildHighlightsShadowsFilter(adj.Highlights, adj.Shadows));
+
+        SKBitmap result;
+        if (composed != null)
         {
-            result = ApplyHighlightsShadows(result, adj.Highlights, adj.Shadows);
+            result = new SKBitmap(source.Info);
+            using (var canvas = new SKCanvas(result))
+            using (var paint = new SKPaint { ColorFilter = composed })
+            {
+                canvas.DrawBitmap(source, 0, 0, paint);
+            }
+            composed.Dispose();
+        }
+        else
+        {
+            result = source.Copy();
         }
 
-        // Apply sharpness
+        // Stage 2: Sequential spatial filters.
         if (adj.Sharpness > 0)
         {
-            result = ApplySharpness(result, adj.Sharpness);
+            var next = ApplySharpness(result, adj.Sharpness);
+            result.Dispose();
+            result = next;
         }
-
-        // Apply blur
         if (adj.BlurRadius > 0)
         {
-            result = ApplyBlur(result, adj.BlurRadius);
+            var next = ApplyBlur(result, adj.BlurRadius);
+            result.Dispose();
+            result = next;
         }
-
-        // Apply vignette
         if (adj.VignetteIntensity > 0)
         {
-            result = ApplyVignette(result, adj.VignetteIntensity, adj.VignetteRadius);
+            var next = ApplyVignette(result, adj.VignetteIntensity, adj.VignetteRadius);
+            result.Dispose();
+            result = next;
         }
-
-        // Apply color overlay
-        if (!string.IsNullOrEmpty(adj.ColorOverlayHex) && adj.ColorOverlayOpacity > 0)
+        if (adj.ColorOverlayOpacity > 0)
         {
-            result = ApplyColorOverlay(result, adj.ColorOverlayHex, adj.ColorOverlayOpacity);
+            var hex = string.IsNullOrEmpty(adj.ColorOverlayHex) ? "#000000" : adj.ColorOverlayHex;
+            var next = ApplyColorOverlay(result, hex, adj.ColorOverlayOpacity);
+            result.Dispose();
+            result = next;
+        }
+        if (adj.Opacity < 100)
+        {
+            var next = ApplyOpacity(result, adj.Opacity);
+            result.Dispose();
+            result = next;
         }
 
         return result;
+    }
+
+    private static SKColorFilter ComposeFilters(SKColorFilter? outer, SKColorFilter inner)
+    {
+        if (outer == null) return inner;
+        var composed = SKColorFilter.CreateCompose(outer, inner);
+        outer.Dispose();
+        inner.Dispose();
+        return composed;
+    }
+
+    private static SKColorFilter BuildBrightnessContrastFilter(int brightness, int contrast)
+    {
+        var brightnessOffset = brightness / 100f * 0.4f;
+        var contrastMultiplier = 1f + (contrast / 100f * 0.5f);
+        var contrastOffset = 0.5f * (1f - contrastMultiplier);
+        var totalOffset = brightnessOffset + contrastOffset;
+        return SKColorFilter.CreateColorMatrix(new float[]
+        {
+            contrastMultiplier, 0, 0, 0, totalOffset,
+            0, contrastMultiplier, 0, 0, totalOffset,
+            0, 0, contrastMultiplier, 0, totalOffset,
+            0, 0, 0, 1, 0
+        });
+    }
+
+    private static SKColorFilter BuildSaturationFilter(int saturation)
+    {
+        var s = saturation / 100f;
+        var lumR = 0.3086f; var lumG = 0.6094f; var lumB = 0.0820f;
+        var sr = (1 - s) * lumR; var sg = (1 - s) * lumG; var sb = (1 - s) * lumB;
+        return SKColorFilter.CreateColorMatrix(new float[]
+        {
+            sr + s, sg, sb, 0, 0,
+            sr, sg + s, sb, 0, 0,
+            sr, sg, sb + s, 0, 0,
+            0, 0, 0, 1, 0
+        });
+    }
+
+    private static SKColorFilter BuildHueFilter(int hueDegrees)
+    {
+        var angle = hueDegrees * Math.PI / 180;
+        var cos = (float)Math.Cos(angle);
+        var sin = (float)Math.Sin(angle);
+        return SKColorFilter.CreateColorMatrix(new float[]
+        {
+            0.213f + 0.787f * cos - 0.213f * sin, 0.715f - 0.715f * cos - 0.715f * sin, 0.072f - 0.072f * cos + 0.928f * sin, 0, 0,
+            0.213f - 0.213f * cos + 0.143f * sin, 0.715f + 0.285f * cos + 0.140f * sin, 0.072f - 0.072f * cos - 0.283f * sin, 0, 0,
+            0.213f - 0.213f * cos - 0.787f * sin, 0.715f - 0.715f * cos + 0.715f * sin, 0.072f + 0.928f * cos + 0.072f * sin, 0, 0,
+            0, 0, 0, 1, 0
+        });
+    }
+
+    private static SKColorFilter BuildTemperatureTintFilter(int temperature, int tint)
+    {
+        var tempR = temperature > 0 ? temperature / 100f * 0.1f : 0;
+        var tempB = temperature < 0 ? -temperature / 100f * 0.1f : 0;
+        var tintG = tint < 0 ? -tint / 100f * 0.05f : 0;
+        var tintM = tint > 0 ? tint / 100f * 0.05f : 0;
+        return SKColorFilter.CreateColorMatrix(new float[]
+        {
+            1 + tempR, 0, 0, 0, 0,
+            0, 1 + tintG - tintM, 0, 0, 0,
+            0, 0, 1 + tempB, 0, 0,
+            0, 0, 0, 1, 0
+        });
+    }
+
+    private static SKColorFilter BuildHighlightsShadowsFilter(int highlights, int shadows)
+    {
+        var brightness = (highlights - shadows) * 0.5f;
+        var brightnessOffset = brightness / 100f * 0.3f;
+        return SKColorFilter.CreateColorMatrix(new float[]
+        {
+            1, 0, 0, 0, brightnessOffset,
+            0, 1, 0, 0, brightnessOffset,
+            0, 0, 1, 0, brightnessOffset,
+            0, 0, 0, 1, 0
+        });
     }
 
     private SKBitmap ApplyBrightnessContrast(SKBitmap source, int brightness, int contrast)
@@ -495,14 +590,44 @@ public class ImageResizeService
 
     private SKBitmap ApplyBlur(SKBitmap source, int radius)
     {
-        var result = new SKBitmap(source.Info);
-        using var canvas = new SKCanvas(result);
-        using var paint = new SKPaint();
+        // For radius >= 4 use the standard downscale-blur-upscale trick:
+        // halving the image and halving the radius gives near-identical
+        // visual output but ~4x fewer pixels processed by the blur kernel.
+        if (radius >= 4 && source.Width >= 64 && source.Height >= 64)
+        {
+            var halfInfo = new SKImageInfo(source.Width / 2, source.Height / 2,
+                                            source.ColorType, source.AlphaType);
+            using var half = source.Resize(halfInfo, SKFilterQuality.Medium);
+            if (half != null)
+            {
+                using var blurredHalf = new SKBitmap(halfInfo);
+                using (var hc = new SKCanvas(blurredHalf))
+                using (var hp = new SKPaint { ImageFilter = SKImageFilter.CreateBlur(radius / 2f, radius / 2f) })
+                {
+                    hc.DrawBitmap(half, 0, 0, hp);
+                }
 
-        paint.ImageFilter = SKImageFilter.CreateBlur(radius, radius);
-        canvas.DrawBitmap(source, 0, 0, paint);
+                var result = new SKBitmap(source.Info);
+                using (var canvas = new SKCanvas(result))
+                using (var paint = new SKPaint { FilterQuality = SKFilterQuality.High })
+                {
+                    canvas.DrawBitmap(blurredHalf,
+                        new SKRect(0, 0, blurredHalf.Width, blurredHalf.Height),
+                        new SKRect(0, 0, source.Width, source.Height),
+                        paint);
+                }
+                return result;
+            }
+        }
 
-        return result;
+        // Small-radius path: blur directly.
+        var direct = new SKBitmap(source.Info);
+        using (var canvas = new SKCanvas(direct))
+        using (var paint = new SKPaint { ImageFilter = SKImageFilter.CreateBlur(radius, radius) })
+        {
+            canvas.DrawBitmap(source, 0, 0, paint);
+        }
+        return direct;
     }
 
     private SKBitmap ApplyVignette(SKBitmap source, int intensity, int radius)
@@ -536,6 +661,19 @@ public class ImageResizeService
         vignettePaint.Shader = shader;
         canvas.DrawRect(0, 0, source.Width, source.Height, vignettePaint);
 
+        return result;
+    }
+
+    private static SKBitmap ApplyOpacity(SKBitmap source, int opacity)
+    {
+        // Output must be RGBA with premultiplied alpha so transparency is preserved on export.
+        var info = new SKImageInfo(source.Width, source.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var result = new SKBitmap(info);
+        using var canvas = new SKCanvas(result);
+        canvas.Clear(SKColors.Transparent);
+        var alpha = (byte)Math.Clamp((int)Math.Round(opacity * 2.55), 0, 255);
+        using var paint = new SKPaint { Color = SKColors.White.WithAlpha(alpha) };
+        canvas.DrawBitmap(source, 0, 0, paint);
         return result;
     }
 

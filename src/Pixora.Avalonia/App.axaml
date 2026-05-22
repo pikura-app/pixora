@@ -22,6 +22,9 @@
                 </generation:ThemeDefinition>
             </actipro:ModernTheme.Definition>
         </actipro:ModernTheme>
+
+        <!-- Avalonia ColorPicker requires its own theme styles; Actipro doesn't ship them. -->
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
         
         <!-- Accessibility Styles -->
         <Style Selector="TextBlock">

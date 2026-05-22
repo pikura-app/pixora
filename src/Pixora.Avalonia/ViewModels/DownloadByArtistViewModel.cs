@@ -34,6 +34,7 @@ public partial class DownloadByArtistViewModel : ViewModelBase
     private readonly FilePickerService _filePicker;
     private readonly DownloadPresetRepository _presetRepository;
     private readonly ArtistSettingsRepository _artistSettingsRepository;
+    private readonly GalleryViewModel _galleryVm;
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string _statusMessage = "Ready";
@@ -291,7 +292,8 @@ public partial class DownloadByArtistViewModel : ViewModelBase
         DialogService dialogService,
         FilePickerService filePicker,
         DownloadPresetRepository presetRepository,
-        ArtistSettingsRepository artistSettingsRepository)
+        ArtistSettingsRepository artistSettingsRepository,
+        GalleryViewModel galleryVm)
     {
         _client = client;
         _downloadService = downloadService;
@@ -301,6 +303,7 @@ public partial class DownloadByArtistViewModel : ViewModelBase
         _filePicker = filePicker;
         _presetRepository = presetRepository;
         _artistSettingsRepository = artistSettingsRepository;
+        _galleryVm = galleryVm;
 
         // Initialize custom settings from global
         CustomSettings = SettingsOverride.FromGlobalSettings(settingsService.Current);
@@ -336,67 +339,42 @@ public partial class DownloadByArtistViewModel : ViewModelBase
 
         try
         {
-            var self = await _client.ResolveSelfAsync();
-            if (self == null)
-            {
-                await _dialogService.ShowMessageAsync("Error", "Not logged in. Please sign in first.");
-                return;
-            }
-
             var existingIds = SelectedArtists.Select(a => a.UserId).ToHashSet();
-            var allArtists = new List<SelectableArtist>();
-            var seen = new HashSet<string>();
-            const int limit = 48;
-            var totalCount = 0;
 
-            // Phase 1: Load first batch quickly to show dialog immediately
-            var firstBatchTasks = new List<Task<FollowingResponseBody>>();
-            firstBatchTasks.Add(_client.GetFollowedArtistsAsync(self.Value.UserId, 0, limit, false)); // Public
-            firstBatchTasks.Add(_client.GetFollowedArtistsAsync(self.Value.UserId, 0, limit, true));  // Private
-
-            var firstResults = await Task.WhenAll(firstBatchTasks);
-            foreach (var page in firstResults)
+            // Reuse the Gallery's already-loaded followed artists list. This is
+            // the same authoritative, deduplicated collection used by the
+            // Gallery view, so the count here matches Gallery's count.
+            if (_galleryVm.Artists.Count == 0)
             {
-                if (page?.Users == null) continue;
-                totalCount += page.Total;
-                foreach (var u in page.Users)
-                {
-                    if (!seen.Add(u.UserId)) continue;
-                    allArtists.Add(CreateSelectableArtist(u, existingIds));
-                }
+                StatusMessage = "Loading followed artists from Pixiv...";
+                await _galleryVm.LoadFollowedArtistsCommand.ExecuteAsync(null);
             }
 
-            if (allArtists.Count == 0)
+            if (_galleryVm.Artists.Count == 0)
             {
                 await _dialogService.ShowMessageAsync("Info", "No followed artists found.");
                 return;
             }
 
-            // Show dialog immediately with first batch
-            var dialog = new Views.Dialogs.SelectFollowedArtistsDialog(allArtists, $"Loading {totalCount} artists... ({allArtists.Count} ready)");
+            var allArtists = _galleryVm.Artists
+                .Select(a => new SelectableArtist
+                {
+                    User = new BookmarkedUser
+                    {
+                        UserId = a.UserId,
+                        UserName = a.Name,
+                        ProfileImageUrl = a.ProfileImageUrl
+                    },
+                    IsSelected = false,
+                    IsAlreadyAdded = existingIds.Contains(a.UserId)
+                })
+                .ToList();
+
+            var dialog = new Views.Dialogs.SelectFollowedArtistsDialog(
+                allArtists,
+                $"{allArtists.Count} followed artists");
             var ownerWindow = _dialogService.OwnerWindow;
             if (ownerWindow == null) return;
-
-            // Phase 2: Load remaining artists in background while dialog is open
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var remainingArtists = await LoadRemainingArtistsAsync(self.Value.UserId, seen, existingIds, limit);
-                    if (remainingArtists.Count > 0)
-                    {
-                        // Add to dialog on UI thread
-                        await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            dialog.AddArtists(remainingArtists);
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Background loading error: {ex.Message}");
-                }
-            });
 
             var result = await dialog.ShowDialog<bool>(ownerWindow);
             if (!result) return;

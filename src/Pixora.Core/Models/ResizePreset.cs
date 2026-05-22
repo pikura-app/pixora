@@ -236,6 +236,7 @@ public class ImageAdjustments
     public int VignetteRadius { get; set; } = 50;      // 0 to 100
     public string? ColorOverlayHex { get; set; }        // Hex color for overlay
     public int ColorOverlayOpacity { get; set; } = 0;  // 0 to 100
+    public int Opacity { get; set; } = 100;             // 0 (transparent) to 100 (fully opaque)
 
     /// <summary>
     /// Resets all adjustments to default values.
@@ -256,6 +257,7 @@ public class ImageAdjustments
         VignetteRadius = 50;
         ColorOverlayHex = null;
         ColorOverlayOpacity = 0;
+        Opacity = 100;
     }
 
     /// <summary>
@@ -277,7 +279,8 @@ public class ImageAdjustments
                 BlurRadius != 0 ||
                 VignetteIntensity != 0 ||
                 !string.IsNullOrEmpty(ColorOverlayHex) ||
-                ColorOverlayOpacity != 0;
+                ColorOverlayOpacity != 0 ||
+                Opacity != 100;
         }
     }
 }

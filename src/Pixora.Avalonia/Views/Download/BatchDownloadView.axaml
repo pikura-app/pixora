@@ -683,18 +683,22 @@
                                     <StackPanel Grid.Column="0" Spacing="4">
                                         <TextBlock Text="Mode" FontSize="12" 
                                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                        <ComboBox SelectedItem="{Binding SearchViewModel.SearchMode, Mode=TwoWay}" CornerRadius="6" FontSize="12">
-                                            <ComboBoxItem Content="Safe">safe</ComboBoxItem>
-                                            <ComboBoxItem Content="R-18">r18</ComboBoxItem>
-                                            <ComboBoxItem Content="All">all</ComboBoxItem>
+                                        <ComboBox SelectedValue="{Binding SearchViewModel.SearchMode, Mode=TwoWay}"
+                                                  SelectedValueBinding="{ReflectionBinding Tag}"
+                                                  CornerRadius="6" FontSize="12">
+                                            <ComboBoxItem Content="Safe" Tag="safe"/>
+                                            <ComboBoxItem Content="R-18" Tag="r18"/>
+                                            <ComboBoxItem Content="All" Tag="all"/>
                                         </ComboBox>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
                                         <TextBlock Text="Sort Order" FontSize="12" 
                                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                        <ComboBox SelectedItem="{Binding SearchViewModel.SortOrder, Mode=TwoWay}" CornerRadius="6" FontSize="12">
-                                            <ComboBoxItem Content="Newest First">date_d</ComboBoxItem>
-                                            <ComboBoxItem Content="Popular First">popular_d</ComboBoxItem>
+                                        <ComboBox SelectedValue="{Binding SearchViewModel.SortOrder, Mode=TwoWay}"
+                                                  SelectedValueBinding="{ReflectionBinding Tag}"
+                                                  CornerRadius="6" FontSize="12">
+                                            <ComboBoxItem Content="Newest First" Tag="date_d"/>
+                                            <ComboBoxItem Content="Popular First" Tag="popular_d"/>
                                         </ComboBox>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Spacing="4" Margin="8,0,0,0">

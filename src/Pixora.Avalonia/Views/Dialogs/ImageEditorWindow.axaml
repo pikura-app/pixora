@@ -171,7 +171,7 @@
                     Padding="12">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock x:Name="ImageInfoText" Text="800 x 600 • 1.2 MB"/>
-                    <TextBlock Grid.Column="1" Text="Preview: 800px wide (debounced 150ms)" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Grid.Column="1" Text="Preview: 600px wide (live ~60 fps)" FontSize="11" Opacity="0.6"/>
                 </Grid>
             </Border>
         </Grid>
@@ -242,6 +242,15 @@
                                 <TextBlock x:Name="HueValue" Grid.Column="1" Text="0°" FontSize="12"/>
                             </Grid>
                             <Slider x:Name="HueSlider" Minimum="-180" Maximum="180" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Opacity -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Opacity" FontSize="12"/>
+                                <TextBlock x:Name="OpacityValue" Grid.Column="1" Text="100%" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Value="100" ValueChanged="OnAdjustmentChanged"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -333,14 +342,39 @@
 
                         <!-- Color Overlay -->
                         <StackPanel Spacing="4">
-                            <TextBlock Text="Color Overlay" FontSize="12"/>
-                            <ColorPicker x:Name="OverlayColorPicker"
-                                         Color="#000000"
-                                         ColorChanged="OnOverlayColorPickerChanged"
-                                         HorizontalAlignment="Stretch"
-                                         IsAlphaEnabled="False"
-                                         IsAlphaVisible="False"
-                                         IsColorPaletteVisible="True"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Color Overlay" FontSize="12"/>
+                                <TextBlock x:Name="OverlayColorHexLabel" Grid.Column="1"
+                                           Text="#000000" FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                            </Grid>
+                            <Button x:Name="OverlayColorButton"
+                                    HorizontalAlignment="Stretch"
+                                    Height="24"
+                                    Padding="0"
+                                    CornerRadius="4"
+                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                    BorderThickness="1"
+                                    ToolTip.Tip="Click to choose overlay color">
+                                <Button.Background>
+                                    <SolidColorBrush Color="#000000"/>
+                                </Button.Background>
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <ThemeVariantScope RequestedThemeVariant="Dark">
+                                            <ColorView x:Name="OverlayColorView"
+                                                       Color="#000000"
+                                                       ColorChanged="OnOverlayColorPickerChanged"
+                                                       IsAlphaEnabled="False"
+                                                       IsAlphaVisible="False"
+                                                       IsColorPaletteVisible="True"
+                                                       IsColorSpectrumVisible="True"
+                                                       IsColorPreviewVisible="True"
+                                                       IsColorComponentsVisible="True"/>
+                                        </ThemeVariantScope>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Text="Opacity" FontSize="11"/>
                                 <TextBlock x:Name="OverlayOpacityValue" Grid.Column="1" Text="0" FontSize="11"/>

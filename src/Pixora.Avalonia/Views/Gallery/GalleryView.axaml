@@ -36,15 +36,11 @@
                                AutomationProperties.Name="Gallery Header"
                                AutomationProperties.HelpText="List of artists you follow on Pixiv"/>
                     <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
-                            CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
-                        <Panel>
-                            <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" IsVisible="{Binding ArtistsLoaded}">
-                                <TextBlock.Text><Binding Path="ArtistsTotal"/></TextBlock.Text>
-                            </TextBlock>
-                            <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" IsVisible="{Binding !ArtistsLoaded}">
-                                <TextBlock.Text><Binding Path="Artists.Count"/></TextBlock.Text>
-                            </TextBlock>
-                        </Panel>
+                            CornerRadius="10" Padding="8,2" VerticalAlignment="Center"
+                            ToolTip.Tip="Number of followed artists loaded">
+                        <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                            <TextBlock.Text><Binding Path="Artists.Count"/></TextBlock.Text>
+                        </TextBlock>
                     </Border>
                     <ProgressBar IsIndeterminate="True" Width="60" Height="3"
                                  IsVisible="{Binding IsLoadingArtists}" VerticalAlignment="Center"/>
