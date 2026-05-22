@@ -468,6 +468,24 @@ public partial class MainWindow : Window
             : WindowState.FullScreen;
     }
 
+    private void InstallAndRestartBtn_Click(object? sender, RoutedEventArgs e)
+    {
+        var vm = DataContext as ViewModels.MainWindowViewModel;
+        if (vm is null) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await vm.InstallAndRestartAsync();
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    vm.UpdateStatusText = $"Install failed: {ex.Message}");
+            }
+        });
+    }
+
     private void CloseBtn_Click(object? sender, RoutedEventArgs e)
         => Close();
 

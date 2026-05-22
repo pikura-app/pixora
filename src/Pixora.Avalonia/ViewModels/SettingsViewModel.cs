@@ -637,9 +637,11 @@ public partial class SettingsViewModel : ViewModelBase
 
             await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                UpdateStatusMessage = mainVm.UpdateAvailable
-                    ? $"Update available: v{mainVm.UpdateVersion} — see the banner above."
-                    : "You're up to date — no newer release found.";
+                UpdateStatusMessage = mainVm.UpdateReadyToInstall
+                    ? $"v{mainVm.UpdateVersion} downloaded — click \"Install & Restart\" in the banner above."
+                    : mainVm.UpdateAvailable
+                        ? $"Update available: v{mainVm.UpdateVersion} — see the banner above."
+                        : "You're up to date — no newer release found.";
             });
         }
         catch (Exception ex)

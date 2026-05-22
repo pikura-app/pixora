@@ -295,7 +295,7 @@ public sealed class UpdateCheckService
             : rawPath;
 
         if (OperatingSystem.IsWindows())
-            await LaunchWindowsUpdaterAsync(downloadedPath, exePath);
+            await LaunchWindowsUpdaterAsync(downloadedPath, exePath, _logger);
         else
         {
             LaunchUnixUpdater(downloadedPath, exePath);
@@ -304,7 +304,7 @@ public sealed class UpdateCheckService
         }
     }
 
-    private static async Task LaunchWindowsUpdaterAsync(string src, string dest)
+    private static async Task LaunchWindowsUpdaterAsync(string src, string dest, ILogger logger)
     {
         var srcName = Path.GetFileName(src).ToLowerInvariant();
 
@@ -312,19 +312,26 @@ public sealed class UpdateCheckService
         // /VERYSILENT = no UI at all, /CLOSEAPPLICATIONS = close running instances,
         // /RESTARTAPPLICATIONS = relaunch after install,
         // /DIR = install over the current exe's directory so the right copy is replaced.
-        if (srcName.Contains("setup") || srcName.Contains("install"))
+        if (srcName.Contains("setup") || srcName.Contains("install") || srcName.Contains("update"))
         {
             var installDir = Path.GetDirectoryName(dest) ?? AppContext.BaseDirectory;
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            logger.LogInformation("Launching installer: {Src} /DIR={InstallDir}", src, installDir);
+            var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName        = src,
                 Arguments       = $"/VERYSILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /DIR=\"{installDir}\"",
                 UseShellExecute = true,
-            });
+                Verb            = "runas",
+            };
+            System.Diagnostics.Process? proc = null;
+            try { proc = System.Diagnostics.Process.Start(psi); }
+            catch (Exception ex) { logger.LogError(ex, "Process.Start failed for installer"); throw; }
+            logger.LogInformation("Installer process started: PID={Pid}", proc?.Id);
             // Wait long enough for Inno's CloseApplications to enumerate and close our
             // process before we exit. Inno marks processes it closes for RestartApplications;
             // if we self-kill first it never records us and won't relaunch after install.
             await System.Threading.Tasks.Task.Delay(3000);
+            logger.LogInformation("Exiting for installer takeover");
             Environment.Exit(0);
             return;
         }

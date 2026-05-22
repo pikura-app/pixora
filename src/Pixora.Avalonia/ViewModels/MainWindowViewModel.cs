@@ -7,6 +7,7 @@ using Pixora.Core.Settings;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Pixora.Avalonia.ViewModels;
@@ -58,6 +59,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _settingsService.Changed += (_, _) => RefreshUserChip();
         _ = Task.Run(CheckForUpdateAsync);
         _ = Task.Run(CheckChangelogAsync);
+        _ = Task.Run(RestoreDownloadedUpdateAsync);
 
         // Re-check periodically so long-running sessions notice new releases without
         // the user opening Settings → Check Now. UpdateCheckService.ShouldCheck()
@@ -117,6 +119,48 @@ public partial class MainWindowViewModel : ViewModelBase
     // spamming a notification every 6 hours for the same release.
     private string? _lastNotifiedVersion;
 
+    /// <summary>
+    /// Scans the temp folder for a previously-downloaded update file and restores the
+    /// "ready to install" state without requiring CheckAsync to succeed. This ensures
+    /// the Install & Restart button works even when the update-check is throttled.
+    /// </summary>
+    private async Task RestoreDownloadedUpdateAsync()
+    {
+        try
+        {
+            var tempDir = System.IO.Path.GetTempPath();
+            // Match any Pixora-update-X.Y.Z.exe in temp
+            var file = System.IO.Directory
+                .EnumerateFiles(tempDir, "Pixora-update-*.exe")
+                .OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f))
+                .FirstOrDefault();
+            if (file is null) return;
+
+            // Extract version from filename: Pixora-update-1.6.4.exe → 1.6.4
+            var name = System.IO.Path.GetFileNameWithoutExtension(file);
+            var ver  = name.Replace("Pixora-update-", "").Trim();
+            if (string.IsNullOrEmpty(ver)) return;
+
+            // Only restore if this version is newer than current
+            if (UpdateCheckService.CompareSemVer(ver, UpdateCheckService.CurrentVersion) <= 0) return;
+
+            _downloadedPath = file;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // Only set if nothing else has already shown a banner
+                if (UpdateAvailable || UpdateDownloading || UpdateReadyToInstall) return;
+                UpdateVersion        = ver;
+                UpdateReadyToInstall = true;
+                UpdateStatusText     = $"v{ver} ready to install";
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "RestoreDownloadedUpdate failed (non-fatal)");
+        }
+    }
+
     public async Task CheckForUpdateAsync()
     {
         var info = await _updateCheck.CheckAsync().ConfigureAwait(false);
@@ -139,7 +183,18 @@ public partial class MainWindowViewModel : ViewModelBase
             if (settings.Current.NotifyOnUpdate)
                 UpdateAvailable = true;
 
-            if (settings.Current.AutoDownloadUpdates && !string.IsNullOrEmpty(info.DownloadUrl))
+                // Restore previously downloaded file if it still exists in temp
+            var expectedPath = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"Pixora-update-{info.Version}{System.IO.Path.GetExtension(info.DownloadUrl?.Split('?')[0] ?? ".exe")}");
+            if (System.IO.File.Exists(expectedPath))
+            {
+                _downloadedPath      = expectedPath;
+                UpdateReadyToInstall = true;
+                UpdateAvailable      = false;
+                UpdateStatusText     = $"v{info.Version} ready to install";
+            }
+            else if (settings.Current.AutoDownloadUpdates && !string.IsNullOrEmpty(info.DownloadUrl))
                 _ = Task.Run(StartDownloadAsync);
         });
 
@@ -238,10 +293,49 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task InstallAndRestartUpdate()
+    private async Task InstallAndRestartUpdate() => await InstallAndRestartAsync();
+
+    public async Task InstallAndRestartAsync()
     {
-        if (_downloadedPath is null) return;
-        await _updateCheck.InstallAndRestartAsync(_downloadedPath);
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => UpdateStatusText = "Starting installer...");
+
+            // Try to recover _downloadedPath from temp using the version shown in the banner.
+            // UpdateVersion may or may not have a leading 'v' — strip it for the filename match.
+            if ((_downloadedPath is null || !System.IO.File.Exists(_downloadedPath))
+                && !string.IsNullOrEmpty(UpdateVersion))
+            {
+                var ver     = UpdateVersion.TrimStart('v');
+                var tempDir = System.IO.Path.GetTempPath();
+                var recovered = System.IO.Directory
+                    .EnumerateFiles(tempDir, $"Pixora-update-{ver}*")
+                    .FirstOrDefault();
+                if (recovered != null)
+                    _downloadedPath = recovered;
+            }
+
+            // If still missing, re-download
+            if (_downloadedPath is null || !System.IO.File.Exists(_downloadedPath))
+            {
+                if (_pendingUpdate is null)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        UpdateStatusText = "Cannot install: update info lost. Please restart the app and try again.");
+                    return;
+                }
+                await StartDownloadAsync();
+                if (_downloadedPath is null) return;
+            }
+
+            await _updateCheck.InstallAndRestartAsync(_downloadedPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "InstallAndRestartUpdate failed");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                UpdateStatusText = $"Install failed: {ex.Message}");
+        }
     }
 
     private void RefreshUserChip()
