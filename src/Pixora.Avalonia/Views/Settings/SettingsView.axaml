@@ -954,42 +954,6 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Notifications -->
-                    <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
-                            BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
-                            BorderThickness="1" CornerRadius="8" Padding="20" Margin="4,10,4,4">
-                        <StackPanel Spacing="14">
-                            <TextBlock Text="Download Notifications" FontWeight="SemiBold" FontSize="14"/>
-                            <TextBlock FontSize="11" TextWrapping="Wrap"
-                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
-                                       Text="Show a Windows toast notification for individual, batch, and scheduled downloads. The artist thumbnail appears in the notification."/>
-
-                            <CheckBox IsChecked="{Binding NotifyOnDownloadStarted, Mode=TwoWay}" FontSize="12">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="Download started" FontSize="12"/>
-                                    <TextBlock Text="Notify when a download job begins." FontSize="11"
-                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
-                                </StackPanel>
-                            </CheckBox>
-
-                            <CheckBox IsChecked="{Binding NotifyOnDownloadComplete, Mode=TwoWay}" FontSize="12">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="Download completed" FontSize="12"/>
-                                    <TextBlock Text="Notify when a download job finishes successfully." FontSize="11"
-                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
-                                </StackPanel>
-                            </CheckBox>
-
-                            <CheckBox IsChecked="{Binding NotifyOnDownloadFailed, Mode=TwoWay}" FontSize="12">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="Download failed" FontSize="12"/>
-                                    <TextBlock Text="Notify when a download job fails or completes with errors." FontSize="11"
-                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
-                                </StackPanel>
-                            </CheckBox>
-                        </StackPanel>
-                    </Border>
-
                     <!-- Diagnostics & Logging -->
                     <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                             BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
@@ -1284,6 +1248,42 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
+
+                        <!-- Download Notifications -->
+                        <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="20">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="Download Notifications" FontWeight="SemiBold" FontSize="13"/>
+                                <TextBlock FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                           Text="Show a Windows toast notification for downloads. The artist thumbnail appears in the notification body."/>
+
+                                <CheckBox IsChecked="{Binding NotifyOnDownloadStarted, Mode=TwoWay}" FontSize="12">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="Download started" FontSize="12"/>
+                                        <TextBlock Text="Notify when a job begins." FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                    </StackPanel>
+                                </CheckBox>
+
+                                <CheckBox IsChecked="{Binding NotifyOnDownloadComplete, Mode=TwoWay}" FontSize="12">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="Download completed" FontSize="12"/>
+                                        <TextBlock Text="Notify when a job finishes successfully." FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                    </StackPanel>
+                                </CheckBox>
+
+                                <CheckBox IsChecked="{Binding NotifyOnDownloadFailed, Mode=TwoWay}" FontSize="12">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="Download failed" FontSize="12"/>
+                                        <TextBlock Text="Notify when a job fails or completes with errors." FontSize="11"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Settings.json -->
                         <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
