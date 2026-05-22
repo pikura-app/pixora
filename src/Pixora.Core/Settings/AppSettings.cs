@@ -390,6 +390,12 @@ public sealed class AppSettings
     /// <summary>When true, show a tray notification when any download job completes (individual, batch, or scheduled).</summary>
     public bool NotifyOnDownloadComplete { get; set; } = false;
 
+    /// <summary>When true, show a tray notification when a download job starts.</summary>
+    public bool NotifyOnDownloadStarted { get; set; } = false;
+
+    /// <summary>When true, show a tray notification when a download job fails.</summary>
+    public bool NotifyOnDownloadFailed { get; set; } = true;
+
     #endregion
 
     #region Discover UI state

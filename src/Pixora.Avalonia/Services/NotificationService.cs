@@ -82,7 +82,7 @@ public class NotificationService
     /// <summary>
     /// Shows a desktop notification.
     /// </summary>
-    public void ShowNotification(string title, string message, NotificationType type = NotificationType.Info)
+    public void ShowNotification(string title, string message, NotificationType type = NotificationType.Info, string? thumbnailUrl = null)
     {
         if (!_isInitialized)
         {
@@ -93,7 +93,7 @@ public class NotificationService
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                ShowWindowsNotification(title, message, type);
+                ShowWindowsNotification(title, message, type, thumbnailUrl);
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
@@ -112,7 +112,7 @@ public class NotificationService
         }
     }
 
-    private void ShowWindowsNotification(string title, string message, NotificationType type)
+    private void ShowWindowsNotification(string title, string message, NotificationType type, string? thumbnailUrl = null)
     {
         try
         {
@@ -129,6 +129,9 @@ public class NotificationService
             var iconUri  = hasIcon ? new Uri(iconPath!).AbsoluteUri : null;
             var iconPathEscaped = iconPath?.Replace("'", "''");
 
+            // Use thumbnail as hero image if provided (shows artist/artwork image in toast body)
+            var thumbUri = !string.IsNullOrEmpty(thumbnailUrl) ? thumbnailUrl : null;
+
             var script = $@"
                 try {{
                     if (Get-Module -ListAvailable -Name BurntToast) {{
@@ -139,20 +142,9 @@ public class NotificationService
                     }} else {{
                         [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
                         [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-                        {(hasIcon
-                            // Build toast XML manually so we can use appLogoOverride
-                            // placement — puts a small icon in the top-left corner instead
-                            // of a large body image.
-                            ? @"$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
-                        $xml.LoadXml('<toast><visual><binding template=""ToastGeneric""><text id=""1""></text><text id=""2""></text><image placement=""appLogoOverride"" hint-crop=""circle"" src=""" + iconUri + @"""/></binding></visual></toast>')
-                        $xml.SelectSingleNode('//text[@id=""1""]').InnerText = '{escaped_title}'
-                        $xml.SelectSingleNode('//text[@id=""2""]').InnerText = '{escaped_message}'"
-                            : @"$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
-                        $xml.LoadXml('<toast><visual><binding template=""ToastGeneric""><text id=""1""></text><text id=""2""></text></binding></visual></toast>')
-                        $xml.SelectSingleNode('//text[@id=""1""]').InnerText = '{escaped_title}'
-                        $xml.SelectSingleNode('//text[@id=""2""]').InnerText = '{escaped_message}'")}
+                        {BuildWinRtToastXmlScript(hasIcon, iconUri, thumbUri, escaped_title, escaped_message)}
                         $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-                        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Pixora').Show($toast)
+                        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('pikura-app.Pixora').Show($toast)
                     }}
                 }} catch {{ }}";
 
@@ -175,6 +167,19 @@ public class NotificationService
         {
             _logger.LogError(ex, "Failed to show Windows notification");
         }
+    }
+
+    private static string BuildWinRtToastXmlScript(bool hasIcon, string? iconUri, string? thumbUri, string escapedTitle, string escapedMessage)
+    {
+        // Build the toast XML binding content
+        var appLogo = hasIcon ? $@"<image placement=""appLogoOverride"" src=""{iconUri}""/>" : string.Empty;
+        var hero    = !string.IsNullOrEmpty(thumbUri) ? $@"<image placement=""hero"" src=""{thumbUri}""/>" : string.Empty;
+        var xml = $@"<toast><visual><binding template=""ToastGeneric""><text id=""1""></text><text id=""2""></text>{appLogo}{hero}</binding></visual></toast>";
+
+        return $@"$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+                        $xml.LoadXml('{xml}')
+                        $xml.SelectSingleNode('//text[@id=""1""]').InnerText = '{escapedTitle}'
+                        $xml.SelectSingleNode('//text[@id=""2""]').InnerText = '{escapedMessage}'";
     }
 
     private void ShowMacOSNotification(string title, string message, NotificationType type)
@@ -265,18 +270,42 @@ public class NotificationService
     }
 
     /// <summary>
+    /// Shows a notification when a download job starts.
+    /// </summary>
+    public void ShowJobStartedNotification(string jobName, int targetCount, string? thumbnailUrl = null)
+    {
+        var title   = "⬇️ Download started";
+        var message = $"{jobName} — {targetCount} item{(targetCount == 1 ? "" : "s")}";
+        _lastNotification = new NotificationClickedEventArgs(title, message, null, null, NotificationType.Info);
+        ShowNotification(title, message, NotificationType.Info, thumbnailUrl);
+    }
+
+    /// <summary>
+    /// Shows a notification when a download job fails.
+    /// </summary>
+    public void ShowJobFailedNotification(string jobName, string? errorMessage, string? thumbnailUrl = null)
+    {
+        var title   = "❌ Download failed";
+        var message = string.IsNullOrEmpty(errorMessage) ? jobName : $"{jobName}\n{errorMessage}";
+        _lastNotification = new NotificationClickedEventArgs(title, message, null, null, NotificationType.Error);
+        ShowNotification(title, message, NotificationType.Error, thumbnailUrl);
+    }
+
+    /// <summary>
     /// Shows a notification when a download job completes.
     /// </summary>
-    public void ShowJobCompletedNotification(string jobName, int succeeded, int failed, string? firstArtworkId = null)
+    public void ShowJobCompletedNotification(string jobName, int succeeded, int failed, string? firstArtworkId = null, string? thumbnailUrl = null)
     {
-        var title = failed > 0 ? "❌ Download Job Completed with Errors" : "✅ Download Job Completed";
-        var message = $"{jobName}\n{succeeded} succeeded, {failed} failed";
+        var title = failed > 0 ? "⚠️ Download completed with errors" : "✅ Download complete";
+        var message = failed > 0
+            ? $"{jobName}\n{succeeded} succeeded · {failed} failed"
+            : $"{jobName}\n{succeeded} file{(succeeded == 1 ? "" : "s")} downloaded";
         var type = failed > 0 ? NotificationType.Warning : NotificationType.Success;
         var url = firstArtworkId != null ? $"https://www.pixiv.net/en/artworks/{firstArtworkId}" : null;
 
         _lastNotification = new NotificationClickedEventArgs(title, message, firstArtworkId, url, type);
 
-        ShowNotification(title, message, type);
+        ShowNotification(title, message, type, thumbnailUrl);
     }
 
     private NotificationClickedEventArgs? _lastNotification;

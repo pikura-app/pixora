@@ -958,13 +958,35 @@
                     <Border Background="{actipro:ThemeResource Container1BackgroundBrush}"
                             BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="20" Margin="4,10,4,4">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Notifications" FontWeight="SemiBold" FontSize="14"/>
-                            <CheckBox Content="Notify me when any download finishes (individual, batch, or scheduled)"
-                                      IsChecked="{Binding NotifyOnDownloadComplete, Mode=TwoWay}" FontSize="12"/>
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="Download Notifications" FontWeight="SemiBold" FontSize="14"/>
                             <TextBlock FontSize="11" TextWrapping="Wrap"
                                        Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
-                                       Text="Shows a system tray notification when a download job completes, regardless of type."/>
+                                       Text="Show a Windows toast notification for individual, batch, and scheduled downloads. The artist thumbnail appears in the notification."/>
+
+                            <CheckBox IsChecked="{Binding NotifyOnDownloadStarted, Mode=TwoWay}" FontSize="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Download started" FontSize="12"/>
+                                    <TextBlock Text="Notify when a download job begins." FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                </StackPanel>
+                            </CheckBox>
+
+                            <CheckBox IsChecked="{Binding NotifyOnDownloadComplete, Mode=TwoWay}" FontSize="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Download completed" FontSize="12"/>
+                                    <TextBlock Text="Notify when a download job finishes successfully." FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                </StackPanel>
+                            </CheckBox>
+
+                            <CheckBox IsChecked="{Binding NotifyOnDownloadFailed, Mode=TwoWay}" FontSize="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Download failed" FontSize="12"/>
+                                    <TextBlock Text="Notify when a download job fails or completes with errors." FontSize="11"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"/>
+                                </StackPanel>
+                            </CheckBox>
                         </StackPanel>
                     </Border>
 

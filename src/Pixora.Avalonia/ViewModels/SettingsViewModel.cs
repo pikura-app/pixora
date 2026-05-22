@@ -172,6 +172,8 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _keepSchedulesRunningInBackground;
     [ObservableProperty] private bool _showScheduleNotifications = true;
     [ObservableProperty] private bool _notifyOnDownloadComplete = false;
+    [ObservableProperty] private bool _notifyOnDownloadStarted  = false;
+    [ObservableProperty] private bool _notifyOnDownloadFailed   = true;
 
     /// <summary>0=Disabled, 1=Minimize to tray, 2=Close to tray</summary>
     public int TrayBehavior
@@ -591,6 +593,8 @@ public partial class SettingsViewModel : ViewModelBase
         KeepSchedulesRunningInBackground = s.KeepSchedulesRunningInBackground;
         ShowScheduleNotifications = s.ShowScheduleNotifications;
         NotifyOnDownloadComplete = s.NotifyOnDownloadComplete;
+        NotifyOnDownloadStarted  = s.NotifyOnDownloadStarted;
+        NotifyOnDownloadFailed   = s.NotifyOnDownloadFailed;
         OnPropertyChanged(nameof(TrayBehavior));
 
         SettingsPathHint = $"Settings: {SettingsService.DefaultPath()}";
@@ -1537,6 +1541,12 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnNotifyOnDownloadCompleteChanged(bool value)
         => _settingsService.Update(s => s.NotifyOnDownloadComplete = value);
+
+    partial void OnNotifyOnDownloadStartedChanged(bool value)
+        => _settingsService.Update(s => s.NotifyOnDownloadStarted = value);
+
+    partial void OnNotifyOnDownloadFailedChanged(bool value)
+        => _settingsService.Update(s => s.NotifyOnDownloadFailed = value);
 
     // ── Hoshi AI Model Management ────────────────────────────────────────────
     partial void OnUseCustomHoshiModelsChanged(bool value)

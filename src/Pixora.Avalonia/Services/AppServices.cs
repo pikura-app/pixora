@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Core.Data;
 using Pixora.Core.DependencyInjection;
+using Pixora.Core.Models;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using System;
@@ -309,15 +310,28 @@ public static class AppServices
             // are never tracked in the Active Downloads list.
             _ = Get<HistoryViewModel>();
 
+            // Download started notifications
+            coordinator.JobStarted += (sender, e) =>
+            {
+                var settings = Get<SettingsService>();
+                if (!settings.Current.NotifyOnDownloadStarted) return;
+                var thumb = e.Job.Targets.FirstOrDefault()?.ThumbnailUrl;
+                notificationService.ShowJobStartedNotification(e.Job.Name, e.Job.Targets.Count, thumb);
+            };
+
             // Download completion notifications (gated on user setting)
             coordinator.JobCompleted += (sender, e) =>
             {
                 var settings = Get<SettingsService>();
-                if (!settings.Current.NotifyOnDownloadComplete) return;
                 var succeeded = e.Job.CompletedItems;
-                var failed = e.Job.FailedItems;
+                var failed    = e.Job.FailedItems;
+                var thumb     = e.Job.Targets.FirstOrDefault()?.ThumbnailUrl;
                 var firstArtworkId = e.Job.Targets.FirstOrDefault()?.TargetId;
-                notificationService.ShowJobCompletedNotification(e.Job.Name, succeeded, failed, firstArtworkId);
+
+                if (failed > 0 && e.Job.Status == JobStatus.Failed && settings.Current.NotifyOnDownloadFailed)
+                    notificationService.ShowJobFailedNotification(e.Job.Name, e.Job.ErrorMessage, thumb);
+                else if (settings.Current.NotifyOnDownloadComplete)
+                    notificationService.ShowJobCompletedNotification(e.Job.Name, succeeded, failed, firstArtworkId, thumb);
             };
 
             // New submission notifications
