@@ -297,10 +297,11 @@ public sealed class UpdateCheckService
         if (OperatingSystem.IsWindows())
             await LaunchWindowsUpdaterAsync(downloadedPath, exePath);
         else
+        {
             LaunchUnixUpdater(downloadedPath, exePath);
-
-        // Exit the app — the script/installer takes over from here
-        System.Diagnostics.Process.GetCurrentProcess().Kill();
+            // Exit the app — the script takes over from here
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        }
     }
 
     private static async Task LaunchWindowsUpdaterAsync(string src, string dest)
@@ -320,10 +321,12 @@ public sealed class UpdateCheckService
                 Arguments       = $"/VERYSILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /DIR=\"{installDir}\"",
                 UseShellExecute = true,
             });
-            // Give the installer a moment to attach to our process via CloseApplications,
-            // then exit cleanly so it can replace the exe and restart us.
-            await System.Threading.Tasks.Task.Delay(500);
-            return; // Kill() in caller handles exit
+            // Wait long enough for Inno's CloseApplications to enumerate and close our
+            // process before we exit. Inno marks processes it closes for RestartApplications;
+            // if we self-kill first it never records us and won't relaunch after install.
+            await System.Threading.Tasks.Task.Delay(3000);
+            Environment.Exit(0);
+            return;
         }
 
         // Portable .exe — wait for process to exit then copy over and relaunch.

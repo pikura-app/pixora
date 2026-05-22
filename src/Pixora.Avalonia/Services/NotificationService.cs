@@ -140,14 +140,18 @@ public class NotificationService
                         [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
                         [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
                         {(hasIcon
-                            // ImageAndText02: app-logo image + 2 text lines
-                            ? @"$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastImageAndText02)
-                        $img = $template.SelectSingleNode('//image[@id=""1""]')
-                        $img.SetAttribute('src', '" + iconUri + @"') | Out-Null"
-                            : "$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)")}
-                        $template.SelectSingleNode('//text[@id=""1""]').AppendChild($template.CreateTextNode('{escaped_title}')) | Out-Null
-                        $template.SelectSingleNode('//text[@id=""2""]').AppendChild($template.CreateTextNode('{escaped_message}')) | Out-Null
-                        $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+                            // Build toast XML manually so we can use appLogoOverride
+                            // placement — puts a small icon in the top-left corner instead
+                            // of a large body image.
+                            ? @"$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+                        $xml.LoadXml('<toast><visual><binding template=""ToastGeneric""><text id=""1""></text><text id=""2""></text><image placement=""appLogoOverride"" hint-crop=""circle"" src=""" + iconUri + @"""/></binding></visual></toast>')
+                        $xml.SelectSingleNode('//text[@id=""1""]').InnerText = '{escaped_title}'
+                        $xml.SelectSingleNode('//text[@id=""2""]').InnerText = '{escaped_message}'"
+                            : @"$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+                        $xml.LoadXml('<toast><visual><binding template=""ToastGeneric""><text id=""1""></text><text id=""2""></text></binding></visual></toast>')
+                        $xml.SelectSingleNode('//text[@id=""1""]').InnerText = '{escaped_title}'
+                        $xml.SelectSingleNode('//text[@id=""2""]').InnerText = '{escaped_message}'")}
+                        $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
                         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Pixora').Show($toast)
                     }}
                 }} catch {{ }}";
