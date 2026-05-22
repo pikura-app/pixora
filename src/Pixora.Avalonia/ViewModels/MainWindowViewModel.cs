@@ -238,10 +238,10 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void InstallAndRestartUpdate()
+    private async Task InstallAndRestartUpdate()
     {
         if (_downloadedPath is null) return;
-        _updateCheck.InstallAndRestart(_downloadedPath);
+        await _updateCheck.InstallAndRestartAsync(_downloadedPath);
     }
 
     private void RefreshUserChip()

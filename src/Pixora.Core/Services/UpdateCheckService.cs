@@ -267,7 +267,7 @@ public sealed class UpdateCheckService
     /// Writes a batch/shell script that waits for this process to exit,
     /// replaces the executable, then relaunches it. Then exits the app.
     /// </summary>
-    public void InstallAndRestart(string downloadedPath)
+    public async Task InstallAndRestartAsync(string downloadedPath)
     {
         // When running as an AppImage the process is the extracted squashfs binary,
         // not the .AppImage file itself.  The AppImage runtime always sets $APPIMAGE
@@ -295,32 +295,35 @@ public sealed class UpdateCheckService
             : rawPath;
 
         if (OperatingSystem.IsWindows())
-            LaunchWindowsUpdater(downloadedPath, exePath);
+            await LaunchWindowsUpdaterAsync(downloadedPath, exePath);
         else
             LaunchUnixUpdater(downloadedPath, exePath);
 
-        // Exit the app — the script takes over from here
+        // Exit the app — the script/installer takes over from here
         System.Diagnostics.Process.GetCurrentProcess().Kill();
     }
 
-    private static void LaunchWindowsUpdater(string src, string dest)
+    private static async Task LaunchWindowsUpdaterAsync(string src, string dest)
     {
         var srcName = Path.GetFileName(src).ToLowerInvariant();
 
         // If the downloaded file is an Inno Setup installer, run it silently.
-        // /SILENT skips wizard UI, /CLOSEAPPLICATIONS closes running instances,
-        // /RESTARTAPPLICATIONS relaunches after install.
+        // /VERYSILENT = no UI at all, /CLOSEAPPLICATIONS = close running instances,
+        // /RESTARTAPPLICATIONS = relaunch after install,
+        // /DIR = install over the current exe's directory so the right copy is replaced.
         if (srcName.Contains("setup") || srcName.Contains("install"))
         {
+            var installDir = Path.GetDirectoryName(dest) ?? AppContext.BaseDirectory;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName        = src,
-                Arguments       = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+                Arguments       = $"/VERYSILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /DIR=\"{installDir}\"",
                 UseShellExecute = true,
             });
-            // Let /CLOSEAPPLICATIONS shut us down gracefully — don't Kill() here
-            System.Diagnostics.Process.GetCurrentProcess().Kill();
-            return;
+            // Give the installer a moment to attach to our process via CloseApplications,
+            // then exit cleanly so it can replace the exe and restart us.
+            await System.Threading.Tasks.Task.Delay(500);
+            return; // Kill() in caller handles exit
         }
 
         // Portable .exe — wait for process to exit then copy over and relaunch.

@@ -1,4 +1,4 @@
-## Pixora 1.6.2
+## Pixora 1.6.3
 
 Bug fixes, stability improvements, and Linux sign-in support.
 
@@ -14,6 +14,7 @@ Bug fixes, stability improvements, and Linux sign-in support.
 - **Periodic update checks** — The app now re-checks for updates every 6 hours while running, so long-running sessions will notice new releases without requiring a restart.
 - **Rankings "Download Selected" button** — Fixed the button remaining permanently disabled. The checkbox click handler was calling `e.Handled = true`, preventing the checkbox from toggling `IsSelected`. Selecting artworks now correctly enables the button.
 - **Caption button icon sizes** — Fixed the fullscreen and maximize window buttons rendering smaller than the minimize and close buttons. All four caption buttons now share a uniform font size.
+- **In-app update installer** — Fixed the "Download & Install" update flow not restarting the app after installation. The installer now receives the correct install directory, exits cleanly, and relaunches the updated app automatically.
 
 ### Improvements
 - Linux login falls back to a manual PHPSESSID entry dialog if the GTK WebKit cookie manager is unavailable on the current platform.
