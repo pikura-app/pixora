@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -12,10 +13,42 @@ public class NotificationService
 {
     private readonly ILogger<NotificationService> _logger;
     private bool _isInitialized;
+    private string? _iconPath;
 
     public NotificationService(ILogger<NotificationService> logger)
     {
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Returns a disk path to the Pixora app icon (extracted from embedded resources
+    /// on first call). Returns null if extraction fails — callers should treat this
+    /// as optional and fall back to platform default icons.
+    /// </summary>
+    private string? GetIconPath()
+    {
+        if (_iconPath != null) return _iconPath;
+
+        try
+        {
+            // Cache under temp so we don't write into the install dir, and use a fixed
+            // filename so PowerShell / notify-send / osascript can re-reference it
+            // without us re-extracting on every notification.
+            var dest = Path.Combine(Path.GetTempPath(), "pixora-notification-icon.png");
+            if (!File.Exists(dest))
+            {
+                using var src = global::Avalonia.Platform.AssetLoader.Open(
+                    new Uri("avares://Pixora/Assets/pixora-logo.png"));
+                using var dst = File.Create(dest);
+                src.CopyTo(dst);
+            }
+            _iconPath = dest;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to extract notification icon (non-fatal)");
+        }
+        return _iconPath;
     }
 
     public void Initialize()
@@ -87,22 +120,31 @@ public class NotificationService
             // Falls back silently if the module is absent.
             var escaped_title   = title.Replace("'", "''").Replace("\"", "\\\"");
             var escaped_message = message.Replace("'", "''").Replace("\"", "\\\"");
-            var appIcon = type switch
-            {
-                NotificationType.Error   => "error",
-                NotificationType.Warning => "warning",
-                _                        => "info"
-            };
+
+            // App icon: prefer the extracted Pixora logo on disk; the raw WinRT path
+            // requires the file:/// URI scheme on Windows so the toast XML parser
+            // accepts it as an <image> src.
+            var iconPath = GetIconPath();
+            var hasIcon  = !string.IsNullOrEmpty(iconPath) && File.Exists(iconPath);
+            var iconUri  = hasIcon ? new Uri(iconPath!).AbsoluteUri : null;
+            var iconPathEscaped = iconPath?.Replace("'", "''");
 
             var script = $@"
                 try {{
                     if (Get-Module -ListAvailable -Name BurntToast) {{
                         Import-Module BurntToast -ErrorAction Stop
-                        New-BurntToastNotification -Text '{escaped_title}','{escaped_message}' -AppLogo '{appIcon}'
+                        {(hasIcon
+                            ? $"New-BurntToastNotification -Text '{escaped_title}','{escaped_message}' -AppLogo '{iconPathEscaped}'"
+                            : $"New-BurntToastNotification -Text '{escaped_title}','{escaped_message}'")}
                     }} else {{
                         [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
                         [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-                        $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+                        {(hasIcon
+                            // ImageAndText02: app-logo image + 2 text lines
+                            ? @"$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastImageAndText02)
+                        $img = $template.SelectSingleNode('//image[@id=""1""]')
+                        $img.SetAttribute('src', '" + iconUri + @"') | Out-Null"
+                            : "$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)")}
                         $template.SelectSingleNode('//text[@id=""1""]').AppendChild($template.CreateTextNode('{escaped_title}')) | Out-Null
                         $template.SelectSingleNode('//text[@id=""2""]').AppendChild($template.CreateTextNode('{escaped_message}')) | Out-Null
                         $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
@@ -170,12 +212,16 @@ public class NotificationService
                 _ => "low"
             };
 
+            // Prefer the Pixora app icon for info/success; keep stock dialog-* glyphs
+            // for warning/error so the OS still conveys severity colouring.
+            var iconPath = GetIconPath();
             var icon = type switch
             {
-                NotificationType.Success => "dialog-information",
                 NotificationType.Warning => "dialog-warning",
-                NotificationType.Error => "dialog-error",
-                _ => "dialog-information"
+                NotificationType.Error   => "dialog-error",
+                _ => (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
+                        ? iconPath!
+                        : "dialog-information"
             };
 
             var process = new System.Diagnostics.Process
@@ -183,7 +229,7 @@ public class NotificationService
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "notify-send",
-                    Arguments = $"--urgency={urgency} --icon={icon} \"{title}\" \"{message}\"",
+                    Arguments = $"--urgency={urgency} --icon=\"{icon}\" \"{title}\" \"{message}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,

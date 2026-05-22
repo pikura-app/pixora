@@ -196,10 +196,13 @@
             <Border Grid.Column="1" Background="{actipro:ThemeResource Container3BackgroundBrush}">
                 <Grid RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0">
-                    <!-- Update available banner -->
+                    <!-- Update available banner.
+                         Margin 32 on top clears the custom title bar overlay (ZIndex=9) which
+                         covers the first 32px of this column. Without it the banner is hidden. -->
                     <Border IsVisible="{Binding UpdateAvailable}"
                             Background="#1A3A7AFF" BorderBrush="#3A5A9AFF"
-                            BorderThickness="0,0,0,1" Padding="12,7">
+                            BorderThickness="0,0,0,1" Padding="12,7"
+                            Margin="0,32,0,0">
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <TextBlock Text="🆕" FontSize="13" VerticalAlignment="Center"/>
@@ -228,10 +231,11 @@
                         </Grid>
                     </Border>
 
-                    <!-- Downloading banner -->
+                    <!-- Downloading banner (see Update available banner for the Margin rationale). -->
                     <Border IsVisible="{Binding UpdateDownloading}"
                             Background="#1A4A1AFF" BorderBrush="#3A7A3AFF"
-                            BorderThickness="0,0,0,1" Padding="12,7">
+                            BorderThickness="0,0,0,1" Padding="12,7"
+                            Margin="0,32,0,0">
                         <Grid ColumnDefinitions="*,Auto,Auto">
                             <StackPanel Grid.Column="0" Spacing="4">
                                 <TextBlock Text="{Binding UpdateStatusText}" FontSize="12" VerticalAlignment="Center"/>
@@ -246,10 +250,11 @@
                         </Grid>
                     </Border>
 
-                    <!-- Ready to install banner -->
+                    <!-- Ready to install banner (see Update available banner for the Margin rationale). -->
                     <Border IsVisible="{Binding UpdateReadyToInstall}"
                             Background="#1A4A1AFF" BorderBrush="#3A7A3AFF"
-                            BorderThickness="0,0,0,1" Padding="12,7">
+                            BorderThickness="0,0,0,1" Padding="12,7"
+                            Margin="0,32,0,0">
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                             <TextBlock Grid.Column="0" FontSize="13" VerticalAlignment="Center">
                                 <Run Text="✅  Pixora v"/>

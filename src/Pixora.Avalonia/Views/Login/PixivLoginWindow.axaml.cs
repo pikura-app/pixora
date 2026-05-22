@@ -9,6 +9,7 @@ using Pixora.Core.Settings;
 using System;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Pixora.Avalonia.Views.Login;
@@ -16,11 +17,47 @@ namespace Pixora.Avalonia.Views.Login;
 public partial class PixivLoginWindow : Window
 {
     private bool _completed;
+    private bool _navigationStarted;
     private readonly bool _clearCookies;
 
     public bool LoginSucceeded { get; private set; }
 
-    public PixivLoginWindow(bool clearCookiesForNewAccount = false)
+    /// <summary>
+    /// True when the WebView backend (WPE / WebKitGTK) could not be initialised.
+    /// The caller should fall back to <see cref="ManualCookieDialog"/> in this case.
+    /// </summary>
+    public bool WebViewFailed { get; private set; }
+
+    /// <summary>
+    /// Checks whether the required Linux WebView native libraries are present.
+    /// Returns null on non-Linux; returns a missing-library description string on Linux if absent.
+    /// </summary>
+    public static string? CheckLinuxWebViewLibs()
+    {
+        if (!OperatingSystem.IsLinux()) return null;
+        // WPE WebKit is the Avalonia default Linux backend (offscreen SHM, no GPU needed).
+        // All three libs must be present for NativeWebView to render.
+        foreach (var lib in new[] { "libwpewebkit-2.0.so.0", "libwpe-1.0.so.1", "libWPEBackend-fdo-1.0.so.1" })
+        {
+            if (NativeLibraryExists(lib)) return null;  // at least one backend found — let Avalonia try
+        }
+        return "libwpewebkit-2.0-3 libwpe-1.0-1 libwpebackend-fdo-1.0-1";
+    }
+
+    private static bool NativeLibraryExists(string lib)
+    {
+        try
+        {
+            var handle = System.Runtime.InteropServices.NativeLibrary.Load(lib);
+            if (handle != IntPtr.Zero) { System.Runtime.InteropServices.NativeLibrary.Free(handle); return true; }
+        }
+        catch { }
+        return false;
+    }
+
+    public PixivLoginWindow() : this(false) { }
+
+    public PixivLoginWindow(bool clearCookiesForNewAccount)
     {
         _clearCookies = clearCookiesForNewAccount;
 
@@ -33,6 +70,35 @@ public partial class PixivLoginWindow : Window
         }
 
         InitializeComponent();
+
+        // On Linux, detect missing native WebView libraries before trying to use the control.
+        // An absent WPE/WebKitGTK library will cause the WebView to stay blank with no error.
+        if (OperatingSystem.IsLinux() && CheckLinuxWebViewLibs() is string missingLib)
+        {
+            WebViewFailed = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                StatusText.Text = $"WebView unavailable: install {missingLib} and restart.";
+                WebView.IsVisible = false;
+            });
+            return;
+        }
+
+        // Safety net: if the WebView never fires NavigationStarted within 8 seconds the
+        // backend silently failed (e.g. libGL missing, Wayland compositor issue).
+        // Mark WebViewFailed so the caller knows to offer the manual fallback.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(8000);
+            if (!_navigationStarted && !_completed)
+            {
+                WebViewFailed = true;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    StatusText.Text = "WebView did not load. Use \"Enter cookie manually\" instead.";
+                });
+            }
+        });
 
         WebView.EnvironmentRequested += (_, args) =>
         {
@@ -53,8 +119,8 @@ public partial class PixivLoginWindow : Window
                 t.GetProperty("UserDataFolder")?.SetValue(args, tmpDir);
             }
 
-            if (args is LinuxWpeWebViewEnvironmentRequestedEventArgs wpe)
-                wpe.PreferWebKitGtkInstead = true;
+            // WPE WebKit (default) uses offscreen SHM rendering — no GPU required, works in VMs.
+            // Do NOT set PreferWebKitGtkInstead; WebKitGTK needs a compositor and fails without GPU.
         };
 
         if (_clearCookies)
@@ -156,6 +222,7 @@ public partial class PixivLoginWindow : Window
     // is only accessed from the thread that owns it.
     private void WebView_NavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
     {
+        _navigationStarted = true;
         if (_completed || sender is not NativeWebView webView) return;
         if (!e.IsSuccess) return;
 

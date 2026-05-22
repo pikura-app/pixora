@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Pixora.Core.Settings;
 using System;
 
@@ -20,12 +21,22 @@ public class AccessibilityService
     public AccessibilityService(SettingsService settingsService)
     {
         _settingsService = settingsService;
-        
+
         // Apply initial settings
         ApplyAccessibilitySettings();
-        
-        // Listen for changes
-        _settingsService.Changed += (_, _) => ApplyAccessibilitySettings();
+
+        // Listen for changes — Settings.Changed fires synchronously on whatever thread
+        // mutated the settings, but our handlers touch Avalonia application state
+        // (Resources, RequestedThemeVariant) which must run on the UI thread.
+        // Without this Post() any background-thread Settings.Update would throw and
+        // could corrupt unrelated flows (e.g. UpdateCheckService, cancellation).
+        _settingsService.Changed += (_, _) =>
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+                ApplyAccessibilitySettings();
+            else
+                Dispatcher.UIThread.Post(ApplyAccessibilitySettings);
+        };
     }
 
     private void ApplyAccessibilitySettings()

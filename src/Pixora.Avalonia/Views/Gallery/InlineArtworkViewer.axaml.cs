@@ -89,6 +89,7 @@ public partial class InlineArtworkViewer : UserControl
     private IReadOnlyList<ArtworkPage> _pages = [];
     private int _currentPageIndex;
     private ArtworkCardViewModel? _currentCard;
+    private string? _loadedCardId; // ID of the card that was successfully loaded (for retry dedup)
     private CancellationTokenSource? _loadCts;
 
     // Zoom / pan state
@@ -154,10 +155,20 @@ public partial class InlineArtworkViewer : UserControl
     /// <summary>The tab collection shown in the strip — always the global ViewerTabs.</summary>
     private IEnumerable<ViewerTab> ActiveTabs => VM?.ViewerTabs ?? Enumerable.Empty<ViewerTab>();
 
+    private GalleryViewModel? _subscribedVm;
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
+        // Unsubscribe from previous VM if any
+        if (_subscribedVm != null)
+        {
+            _subscribedVm.PropertyChanged -= OnVmPropertyChanged;
+            _subscribedVm = null;
+        }
+
         if (VM is not { } vm) return;
         vm.PropertyChanged += OnVmPropertyChanged;
+        _subscribedVm = vm;
 
         // Always force reload on re-attach — _currentCard may match a stale instance
         _currentCard = null;
@@ -265,18 +276,37 @@ public partial class InlineArtworkViewer : UserControl
 
     private async Task LoadCardAsync(ArtworkCardViewModel? card)
     {
+        // Skip if this viewer instance is not actually displayed.
+        // Multiple InlineArtworkViewer instances exist across pages (Gallery, Discover, Rankings, etc.)
+        // and they all subscribe to the same VM. Only the visible one should load.
+        if (!IsEffectivelyVisible) return;
+
         if (card == null) { ClearViewer(); return; }
 
-        // Cancel any in-flight load
+        // Skip only if the same card is already fully loaded successfully.
+        // We must NOT dedupe on _currentCard alone — _currentCard is set
+        // immediately when a load starts but a cancelled load leaves it set
+        // without ever producing content, blocking legitimate retries.
+        if (_currentCard?.Id == card.Id && _loadedCardId == card.Id) return;
+
+        // Cancel any in-flight load and start fresh
         _loadCts?.Cancel();
         _loadCts?.Dispose();
         var cts = new CancellationTokenSource();
         _loadCts = cts;
         var ct = cts.Token;
 
+        // Immediately clear previous content so user doesn't see stale animation/image
+        // while we fetch the new card's data over the network.
+        if (UgoiraImage != null)
+        {
+            UgoiraImage.SourcePath = null;
+            UgoiraImage.IsPlaying = false;
+        }
+        if (ViewerImage != null) ViewerImage.Source = null;
+
         _currentCard = card;
         _aiVm.CurrentImageBytes = null;
-        // Switch to (or create) the per-artwork Hoshi session for this card
         _aiVm.SwitchToArtworkSession(card);
         _currentPageIndex = 0;
         _pages = [];
@@ -290,27 +320,44 @@ public partial class InlineArtworkViewer : UserControl
         SetLoading(true);
         ResetZoom();
 
+        // Mark unloaded — only set _loadedCardId once content actually arrives.
+        _loadedCardId = null;
+        bool succeeded = false;
+
         try
         {
-            // Ugoira (animated) — fetch animated preview via ffmpeg conversion
             if (card.IllustType == 2)
             {
-                await LoadUgoiraAsync(card.Id, ct);
+                succeeded = await LoadUgoiraAsync(card.Id, ct);
             }
             else
             {
                 var pages = await _pixivClient.GetArtworkPagesAsync(card.Id);
-                if (ct.IsCancellationRequested) return; // stale — a newer tab won
+                if (ct.IsCancellationRequested) return;
                 _pages = pages;
                 UpdatePageIndicator();
                 await RenderPageAsync(_currentPageIndex, ct);
+                succeeded = true;
             }
         }
-        catch (OperationCanceledException) { /* expected on tab switch */ }
-        catch { /* non-fatal */ }
-        finally { if (!ct.IsCancellationRequested) SetLoading(false); }
-
-        // Tags now displayed via ItemsControl binding to InlineViewerCard.Tags
+        catch (OperationCanceledException) { /* expected on rapid switch */ }
+        catch (Exception ex)
+        {
+            // Surface failures — silent swallowing here previously masked real bugs
+            // (locale-broken ffmpeg encodes, network errors, etc.) leaving the UI blank.
+            System.Diagnostics.Debug.WriteLine(
+                $"[InlineArtworkViewer] LoadCardAsync({card.Id}) failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            // Clear loading state only if we're still the current card.
+            // If a newer load started (different card OR null), it owns the loading state.
+            if (_currentCard?.Id == card.Id)
+            {
+                if (succeeded) _loadedCardId = card.Id;
+                SetLoading(false);
+            }
+        }
     }
 
     private async Task RenderPageAsync(int index, CancellationToken ct = default)
@@ -356,27 +403,66 @@ public partial class InlineArtworkViewer : UserControl
         });
     }
 
-    private async Task LoadUgoiraAsync(string artworkId, CancellationToken ct)
+    private async Task<bool> LoadUgoiraAsync(string artworkId, CancellationToken ct)
     {
         try
         {
-            var previewPath = await _ugoiraService.GetOrCreatePreviewAsync(artworkId, ct).ConfigureAwait(false);
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested) return false;
+
+            // Paint the first extracted frame as a still placeholder the moment it
+            // becomes available — gives the user immediate feedback while ffmpeg
+            // continues encoding the animated WebP in the background.
+            var firstFrameProgress = new Progress<string>(framePath =>
+            {
+                if (ct.IsCancellationRequested) return;
+                try
+                {
+                    using var s = File.OpenRead(framePath);
+                    var bmp = new global::Avalonia.Media.Imaging.Bitmap(s);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        // If the load was cancelled or another card took over, drop it.
+                        if (ct.IsCancellationRequested) { bmp.Dispose(); return; }
+                        if (ViewerImage != null)
+                        {
+                            ViewerImage.Source    = bmp;
+                            ViewerImage.IsVisible = true;
+                        }
+                        // Keep LoadingPanel visible — encoding still in progress.
+                    });
+                }
+                catch { /* still placeholder is best-effort */ }
+            });
+
+            var previewPath = await _ugoiraService
+                .GetOrCreatePreviewAsync(artworkId, firstFrameProgress, ct)
+                .ConfigureAwait(false);
+            if (ct.IsCancellationRequested) return false;
+
             if (previewPath != null)
             {
+                bool applied = false;
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (ct.IsCancellationRequested) return;
+                    // Hide the static placeholder and swap to the animated player.
+                    if (ViewerImage != null) { ViewerImage.Source = null; ViewerImage.IsVisible = false; }
+                    UgoiraImage.SourcePath = null;
                     UgoiraImage.SourcePath = previewPath;
-                    UgoiraImage.IsPlaying = true;
+                    UgoiraImage.IsVisible  = true;
+                    UgoiraImage.IsPlaying  = true;
                     ResetZoom();
+                    applied = true;
                 });
+                return applied;
             }
+            return false;
         }
+        catch (OperationCanceledException) { return false; }
         catch (Exception ex)
         {
-            // Fallback to static thumbnail on error
             System.Diagnostics.Debug.WriteLine($"Ugoira load failed: {ex.Message}");
+            return false;
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,6 +13,7 @@ using Avalonia.Media;
 using Pixora.Avalonia.Services;
 using Pixora.Avalonia.ViewModels;
 using Pixora.Core.Settings;
+using Pixora.Core.Services;
 
 namespace Pixora.Avalonia.Views;
 
@@ -551,15 +553,88 @@ public partial class MainWindow : Window
         AccountChipBtn.Flyout?.Hide();
         try
         {
-            var loginWindow = new Login.PixivLoginWindow(clearCookiesForNewAccount: true);
-            await loginWindow.ShowDialog(this);
-            if (loginWindow.LoginSucceeded)
+            bool succeeded;
+            if (OperatingSystem.IsLinux())
+            {
+                succeeded = await DoLinuxNativeWebDialogLoginAsync();
+            }
+            else
+            {
+                var loginWindow = new Login.PixivLoginWindow(clearCookiesForNewAccount: true);
+                await loginWindow.ShowDialog(this);
+                succeeded = loginWindow.LoginSucceeded;
+                if (!succeeded && loginWindow.WebViewFailed)
+                    succeeded = await DoManualCookieLoginAsync();
+            }
+            if (succeeded)
             {
                 RefreshUserChipFromView();
                 await RefreshGalleryAsync();
             }
         }
         catch { /* non-fatal */ }
+    }
+
+    private async Task<bool> DoLinuxNativeWebDialogLoginAsync()
+    {
+        try
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            var dialog = new NativeWebDialog
+            {
+                Title = "Sign in to Pixiv",
+                CanUserResize = true,
+                Source = new Uri("https://accounts.pixiv.net/login?lang=en&source=pc&view_type=page")
+            };
+
+            dialog.NavigationCompleted += async (_, _) =>
+            {
+                if (tcs.Task.IsCompleted) return;
+                try
+                {
+                    var host = dialog.Source?.Host ?? string.Empty;
+                    if (!host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
+                    await Task.Delay(1500);
+                    const string script = """
+                        (function(){try{var x=new XMLHttpRequest();x.open('GET','https://www.pixiv.net/touch/ajax/user/self/status?lang=en',false);x.withCredentials=true;x.send();var j=JSON.parse(x.responseText);var u=j&&j.body&&j.body.user_status;if(u&&u.is_logged_in)return JSON.stringify({ok:true,userId:String(u.user_id),userName:u.user_name});return JSON.stringify({ok:false});}catch(e){return JSON.stringify({ok:false});}})()
+                        """;
+                    var result = await dialog.InvokeScript(script);
+                    if (string.IsNullOrWhiteSpace(result)) return;
+                    var json = result;
+                    if (json.StartsWith("\"") && json.EndsWith("\""))
+                        json = System.Text.Json.JsonSerializer.Deserialize<string>(json) ?? json;
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) return;
+                    var userId = root.TryGetProperty("userId", out var uid) ? uid.GetString() : null;
+                    var userName = root.TryGetProperty("userName", out var un) ? un.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(userId)) return;
+                    var settings = Services.AppServices.Get<SettingsService>();
+                    string? sid = null;
+                    try { var cm = dialog.TryGetCookieManager(); if (cm != null) { var cookies = await cm.GetCookiesAsync(); sid = cookies.FirstOrDefault(c => string.Equals(c.Name, "PHPSESSID", StringComparison.OrdinalIgnoreCase))?.Value; } } catch { }
+                    settings.Update(s => { if (!string.IsNullOrWhiteSpace(sid)) s.PhpSessId = sid; s.UserId = userId; s.UserName = userName ?? userId; });
+                    try { Services.AppServices.Get<AccountService>().UpsertFromCurrentSession(); } catch { }
+                    tcs.TrySetResult(true);
+                    dialog.Close();
+                }
+                catch { }
+            };
+            dialog.Closing += (_, _) => tcs.TrySetResult(false);
+            dialog.Show(this);
+            return await tcs.Task;
+        }
+        catch { return await DoManualCookieLoginAsync(); }
+    }
+
+    private async Task<bool> DoManualCookieLoginAsync()
+    {
+        var dlg = new Login.ManualCookieDialog();
+        await dlg.ShowDialog(this);
+        if (string.IsNullOrWhiteSpace(dlg.PhpSessId)) return false;
+        var settings = Services.AppServices.Get<SettingsService>();
+        settings.Update(s => s.PhpSessId = dlg.PhpSessId);
+        try { Services.AppServices.Get<AccountService>().UpsertFromCurrentSession(); } catch { }
+        return true;
     }
 
     private void RefreshUserChipFromView()

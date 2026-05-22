@@ -732,11 +732,12 @@ public sealed class PixivDownloadService
         try
         {
             var sb = new StringBuilder();
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
             for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
             {
                 var delayMs = meta.Frames[i].DelayMs;
                 sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
-                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+                sb.AppendLine($"duration {(delayMs / 1000.0).ToString("F3", inv)}");
             }
             sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
             await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);
@@ -777,11 +778,12 @@ public sealed class PixivDownloadService
         try
         {
             var sb = new StringBuilder();
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
             for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
             {
                 var delayMs = meta.Frames[i].DelayMs;
                 sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
-                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+                sb.AppendLine($"duration {(delayMs / 1000.0).ToString("F3", inv)}");
             }
             sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
             await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);
@@ -821,11 +823,12 @@ public sealed class PixivDownloadService
         try
         {
             var sb = new StringBuilder();
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
             for (int i = 0; i < Math.Min(framePaths.Count, meta.Frames.Count); i++)
             {
                 var delayMs = meta.Frames[i].DelayMs;
                 sb.AppendLine($"file '{framePaths[i].Replace("'", "'\\''")}'");
-                sb.AppendLine($"duration {delayMs / 1000.0:F3}");
+                sb.AppendLine($"duration {(delayMs / 1000.0).ToString("F3", inv)}");
             }
             sb.AppendLine($"file '{framePaths[Math.Min(framePaths.Count - 1, meta.Frames.Count - 1)].Replace("'", "'\\''")}'");
             await File.WriteAllTextAsync(concatPath, sb.ToString(), ct).ConfigureAwait(false);

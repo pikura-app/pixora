@@ -10,6 +10,7 @@ using Pixora.Avalonia.Views.Dialogs;
 using Pixora.Core.Services;
 using Pixora.Core.Settings;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -32,6 +33,15 @@ public partial class App : Application
             "Dark"  => ThemeVariant.Dark,
             _       => null  // system default
         };
+
+        // Sync Windows startup registry with the saved user setting. The app/installer
+        // may have left a stale Run key entry under a legacy or canonical name; this
+        // makes the user's "Start with Windows" toggle authoritative.
+        if (OperatingSystem.IsWindows())
+        {
+            try { Services.StartupHelper.SetStartupEnabled(settings.Current.StartWithWindows); }
+            catch { /* non-fatal */ }
+        }
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -136,8 +146,48 @@ public partial class App : Application
     /// </summary>
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
+        // Always mark observed first so we never accidentally crash the process while
+        // deciding whether to report.
+        e.SetObserved();
+
+        if (IsBenignBackgroundException(e.Exception))
+            return;
+
         _crashService?.GenerateCrashReport(e.Exception, "TaskScheduler - Unobserved task exception");
-        e.SetObserved(); // Mark as observed to prevent process termination
+    }
+
+    /// <summary>
+    /// Identifies background exceptions that are harmless on certain platforms and
+    /// should not generate noisy crash reports. Currently filters:
+    /// - Avalonia.FreeDesktop AppMenu DBus errors on GNOME (no Canonical AppMenu service).
+    /// </summary>
+    private static bool IsBenignBackgroundException(Exception? ex)
+    {
+        if (ex == null) return false;
+
+        // Walk both AggregateException.InnerExceptions and the InnerException chain.
+        var queue = new Queue<Exception>();
+        queue.Enqueue(ex);
+        while (queue.Count > 0)
+        {
+            var cur = queue.Dequeue();
+            var name = cur.GetType().FullName ?? string.Empty;
+            var msg  = cur.Message ?? string.Empty;
+
+            // GNOME / non-Unity desktops don't provide com.canonical.AppMenu.Registrar.
+            // Avalonia.FreeDesktop tries to register a global menu and throws.
+            if (name == "Tmds.DBus.Protocol.DBusException" &&
+                msg.Contains("com.canonical.AppMenu.Registrar", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (cur is AggregateException agg)
+                foreach (var inner in agg.InnerExceptions) queue.Enqueue(inner);
+            if (cur.InnerException != null)
+                queue.Enqueue(cur.InnerException);
+        }
+        return false;
     }
 
     /// <summary>

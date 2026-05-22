@@ -40,6 +40,13 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty] private string _changelogNotes       = string.Empty;
     [ObservableProperty] private string _changelogReleaseUrl  = string.Empty;
 
+    // Polls the update endpoint periodically while the app is running. ShouldCheck()
+    // inside UpdateCheckService still honours the user's Daily/Weekly/Never setting,
+    // so this just wakes up often enough to notice when a check is due — it doesn't
+    // actually hit GitHub every interval.
+    private static readonly TimeSpan UpdateCheckPollInterval = TimeSpan.FromHours(6);
+    private System.Threading.Timer? _updateCheckTimer;
+
     public MainWindowViewModel(NavigationService navigationService, SettingsService settingsService, UpdateCheckService updateCheck, ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService;
@@ -51,6 +58,21 @@ public partial class MainWindowViewModel : ViewModelBase
         _settingsService.Changed += (_, _) => RefreshUserChip();
         _ = Task.Run(CheckForUpdateAsync);
         _ = Task.Run(CheckChangelogAsync);
+
+        // Re-check periodically so long-running sessions notice new releases without
+        // the user opening Settings → Check Now. UpdateCheckService.ShouldCheck()
+        // applies the Daily/Weekly/Never throttle internally.
+        _updateCheckTimer = new System.Threading.Timer(
+            _ =>
+            {
+                // Skip if a banner is already showing — re-checking would clobber the
+                // user's current dismiss/download state.
+                if (UpdateAvailable || UpdateDownloading || UpdateReadyToInstall) return;
+                _ = Task.Run(CheckForUpdateAsync);
+            },
+            null,
+            UpdateCheckPollInterval,
+            UpdateCheckPollInterval);
     }
 
     /// <summary>
@@ -67,11 +89,11 @@ public partial class MainWindowViewModel : ViewModelBase
             // Mark seen immediately so we don't show it again on next launch
             _settingsService.Update(s => s.LastSeenVersion = current);
 
-            // First-ever launch or same version — nothing to show
+            // First-ever launch or same version — nothing to show.
+            // Use SemVer-aware compare so prerelease tags (e.g. 1.7.0-beta.1)
+            // don't bypass the changelog when running upgrade-from-prerelease.
             if (string.IsNullOrEmpty(lastSeen)) return;
-            if (Version.TryParse(current, out var cv) &&
-                Version.TryParse(lastSeen,  out var lv) &&
-                cv <= lv) return;
+            if (UpdateCheckService.CompareSemVer(current, lastSeen) <= 0) return;
 
             // Fetch release notes for the current version tag
             var notes = await _updateCheck.FetchReleaseNotesAsync(current).ConfigureAwait(false);
@@ -91,12 +113,19 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void DismissChangelog() => ChangelogAvailable = false;
 
+    // Version we last surfaced an OS toast for — prevents the periodic poll from
+    // spamming a notification every 6 hours for the same release.
+    private string? _lastNotifiedVersion;
+
     public async Task CheckForUpdateAsync()
     {
         var info = await _updateCheck.CheckAsync().ConfigureAwait(false);
         if (info is null) return;
 
         var settings = AppServices.Get<SettingsService>();
+        var shouldToast = settings.Current.NotifyOnUpdate
+                          && _lastNotifiedVersion != info.Version;
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             _pendingUpdate       = info;
@@ -113,14 +142,34 @@ public partial class MainWindowViewModel : ViewModelBase
             if (settings.Current.AutoDownloadUpdates && !string.IsNullOrEmpty(info.DownloadUrl))
                 _ = Task.Run(StartDownloadAsync);
         });
+
+        // OS toast — only fire once per detected version so the periodic poll
+        // doesn't keep popping notifications while the user has the app open.
+        if (shouldToast)
+        {
+            _lastNotifiedVersion = info.Version;
+            try
+            {
+                var notifier = AppServices.Get<NotificationService>();
+                notifier.ShowNotification(
+                    "Pixora update available",
+                    $"v{info.Version} is ready to download. See the banner at the top of the window.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Update toast notification failed (non-fatal)");
+            }
+        }
     }
 
     [RelayCommand]
     private void OpenUpdatePage()
     {
+        // Don't dismiss the banner — the user is just reading the notes, not
+        // acknowledging the update. They should still be able to click Download
+        // (or X to dismiss) afterwards.
         if (!string.IsNullOrEmpty(UpdateUrl))
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UpdateUrl) { UseShellExecute = true });
-        UpdateAvailable = false;
     }
 
     [RelayCommand]

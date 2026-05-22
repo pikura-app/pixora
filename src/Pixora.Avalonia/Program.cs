@@ -15,6 +15,32 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // On Linux, WebKitGTK's GL compositor produces a blank surface on systems
+        // without hardware GPU acceleration (VMs, CI, broken Mesa drivers).
+        // Setting these env vars before Avalonia/WebKit initialise tells WebKit to
+        // fall back to a software render path that works everywhere.
+        // They are harmless on real hardware — WebKit silently ignores them when GPU
+        // compositing is available and working.
+        if (OperatingSystem.IsLinux())
+        {
+            Environment.SetEnvironmentVariable("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            Environment.SetEnvironmentVariable("WEBKIT_DISABLE_DMABUF_RENDERER",  "1");
+            Environment.SetEnvironmentVariable("WEBKIT_FORCE_SANDBOX",            "0");
+            Environment.SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE",           "1");
+        }
+
+        // Ensure the working directory is always the app's own directory.
+        // Microsoft.Extensions.Hosting calls GetCwd() to set the content root; if the
+        // process was launched from a deleted or unreachable directory it throws
+        // FileNotFoundException and the app exits silently before any window appears.
+        try
+        {
+            var appDir = AppContext.BaseDirectory;
+            if (!string.IsNullOrEmpty(appDir) && Directory.Exists(appDir))
+                Directory.SetCurrentDirectory(appDir);
+        }
+        catch { /* non-fatal */ }
+
         // Initialize crash reporting service early
         _crashService = new CrashReportService();
 

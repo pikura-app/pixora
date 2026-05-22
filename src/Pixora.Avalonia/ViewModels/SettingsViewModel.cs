@@ -8,7 +8,9 @@ using Pixora.Avalonia.Services;
 using Pixora.Avalonia.Views.Login;
 using Pixora.Avalonia.Views.Dialogs;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 using Avalonia.Styling;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -352,9 +354,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         var mainWindow = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
         if (mainWindow is null) return;
-        var loginWindow = new PixivLoginWindow(clearCookiesForNewAccount: true);
-        await loginWindow.ShowDialog(mainWindow);
-        if (loginWindow.LoginSucceeded)
+        if (await DoLoginAsync(mainWindow, clearCookies: true))
         {
             LoadSettings();
             try { await AppServices.Get<GalleryViewModel>().SwitchAccountAsync(); } catch { }
@@ -671,12 +671,7 @@ public partial class SettingsViewModel : ViewModelBase
             var mainWindow = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
             if (mainWindow is null) return;
 
-            // Always clear WebView cookies on explicit sign-in so a previously
-            // logged-in account's cached cookies don't auto-authenticate us.
-            var loginWindow = new PixivLoginWindow(clearCookiesForNewAccount: true);
-            await loginWindow.ShowDialog(mainWindow);
-
-            if (loginWindow.LoginSucceeded)
+            if (await DoLoginAsync(mainWindow, clearCookies: true))
             {
                 LoadSettings();
                 try
@@ -692,6 +687,163 @@ public partial class SettingsViewModel : ViewModelBase
             Logger.LogError(ex, "Login failed");
             await _dialogService.ShowMessageAsync("Error", $"Login failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Shows the WebView login window. On Linux uses NativeWebDialog (backed by libwebkit2gtk-4.1)
+    /// because NativeWebView requires WPE libs not available on Ubuntu 24.04.
+    /// Falls back to ManualCookieDialog if all WebView options fail.
+    /// Returns true if the user successfully signed in.
+    /// </summary>
+    private async Task<bool> DoLoginAsync(Window owner, bool clearCookies)
+    {
+        if (OperatingSystem.IsLinux())
+            return await DoLinuxNativeWebDialogLoginAsync(owner);
+
+        var loginWindow = new PixivLoginWindow(clearCookiesForNewAccount: clearCookies);
+        await loginWindow.ShowDialog(owner);
+
+        if (loginWindow.LoginSucceeded) return true;
+
+        if (loginWindow.WebViewFailed)
+            return await DoManualCookieLoginAsync(owner);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Linux login path: opens a NativeWebDialog (GTK window backed by libwebkit2gtk-4.1).
+    /// Polls for the PHPSESSID cookie after the user lands on www.pixiv.net.
+    /// </summary>
+    private async Task<bool> DoLinuxNativeWebDialogLoginAsync(Window owner)
+    {
+        try
+        {
+            // Force GTK WebKit into software rendering — required for VMware/VirtualBox where
+            // DRI3/DMA-BUF are unavailable. These env vars must be set before the WebKit process spawns.
+            Environment.SetEnvironmentVariable("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            Environment.SetEnvironmentVariable("WEBKIT_FORCE_SANDBOX", "0");
+            Environment.SetEnvironmentVariable("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            Environment.SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1");
+
+            var tcs = new TaskCompletionSource<bool>();
+            var dialog = new NativeWebDialog
+            {
+                Title = "Sign in to Pixiv",
+                CanUserResize = true,
+                Source = new Uri("https://accounts.pixiv.net/login?lang=en&source=pc&view_type=page")
+            };
+
+            dialog.NavigationCompleted += async (_, _) =>
+            {
+                if (tcs.Task.IsCompleted) return;
+                try
+                {
+                    var host = dialog.Source?.Host ?? string.Empty;
+                    if (!host.Equals("www.pixiv.net", StringComparison.OrdinalIgnoreCase)) return;
+
+                    // Poll until login is confirmed (up to 30s)
+                    for (int i = 0; i < 15; i++)
+                    {
+                        if (tcs.Task.IsCompleted) return;
+                        await Task.Delay(2000);
+
+                        const string script = """
+                            (function(){
+                                try {
+                                    var x=new XMLHttpRequest();
+                                    x.open('GET','https://www.pixiv.net/touch/ajax/user/self/status?lang=en',false);
+                                    x.withCredentials=true; x.send();
+                                    var j=JSON.parse(x.responseText);
+                                    var u=j&&j.body&&j.body.user_status;
+                                    if(u&&u.is_logged_in)
+                                        return JSON.stringify({ok:true,userId:String(u.user_id),userName:u.user_name});
+                                    return JSON.stringify({ok:false});
+                                } catch(e){return JSON.stringify({ok:false});}
+                            })()
+                            """;
+
+                        var raw = await dialog.InvokeScript(script);
+                        if (string.IsNullOrWhiteSpace(raw)) continue;
+
+                        var json = raw;
+                        if (json.StartsWith("\"") && json.EndsWith("\""))
+                            json = System.Text.Json.JsonSerializer.Deserialize<string>(json) ?? json;
+
+                        using var doc = System.Text.Json.JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        if (!root.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) continue;
+
+                        var userId   = root.TryGetProperty("userId",   out var uid) ? uid.GetString() : null;
+                        var userName = root.TryGetProperty("userName", out var un)  ? un.GetString()  : null;
+                        if (string.IsNullOrWhiteSpace(userId)) continue;
+
+                        // Try cookie manager while dialog is still open
+                        string? sid = null;
+                        try
+                        {
+                            var cm = dialog.TryGetCookieManager();
+                            if (cm != null)
+                            {
+                                var cookies = await cm.GetCookiesAsync();
+                                sid = cookies.FirstOrDefault(c =>
+                                    string.Equals(c.Name, "PHPSESSID", StringComparison.OrdinalIgnoreCase))?.Value;
+                            }
+                        }
+                        catch { }
+
+                        // Cookie manager unavailable — show ManualCookieDialog
+                        if (string.IsNullOrWhiteSpace(sid))
+                        {
+                            try { dialog.Close(); } catch { }
+                            await Dispatcher.UIThread.InvokeAsync(async () =>
+                            {
+                                var manual = new Views.Login.ManualCookieDialog();
+                                await manual.ShowDialog(owner);
+                                sid = manual.PhpSessId;
+                            });
+                        }
+
+                        if (string.IsNullOrWhiteSpace(sid)) { tcs.TrySetResult(false); return; }
+
+                        try { dialog.Close(); } catch { }
+
+                        _settingsService.Update(s =>
+                        {
+                            s.PhpSessId = sid;
+                            s.UserId   = userId;
+                            s.UserName = userName ?? userId;
+                        });
+                        try { AppServices.Get<AccountService>().UpsertFromCurrentSession(); } catch { }
+                        try { await Task.Run(async () => await AppServices.Get<PixivClient>().ValidateSessionAsync()); } catch { }
+
+                        tcs.TrySetResult(true);
+                        return;
+                    }
+                }
+                catch { }
+            };
+
+            dialog.Closing += (_, _) => tcs.TrySetResult(false);
+            dialog.Show(owner);
+            return await tcs.Task;
+        }
+        catch
+        {
+            return await DoManualCookieLoginAsync(owner);
+        }
+    }
+
+    private async Task<bool> DoManualCookieLoginAsync(Window owner)
+    {
+        var dlg = new ManualCookieDialog();
+        await dlg.ShowDialog(owner);
+        if (string.IsNullOrWhiteSpace(dlg.PhpSessId)) return false;
+
+        _settingsService.Update(s => s.PhpSessId = dlg.PhpSessId);
+        try { AppServices.Get<AccountService>().UpsertFromCurrentSession(); } catch { }
+        try { await Task.Run(async () => await AppServices.Get<PixivClient>().ValidateSessionAsync()); } catch { }
+        return true;
     }
 
     [RelayCommand]

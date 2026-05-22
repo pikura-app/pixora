@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -42,15 +43,27 @@ public sealed class AnimatedImage : Image
     private int[]? _frameDurationsMs;
     private int _frameIndex;
     private DispatcherTimer? _timer;
+    private CancellationTokenSource? _loadCts;
     private readonly object _lock = new();
 
     static AnimatedImage()
     {
-        SourcePathProperty.Changed.AddClassHandler<AnimatedImage>((c, _) =>
+        SourcePathProperty.Changed.AddClassHandler<AnimatedImage>(async (c, e) =>
         {
-#pragma warning disable CS4014
-            c.ReloadAsync();
-#pragma warning restore CS4014
+            // Cancel any in-flight load before starting new one
+            c._loadCts?.Cancel();
+            c._loadCts?.Dispose();
+            c._loadCts = null;
+
+            if (string.IsNullOrEmpty(e.NewValue?.ToString()))
+            {
+                c.Dispose();
+                return;
+            }
+
+            var cts = new CancellationTokenSource();
+            c._loadCts = cts;
+            await c.ReloadAsync(cts.Token);
         });
         IsPlayingProperty.Changed.AddClassHandler<AnimatedImage>((c, e) =>
         {
@@ -67,6 +80,10 @@ public sealed class AnimatedImage : Image
     /// <summary>Stops playback and disposes pre-decoded frames.</summary>
     public void Dispose()
     {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
         lock (_lock)
         {
             StopTimer();
@@ -85,34 +102,97 @@ public sealed class AnimatedImage : Image
         }
     }
 
-    private async Task ReloadAsync()
+    private async Task ReloadAsync(CancellationToken ct)
     {
-        Dispose();
+        // Clean up previous frames synchronously
+        lock (_lock)
+        {
+            StopTimer();
+            Source = null;
+            if (_frames != null)
+            {
+                foreach (var f in _frames)
+                {
+                    try { f.Dispose(); } catch { }
+                }
+                _frames = null;
+                _frameDurationsMs = null;
+                _frameIndex = 0;
+            }
+        }
+
+        if (ct.IsCancellationRequested) return;
+
         var path = SourcePath;
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
 
+        Bitmap[]? decodedFrames = null;
+        int[]? decodedDelays = null;
+
         try
         {
-            var (frames, delays) = await Task.Run(() => DecodeAllFrames(path));
-            if (frames.Length == 0) return;
+            var result = await Task.Run(() => DecodeAllFrames(path, ct), ct);
+            decodedFrames = result.Frames;
+            decodedDelays = result.DelaysMs;
 
-            _frames = frames;
-            _frameDurationsMs = delays;
-            _frameIndex = 0;
+            if (ct.IsCancellationRequested || decodedFrames.Length == 0)
+            {
+                DisposeFrames(decodedFrames);
+                return;
+            }
+
+            // Verify SourcePath hasn't changed while we were decoding
+            if (SourcePath != path)
+            {
+                DisposeFrames(decodedFrames);
+                return;
+            }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 lock (_lock)
                 {
-                    if (_frames == null || _frames.Length == 0) return;
+                    // Final check inside lock - bail if cancelled or path changed
+                    if (ct.IsCancellationRequested || SourcePath != path)
+                    {
+                        DisposeFrames(decodedFrames);
+                        return;
+                    }
+
+                    // Dispose any frames that were set by a previous ReloadAsync
+                    if (_frames != null)
+                    {
+                        foreach (var f in _frames)
+                        {
+                            try { f.Dispose(); } catch { }
+                        }
+                    }
+
+                    _frames = decodedFrames;
+                    _frameDurationsMs = decodedDelays;
+                    _frameIndex = 0;
                     Source = _frames[0];
                     if (IsPlaying && _frames.Length > 1) StartTimer();
                 }
             });
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // Swallow — caller will see no animation; logging is the consumer's job.
+            DisposeFrames(decodedFrames);
+        }
+        catch (Exception ex)
+        {
+            DisposeFrames(decodedFrames);
+            System.Diagnostics.Debug.WriteLine($"AnimatedImage failed to load {path}: {ex.Message}");
+        }
+    }
+
+    private static void DisposeFrames(Bitmap[]? frames)
+    {
+        if (frames == null) return;
+        foreach (var f in frames)
+        {
+            try { f.Dispose(); } catch { }
         }
     }
 
@@ -157,7 +237,7 @@ public sealed class AnimatedImage : Image
     /// using <see cref="SKCodec"/>. Returns the per-frame display delay in ms
     /// (defaults to 80 ms when the codec doesn't supply one).
     /// </summary>
-    private static (Bitmap[] Frames, int[] DelaysMs) DecodeAllFrames(string path)
+    private static (Bitmap[] Frames, int[] DelaysMs) DecodeAllFrames(string path, CancellationToken ct)
     {
         using var stream = File.OpenRead(path);
         using var data = SKData.Create(stream);
@@ -173,6 +253,8 @@ public sealed class AnimatedImage : Image
 
         for (int i = 0; i < count; i++)
         {
+            if (ct.IsCancellationRequested) break;
+
             using var bmp = new SKBitmap(info);
             var opts = new SKCodecOptions(i);
             var result = codec.GetPixels(info, bmp.GetPixels(), bmp.RowBytes, opts);

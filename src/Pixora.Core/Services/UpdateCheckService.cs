@@ -73,11 +73,8 @@ public sealed class UpdateCheckService
 
             if (release is null || string.IsNullOrWhiteSpace(release.TagName)) return null;
 
-            var latestTag     = release.TagName.TrimStart('v');
-            var latestVersion = Version.Parse(latestTag);
-            var current       = Version.Parse(CurrentVersion);
-
-            if (latestVersion <= current) return null;
+            var latestTag = release.TagName.TrimStart('v');
+            if (CompareSemVer(latestTag, CurrentVersion) <= 0) return null;
 
             _logger.LogInformation("Update available: {Latest} (current: {Current})", latestTag, CurrentVersion);
 
@@ -95,9 +92,57 @@ public sealed class UpdateCheckService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogDebug(ex, "Update check failed (non-fatal)");
+            _logger.LogWarning(ex, "Update check failed (non-fatal)");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Compares two version tags using SemVer-style precedence rules. Returns
+    /// <c>&gt;0</c> if <paramref name="a"/> is newer, <c>&lt;0</c> if older, <c>0</c>
+    /// if equal. Handles tags with prerelease suffixes (e.g. <c>1.7.0-beta.1</c>)
+    /// where a stable release outranks any prerelease at the same base version.
+    /// </summary>
+    /// <remarks>
+    /// Examples (a vs b → return sign):
+    ///   1.7.0       vs 1.6.0        → +1  (newer base)
+    ///   1.7.0-beta  vs 1.7.0        → -1  (stable > prerelease at same base)
+    ///   1.7.0-beta  vs 1.7.0-alpha  → +1  (lex order of suffix)
+    ///   1.7.0       vs 1.7.0        →  0
+    /// </remarks>
+    public static int CompareSemVer(string a, string b)
+    {
+        SplitTag(a, out var baseA, out var preA);
+        SplitTag(b, out var baseB, out var preB);
+
+        // Compare numeric base parts (major.minor.patch[.build]) component-wise so
+        // missing trailing components default to 0 rather than failing parse.
+        var partsA = baseA.Split('.');
+        var partsB = baseB.Split('.');
+        var max = Math.Max(partsA.Length, partsB.Length);
+        for (int i = 0; i < max; i++)
+        {
+            int ai = i < partsA.Length && int.TryParse(partsA[i], out var pa) ? pa : 0;
+            int bi = i < partsB.Length && int.TryParse(partsB[i], out var pb) ? pb : 0;
+            if (ai != bi) return ai.CompareTo(bi);
+        }
+
+        // Same numeric base. Per SemVer 11: a release with NO prerelease suffix
+        // is greater than the same base with any prerelease suffix.
+        if (preA.Length == 0 && preB.Length == 0) return 0;
+        if (preA.Length == 0) return 1;
+        if (preB.Length == 0) return -1;
+
+        // Both have suffixes — ordinal compare is fine for our tagging scheme
+        // (alpha < beta < rc, numeric increments within each).
+        return string.CompareOrdinal(preA, preB);
+    }
+
+    private static void SplitTag(string tag, out string baseVersion, out string prerelease)
+    {
+        var dash = tag.IndexOf('-');
+        if (dash < 0) { baseVersion = tag; prerelease = string.Empty; }
+        else          { baseVersion = tag[..dash]; prerelease = tag[(dash + 1)..]; }
     }
 
     private static bool ShouldCheck(AppSettings s)

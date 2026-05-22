@@ -12,7 +12,10 @@ namespace Pixora.Avalonia.Services;
 public static class StartupHelper
 {
     private const string RegistryKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string AppName = "PixivUtil2";
+    private const string AppName = "Pixora";
+    // Legacy names that may have been registered by older builds or the installer.
+    // We always remove these alongside the canonical name so the user's setting takes effect.
+    private static readonly string[] LegacyAppNames = ["PixivUtil2"];
 
     /// <summary>
     /// Gets whether the app is set to start with Windows.
@@ -22,8 +25,13 @@ public static class StartupHelper
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(RegistryKey, false);
-            var value = key?.GetValue(AppName);
-            return value != null;
+            if (key == null) return false;
+            if (key.GetValue(AppName) != null) return true;
+            foreach (var legacy in LegacyAppNames)
+            {
+                if (key.GetValue(legacy) != null) return true;
+            }
+            return false;
         }
         catch
         {
@@ -40,6 +48,13 @@ public static class StartupHelper
         {
             using var key = Registry.CurrentUser.OpenSubKey(RegistryKey, true);
             if (key == null) return;
+
+            // Always clear legacy names so disabling actually removes startup,
+            // even if a previous installer/build registered under another key.
+            foreach (var legacy in LegacyAppNames)
+            {
+                try { key.DeleteValue(legacy, false); } catch { }
+            }
 
             if (enabled)
             {
