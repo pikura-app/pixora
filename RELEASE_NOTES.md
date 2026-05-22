@@ -1,4 +1,4 @@
-## Pixora 1.6.1
+## Pixora 1.6.2
 
 Bug fixes, stability improvements, and Linux sign-in support.
 
@@ -12,7 +12,7 @@ Bug fixes, stability improvements, and Linux sign-in support.
 - **Ugoira locale bug** — Fixed a decimal separator formatting issue in the ffconcat duration string that caused ffmpeg to fail or produce incorrect animations on systems using a non-English locale.
 - **Animated image race condition** — Fixed a race condition in `AnimatedImage` where a cancelled decode could overwrite the current source, causing stuck or incorrect animations.
 - **Periodic update checks** — The app now re-checks for updates every 6 hours while running, so long-running sessions will notice new releases without requiring a restart.
-- **Rankings "Download Selected" button** — Fixed the button remaining disabled after selecting artworks. Card selection state changes now correctly bubble up to the view model so the button enables immediately.
+- **Rankings "Download Selected" button** — Fixed the button remaining permanently disabled. The checkbox click handler was calling `e.Handled = true`, preventing the checkbox from toggling `IsSelected`. Selecting artworks now correctly enables the button.
 - **Caption button icon sizes** — Fixed the fullscreen and maximize window buttons rendering smaller than the minimize and close buttons. All four caption buttons now share a uniform font size.
 
 ### Improvements

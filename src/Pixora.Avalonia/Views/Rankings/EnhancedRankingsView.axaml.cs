@@ -507,7 +507,6 @@ public partial class EnhancedRankingsView : UserControl
 
     private void OnCardCheckboxClicked(object? sender, RoutedEventArgs e)
     {
-        // Handle checkbox click to prevent event bubbling
-        e.Handled = true;
+        VM?.NotifySelectionChanged();
     }
 }
