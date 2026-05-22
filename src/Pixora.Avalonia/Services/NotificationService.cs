@@ -175,21 +175,52 @@ public class NotificationService
         }
     }
 
+    private static string UpgradeThumbnailUrl(string url)
+    {
+        // Profile avatars: _170.jpg and _50.jpg are the only API-provided sizes.
+        // Stripping the size suffix serves the original upload (up to ~400–1000px).
+        if (url.Contains("/user-profile/"))
+            return System.Text.RegularExpressions.Regex.Replace(url, @"_\d+\.jpg$", ".jpg");
+
+        // Artwork master thumbnails: swap the /c/NxN_... resize proxy for a larger one.
+        // e.g. /c/250x250_80_a2/ or /c/128x128/ → /c/600x600_80/
+        if (url.Contains("i.pximg.net/c/"))
+            return System.Text.RegularExpressions.Regex.Replace(url, @"/c/\d+x\d+[^/]*/", "/c/600x600_80/");
+
+        return url;
+    }
+
     private static string? DownloadThumbnailToTemp(string url)
     {
         try
         {
-            var ext      = Path.GetExtension(new Uri(url).AbsolutePath);
+            var upgraded = UpgradeThumbnailUrl(url);
+            var ext      = Path.GetExtension(new Uri(upgraded).AbsolutePath);
             if (string.IsNullOrEmpty(ext)) ext = ".jpg";
-            var tmpPath  = Path.Combine(Path.GetTempPath(), $"pixora-thumb-{Math.Abs(url.GetHashCode())}{ext}");
+            var tmpPath  = Path.Combine(Path.GetTempPath(), $"pixora-thumb-{Math.Abs(upgraded.GetHashCode())}{ext}");
             if (File.Exists(tmpPath)) return new Uri(tmpPath).AbsoluteUri;
 
-            using var req  = new HttpRequestMessage(HttpMethod.Get, url);
+            using var req  = new HttpRequestMessage(HttpMethod.Get, upgraded);
             req.Headers.TryAddWithoutValidation("Referer", "https://www.pixiv.net/");
             req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
             using var resp = _thumbClient.Send(req);
-            if (!resp.IsSuccessStatusCode) return null;
-            using var fs   = File.Create(tmpPath);
+            if (!resp.IsSuccessStatusCode)
+            {
+                // Fall back to original URL if upgraded version 404s
+                if (upgraded != url)
+                {
+                    using var req2  = new HttpRequestMessage(HttpMethod.Get, url);
+                    req2.Headers.TryAddWithoutValidation("Referer", "https://www.pixiv.net/");
+                    req2.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+                    using var resp2 = _thumbClient.Send(req2);
+                    if (!resp2.IsSuccessStatusCode) return null;
+                    using var fs2 = File.Create(tmpPath);
+                    resp2.Content.ReadAsStream().CopyTo(fs2);
+                    return new Uri(tmpPath).AbsoluteUri;
+                }
+                return null;
+            }
+            using var fs = File.Create(tmpPath);
             resp.Content.ReadAsStream().CopyTo(fs);
             return new Uri(tmpPath).AbsoluteUri;
         }
