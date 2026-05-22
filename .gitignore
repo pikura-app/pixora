@@ -69,3 +69,5 @@ error_*.txt
 final_*.txt
 last_errors.txt
 full_build.txt
+
+wiki/
