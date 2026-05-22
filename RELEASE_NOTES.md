@@ -15,6 +15,7 @@ Image editor improvements, new Opacity slider, and batch download fixes.
 - **Toast icon** — App icon now appears as a small square in the top-left of notifications (matching the reference Windows toast style), not cropped in a circle.
 
 ### Fixes
+- **Inline viewer — blank image on expand** — Fixed: clicking Expand on the side viewer showed a blank screen. The full-screen overlay now correctly reloads the image when it becomes visible (affects Gallery, Rankings, Discover, and Bookmarks).
 - **Batch download — search results limit** — Fixed: searches were always capped at 60 results regardless of the "Max Results" setting. The downloader now paginates through Pixiv's 60-per-page API until the requested limit is reached.
 - **Batch download — search mode/sort order** — Fixed: the Safe/R-18/All mode selector and the Newest/Popular sort order selector were always behaving as "All" / default. Bindings now correctly use `SelectedValueBinding="{ReflectionBinding Tag}"` to round-trip the string tag values.
 - **Gallery — followed artists count badge** — Fixed: the count badge at the top of the Gallery was showing the unreliable Pixiv API `total` (which includes deleted/hidden accounts). It now shows the actual number of artists loaded (`Artists.Count`), matching the status bar.
