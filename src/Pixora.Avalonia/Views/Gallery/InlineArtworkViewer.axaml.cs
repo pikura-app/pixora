@@ -67,6 +67,13 @@ public partial class InlineArtworkViewer : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == IsExpandedProperty)
             ApplyExpandedState((bool)change.NewValue!);
+
+        // When this viewer instance becomes visible (e.g. expand to full-screen switches
+        // from GallerySideViewer to GalleryFullViewer), re-trigger the load.
+        // LoadCardAsync bails early when !IsEffectivelyVisible, so the full viewer ends
+        // up blank if InlineViewerCard was already set before it became visible.
+        if (change.Property == IsVisibleProperty && change.NewValue is true)
+            _ = LoadCardAsync(VM?.InlineViewerCard);
     }
 
     private void ApplyExpandedState(bool expanded)
