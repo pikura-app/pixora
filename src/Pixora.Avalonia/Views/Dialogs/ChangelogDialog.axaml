@@ -1,7 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
-        xmlns:ctrl="using:Pixora.Avalonia.Views.Controls"
         x:Class="Pixora.Avalonia.Views.Dialogs.ChangelogDialog"
         Title="What's New"
         Width="600" Height="680"
@@ -31,16 +30,17 @@
         </Border>
 
         <!-- Release notes body -->
-        <ScrollViewer Grid.Row="1"
-                      HorizontalScrollBarVisibility="Disabled"
-                      VerticalScrollBarVisibility="Auto"
-                      Padding="20,14">
-            <ctrl:MarkdownTextBlock x:Name="NotesText"
-                                    FontSize="12.5"
-                                    TextWrapping="Wrap"
-                                    LineHeight="20"
-                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"/>
-        </ScrollViewer>
+        <TextBox Grid.Row="1"
+                 x:Name="NotesText"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 FontSize="12.5"
+                 BorderThickness="0"
+                 Background="Transparent"
+                 Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"
+                 Padding="20,14"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
 
         <!-- Footer -->
         <Border Grid.Row="2"
