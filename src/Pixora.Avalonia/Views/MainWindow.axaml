@@ -46,7 +46,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="0"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="16"/>
             <Setter Property="Foreground" Value="{actipro:ThemeResource DefaultForegroundBrush}"/>
         </Style>
         <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
@@ -305,7 +305,7 @@
                 <Button x:Name="MinimizeBtn" Classes="caption" Content="&#x2014;"
                         ToolTip.Tip="Minimize" Click="MinimizeBtn_Click"/>
                 <!-- Maximize/Restore -->
-                <Button x:Name="MaximizeBtn" Classes="caption" Content="&#x25A1;"
+                <Button x:Name="MaximizeBtn" Classes="caption" Content="&#x2610;"
                         ToolTip.Tip="Maximize" Click="MaximizeBtn_Click"/>
                 <!-- Close -->
                 <Button x:Name="CloseBtn" Classes="caption" Content="&#x2715;"

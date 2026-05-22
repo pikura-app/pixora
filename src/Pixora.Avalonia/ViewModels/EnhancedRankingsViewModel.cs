@@ -313,6 +313,7 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
+        foreach (var c in Items) c.PropertyChanged -= OnCardPropertyChanged;
         Items.Clear();
         SelectedCount = 0;
         CurrentPage = 1;
@@ -381,6 +382,7 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
                 {
                     IsBlurred = _settingsService.Current.BlurR18Content && entry.ContentType.Sexual
                 };
+                card.PropertyChanged += OnCardPropertyChanged;
                 Items.Add(card);
                 _ = card.LoadThumbnailAsync(_imageLoader); // no ct — thumbnail should survive load-more
             }
@@ -441,6 +443,7 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
                 {
                     IsBlurred = _settingsService.Current.BlurR18Content && entry.ContentType.Sexual
                 };
+                card.PropertyChanged += OnCardPropertyChanged;
                 Items.Add(card);
                 _ = card.LoadThumbnailAsync(_imageLoader); // no ct — thumbnail should survive navigation
             }
@@ -460,6 +463,12 @@ public partial class EnhancedRankingsViewModel : ViewModelBase
         catch (OperationCanceledException) { }
         catch (Exception ex) { StatusMessage = $"Failed: {ex.Message}"; }
         finally { IsLoading = false; }
+    }
+
+    private void OnCardPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RankingCardViewModel.IsSelected))
+            SelectedCount = Items.Count(c => c.IsSelected);
     }
 
     public void NotifySelectionChanged()
