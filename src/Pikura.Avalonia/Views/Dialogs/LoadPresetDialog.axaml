@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:models="clr-namespace:Pikura.Core.Models;assembly=Pikura.Core"
+        xmlns:system="clr-namespace:System;assembly=netstandard"
+        x:Class="Pikura.Avalonia.Views.Dialogs.LoadPresetDialog"
+        Title="Load Preset"
+        Width="500"
+        Height="400"
+        WindowStartupLocation="CenterOwner"
+        MinWidth="400"
+        MinHeight="300">
+
+    <Border Padding="20">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+            <TextBlock Grid.Row="0" Text="Load Download Preset" FontSize="16" FontWeight="SemiBold"/>
+
+            <Border Grid.Row="1"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="PresetsList" Margin="8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:DownloadPreset">
+                                <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="12,10"
+                                        Margin="0,0,0,8"
+                                        PointerPressed="PresetItem_PointerPressed"
+                                        Tag="{Binding}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="4">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"/>
+                                            <TextBlock Text="{Binding Description}"
+                                                       FontSize="12"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} artists • {1:MMM d, yyyy}">
+                                                        <Binding Path="Artists.Count"/>
+                                                        <Binding Path="CreatedAt"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                            <Button Content="Load"
+                                                    Click="LoadButton_Click"
+                                                    Tag="{Binding}"
+                                                    Classes="accent"
+                                                    CornerRadius="6" Padding="12,6"/>
+                                            <Button Content="🗑"
+                                                    Click="DeleteButton_Click"
+                                                    Tag="{Binding}"
+                                                    CornerRadius="6" Padding="8,6"
+                                                    ToolTip.Tip="Delete preset"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel"
+                        Click="CancelButton_Click"
+                        CornerRadius="6" Padding="12,8"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

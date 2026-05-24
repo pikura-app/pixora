@@ -1,0 +1,455 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:anim="using:Pikura.Avalonia.Controls"
+        xmlns:vm="clr-namespace:Pikura.Avalonia.ViewModels"
+        xmlns:models="clr-namespace:Pikura.Core.Models"
+        xmlns:dialogs="clr-namespace:Pikura.Avalonia.Views.Dialogs"
+        x:Class="Pikura.Avalonia.Views.Dialogs.DownloadPresetWindow"
+        Title="Pikura — Download with Preset"
+        Width="1500"
+        Height="950"
+        WindowStartupLocation="CenterOwner"
+        MinWidth="1100"
+        MinHeight="700">
+
+    <Grid ColumnDefinitions="350,*,300">
+        <!-- LEFT: Preset Selection -->
+        <Border Grid.Column="0"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="0,0,1,0"
+                Padding="16">
+            <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
+                <TextBlock Grid.Row="0" Text="Presets" FontSize="18" FontWeight="Bold"/>
+
+                <!-- Search -->
+                <TextBox Grid.Row="1"
+                         x:Name="PresetSearchBox"
+                         PlaceholderText="Search presets..."
+                         TextChanged="OnPresetSearchChanged"/>
+
+                <!-- Preset List -->
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="PresetList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:DownloadPresetWindow+PresetViewModel">
+                                <Border x:Name="PresetItem"
+                                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="12"
+                                        Margin="0,0,0,8"
+                                        PointerPressed="OnPresetPointerPressed"
+                                        Tag="{Binding}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="4">
+                                            <TextBlock Text="{Binding Preset.Name}" FontWeight="SemiBold" FontSize="14"/>
+                                            <TextBlock Text="{Binding Preset.DevicePreset}"
+                                                       FontSize="11"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                            <TextBlock Text="{Binding Preset.Adjustments.HasAdjustments, StringFormat='Adjustments: {0}'}"
+                                                       FontSize="10"
+                                                       Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        </StackPanel>
+                                        <RadioButton Grid.Column="1"
+                                                     IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                     GroupName="PresetGroup"
+                                                     VerticalAlignment="Center"
+                                                     Click="OnPresetRadioClick"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Orientation Toggle -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Orientation:" VerticalAlignment="Center"/>
+                    <ToggleButton x:Name="PortraitToggle"
+                                  Content="Portrait"
+                                  IsCheckedChanged="OnOrientationChanged"/>
+                    <ToggleButton x:Name="LandscapeToggle"
+                                  Content="Landscape"
+                                  IsChecked="True"
+                                  IsCheckedChanged="OnOrientationChanged"/>
+                </StackPanel>
+
+                <!-- Custom Button -->
+                <Button Grid.Row="4"
+                        x:Name="CustomPresetButton"
+                        Content="✏️ Custom Edit..."
+                        HorizontalAlignment="Stretch"
+                        Classes="accent"
+                        Click="OnCustomEditClick"/>
+            </Grid>
+        </Border>
+
+        <!-- CENTER: Image Preview -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+            <!-- Selected Images Header -->
+            <Border Grid.Row="0"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock x:Name="SelectedCountText" Text="1 image selected" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="SubmissionInfoText"
+                                   Text="Submission 1 of 1"
+                                   FontSize="12"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                   IsVisible="False"/>
+                        <TextBlock x:Name="MultiPageInfoText"
+                                   Text="5 total pages across 2 submissions"
+                                   FontSize="12"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                   IsVisible="False"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="PrevImageButton"
+                                Content="◀"
+                                Click="OnPrevImageClick"
+                                IsEnabled="False"/>
+                        <!-- Submission indicator (shows X/Y for multi-selection) -->
+                        <Border x:Name="SubmissionNumberBorder"
+                                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8,4">
+                            <TextBlock x:Name="SubmissionIndicator" Text="1 / 1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"/>
+                        </Border>
+                        <!-- Page indicator (only visible for multi-page, blue badge) -->
+                        <Border x:Name="PageNumberBorder"
+                                Background="#3B82F6"
+                                CornerRadius="4"
+                                Padding="8,4"
+                                IsVisible="False">
+                            <TextBlock x:Name="PageNumberText" Text="Pg 1/3" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
+                        </Border>
+                        <Button x:Name="NextImageButton"
+                                Content="▶"
+                                Click="OnNextImageClick"
+                                IsEnabled="False"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Image Canvas -->
+            <Border Grid.Row="1"
+                    Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                    Margin="16">
+                <Grid>
+                    <!-- Loading Spinner -->
+                    <ProgressBar x:Name="LoadingSpinner"
+                                 IsIndeterminate="True"
+                                 IsVisible="False"
+                                 Width="100"
+                                 Height="4"/>
+
+                    <!-- Image with navigation overlays -->
+                    <Grid>
+                        <Image x:Name="PreviewImage"
+                               Stretch="Uniform"
+                               Margin="20"/>
+
+                        <!-- Ugoira animation player (hidden by default) -->
+                        <anim:AnimatedImage x:Name="UgoiraPlayer"
+                                          Stretch="Uniform"
+                                          Margin="20"
+                                          IsVisible="False"/>
+
+                        <!-- Left page navigation overlay -->
+                        <Border x:Name="LeftNavOverlay"
+                                Background="Transparent"
+                                HorizontalAlignment="Left"
+                                Width="60"
+                                Cursor="Hand"
+                                PointerPressed="OnLeftNavClick"
+                                IsVisible="False">
+                            <Border HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="#80000000"
+                                    CornerRadius="20"
+                                    Padding="12,8"
+                                    Opacity="0.6">
+                                <TextBlock Text="◀" FontSize="20" Foreground="White"/>
+                            </Border>
+                        </Border>
+
+                        <!-- Right page navigation overlay -->
+                        <Border x:Name="RightNavOverlay"
+                                Background="Transparent"
+                                HorizontalAlignment="Right"
+                                Width="60"
+                                Cursor="Hand"
+                                PointerPressed="OnRightNavClick"
+                                IsVisible="False">
+                            <Border HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="#80000000"
+                                    CornerRadius="20"
+                                    Padding="12,8"
+                                    Opacity="0.6">
+                                <TextBlock Text="▶" FontSize="20" Foreground="White"/>
+                            </Border>
+                        </Border>
+
+                        <!-- Play Animation button for ugoira -->
+                        <Border x:Name="PlayAnimationButton"
+                                Background="Transparent"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Cursor="Hand"
+                                PointerPressed="OnPlayAnimationClick"
+                                IsVisible="False">
+                            <Border HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="#80000000"
+                                    CornerRadius="30"
+                                    Padding="20,12"
+                                    Opacity="0.8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="▶" FontSize="24" Foreground="White"/>
+                                    <TextBlock Text="Play" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </Border>
+                    </Grid>
+
+                    <!-- Canvas for crop overlay -->
+                    <Canvas x:Name="CropOverlayCanvas"
+                          Background="Transparent"
+                          IsVisible="False"/>
+
+                    <!-- Empty state -->
+                    <TextBlock x:Name="NoPreviewText"
+                               Text="Select an image to preview"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                </Grid>
+            </Border>
+
+            <!-- Preview Controls -->
+            <Border Grid.Row="2"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16">
+                <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+                    <TextBlock Text="Preview Quality:" VerticalAlignment="Center"/>
+                    <Slider x:Name="PreviewQualitySlider"
+                            Minimum="400"
+                            Maximum="1200"
+                            Value="800"
+                            Width="150"
+                            ValueChanged="OnPreviewQualityChanged"/>
+                    <TextBlock x:Name="PreviewQualityValue" Text="800px" VerticalAlignment="Center"/>
+                    <CheckBox x:Name="ShowCropOverlayCheck"
+                              Content="Show Crop"
+                              IsChecked="False"
+                              IsCheckedChanged="OnShowCropChanged"/>
+                    <Button x:Name="ResetPreviewButton"
+                            Content="🔄 Reset"
+                            Click="OnResetPreviewClick"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- RIGHT: Output Options & Actions -->
+        <Border Grid.Column="2"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="1,0,0,0"
+                Padding="16">
+            <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="16">
+                <TextBlock Grid.Row="0" Text="Output Options" FontSize="16" FontWeight="Bold"/>
+
+                <!-- Output Options -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12">
+                        <!-- Save Mode -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Save Mode" FontWeight="SemiBold"/>
+                            <RadioButton x:Name="SaveAsNewRadio"
+                                         Content="Save as new file (_processed)"
+                                         IsChecked="True"
+                                         GroupName="SaveModeGroup"/>
+                            <RadioButton x:Name="OverwriteRadio"
+                                         Content="Overwrite original"
+                                         GroupName="SaveModeGroup"/>
+                        </StackPanel>
+
+                        <!-- Also download unprocessed -->
+                        <StackPanel Spacing="4">
+                            <CheckBox x:Name="AlsoDownloadUnprocessedCheck"
+                                      Content="Also download unprocessed copy"
+                                      ToolTip.Tip="Downloads the original unprocessed image alongside any processed versions. No warning if original already exists."/>
+                        </StackPanel>
+
+                        <!-- Format -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Output Format" FontWeight="SemiBold"/>
+                            <ComboBox x:Name="FormatComboBox" SelectedIndex="0">
+                                <ComboBoxItem Content="Keep Original"/>
+                                <ComboBoxItem Content="JPEG (High Quality)"/>
+                                <ComboBoxItem Content="JPEG (Medium Quality)"/>
+                                <ComboBoxItem Content="PNG (Lossless)"/>
+                                <ComboBoxItem Content="WebP"/>
+                            </ComboBox>
+                            <Slider x:Name="JpegQualitySlider"
+                                    Minimum="1"
+                                    Maximum="100"
+                                    Value="90"
+                                    IsVisible="False"/>
+                        </StackPanel>
+
+                        <!-- Ugoira (Animated) Format Options -->
+                        <StackPanel x:Name="UgoiraFormatPanel" Spacing="4" IsVisible="False">
+                            <TextBlock Text="Animation Output Formats" FontWeight="SemiBold"/>
+                            <TextBlock Text="Select which formats to create for animated ugoira:"
+                                       FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                            <WrapPanel>
+                                <CheckBox x:Name="UgoiraMp4Check" Content="MP4 (Recommended)" IsChecked="True"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraGifCheck" Content="GIF" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraWebmCheck" Content="WebM" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                                <CheckBox x:Name="UgoiraWebpCheck" Content="WebP" IsChecked="False"
+                                          FontSize="13" Margin="0,4,16,4"/>
+                            </WrapPanel>
+                            <StackPanel Spacing="4">
+                                <CheckBox x:Name="UgoiraSaveFramesCheck"
+                                          Content="Save processed frames to subfolder"
+                                          IsChecked="False"
+                                          FontSize="12"
+                                          ToolTip.Tip="Creates a subfolder with each processed frame as individual PNG files"/>
+                                <CheckBox x:Name="UgoiraFramesOnlyCheck"
+                                          Content="Frames only (skip animation)"
+                                          IsChecked="False"
+                                          FontSize="12"
+                                          IsEnabled="{Binding #UgoiraSaveFramesCheck.IsChecked}"
+                                          ToolTip.Tip="Download only the individual frames without creating MP4/GIF animation"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Multi-page Options -->
+                        <StackPanel x:Name="MultiPageOptions" Spacing="4" IsVisible="False">
+                            <TextBlock Text="Multi-page Options" FontWeight="SemiBold"/>
+                            <CheckBox x:Name="ApplyToAllPagesCheck"
+                                      Content="Apply to all pages"
+                                      IsChecked="True"
+                                      IsCheckedChanged="OnMultiPageOptionChanged"/>
+                            <CheckBox x:Name="CurrentPageOnlyCheck"
+                                      Content="Current page only"
+                                      IsChecked="False"
+                                      IsCheckedChanged="OnMultiPageOptionChanged"/>
+                            <CheckBox x:Name="SelectedOnlyCheck"
+                                      Content="Selected pages only"
+                                      IsChecked="False"
+                                      IsCheckedChanged="OnMultiPageOptionChanged"/>
+                            <TextBox x:Name="SelectedPagesTextBox"
+                                     PlaceholderText="e.g., 1,3,5 or 1-3,6 or 5-6"
+                                     IsVisible="False"/>
+                        </StackPanel>
+
+                        <!-- Batch Mode (for multi-selection) -->
+                        <StackPanel x:Name="BatchModePanel" Spacing="4" IsVisible="False">
+                            <Separator/>
+                            <CheckBox x:Name="EnableBatchModeCheck"
+                                      Content="⚡ Configure each submission"
+                                      ToolTip.Tip="Enable to set different page selections for each submission individually"
+                                      IsChecked="False"
+                                      IsCheckedChanged="OnBatchModeChanged"/>
+                            <Border x:Name="BatchSubmissionsBorder"
+                                    Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                    BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="8"
+                                    IsVisible="False">
+                                <ScrollViewer x:Name="BatchSubmissionsList"
+                                              MaxHeight="180">
+                                    <StackPanel x:Name="BatchSubmissionsStack" Spacing="6"/>
+                                </ScrollViewer>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Custom Folder -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Output Folder" FontWeight="SemiBold"/>
+                            <CheckBox x:Name="UseCustomFolderCheck"
+                                      Content="Save to custom folder"
+                                      IsChecked="False"
+                                      IsCheckedChanged="OnCustomFolderChanged"/>
+                            <TextBox x:Name="CustomFolderTextBox"
+                                     PlaceholderText="Select folder..."
+                                     IsReadOnly="True"
+                                     IsVisible="False"/>
+                            <Button x:Name="BrowseFolderButton"
+                                    Content="Browse..."
+                                    Click="OnBrowseFolderClick"
+                                    IsVisible="False"/>
+                        </StackPanel>
+
+                        <!-- Divider -->
+                        <Separator/>
+
+                        <!-- Preset Actions -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Preset Actions" FontWeight="SemiBold"/>
+                            <Button x:Name="SavePresetButton"
+                                    Content="💾 Save Current as Preset"
+                                    HorizontalAlignment="Stretch"
+                                    Click="OnSavePresetClick"/>
+                            <Button x:Name="DeletePresetButton"
+                                    Content="🗑 Delete Custom Preset"
+                                    HorizontalAlignment="Stretch"
+                                    IsEnabled="False"
+                                    Click="OnDeletePresetClick"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Preset Info -->
+                <Border Grid.Row="2"
+                        Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="CurrentPresetName" Text="Original (No Processing)" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="CurrentPresetInfo"
+                                   Text="No resize or adjustments"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Action Buttons -->
+                <StackPanel Grid.Row="3" Spacing="8">
+                    <Button x:Name="DownloadButton"
+                            Content="⬇ Download"
+                            HorizontalAlignment="Stretch"
+                            Classes="accent"
+                            Height="44"
+                            FontSize="14"
+                            Click="OnDownloadClick"/>
+                    <Button x:Name="CancelButton"
+                            Content="Cancel"
+                            HorizontalAlignment="Stretch"
+                            Height="36"
+                            Click="OnCancelClick"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generates a launchd user agent plist for Pixora.Agent.
+Generates a launchd user agent plist for Pikura.Agent.
 The plist is installed to ~/Library/LaunchAgents/ — no root required.
 
 Usage:
@@ -8,13 +8,13 @@ Usage:
 
 Example:
     python write_agent_plist.py \
-        /Applications/Pixora.app/Contents/MacOS/Pixora.Agent \
-        ~/Library/LaunchAgents/com.pixora.agent.plist
+        /Applications/Pikura.app/Contents/MacOS/Pikura.Agent \
+        ~/Library/LaunchAgents/com.pikura.agent.plist
 
 After generation:
-    launchctl load ~/Library/LaunchAgents/com.pixora.agent.plist
+    launchctl load ~/Library/LaunchAgents/com.pikura.agent.plist
     # Or on macOS 10.11+:
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pixora.agent.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pikura.agent.plist
 """
 import sys
 import os
@@ -22,14 +22,14 @@ import os
 agent_exe = sys.argv[1]
 output    = os.path.expanduser(sys.argv[2])
 
-log_dir = os.path.expanduser("~/Library/Logs/Pixora")
+log_dir = os.path.expanduser("~/Library/Logs/Pikura")
 os.makedirs(log_dir, exist_ok=True)
 
 plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.pixora.agent</string>
+  <key>Label</key><string>com.pikura.agent</string>
 
   <key>ProgramArguments</key>
   <array>

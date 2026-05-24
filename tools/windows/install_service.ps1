@@ -1,10 +1,10 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Installs or uninstalls the Pixora Agent as a Windows Service.
+    Installs or uninstalls the Pikura Agent as a Windows Service.
 
 .DESCRIPTION
-    Registers Pixora.Agent.exe as a Windows Service named "PixoraAgent" using
+    Registers Pikura.Agent.exe as a Windows Service named "PikuraAgent" using
     the built-in sc.exe tool (no third-party dependencies required).
     The service runs under the current user's account (LocalSystem is NOT used).
 
@@ -14,12 +14,12 @@
     status    - Show current service status
 
 .PARAMETER AgentExe
-    Full path to Pixora.Agent.exe.
-    Defaults to the sibling folder: <script_dir>\..\..\publish\win-x64\Pixora.Agent.exe
+    Full path to Pikura.Agent.exe.
+    Defaults to the sibling folder: <script_dir>\..\..\publish\win-x64\Pikura.Agent.exe
 
 .EXAMPLE
     .\install_service.ps1 -Action install
-    .\install_service.ps1 -Action install -AgentExe "C:\Program Files\Pixora\Pixora.Agent.exe"
+    .\install_service.ps1 -Action install -AgentExe "C:\Program Files\Pikura\Pikura.Agent.exe"
     .\install_service.ps1 -Action uninstall
 #>
 
@@ -30,14 +30,14 @@ param(
     [string]$AgentExe = ""
 )
 
-$ServiceName    = "PixoraAgent"
-$ServiceDisplay = "Pixora Download Agent"
-$ServiceDesc    = "Runs Pixora scheduled downloads in the background, even when the main application is closed."
+$ServiceName    = "PikuraAgent"
+$ServiceDisplay = "Pikura Download Agent"
+$ServiceDesc    = "Runs Pikura scheduled downloads in the background, even when the main application is closed."
 
 # Resolve agent exe path
 if ([string]::IsNullOrEmpty($AgentExe)) {
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $AgentExe  = Join-Path $ScriptDir "..\..\publish\win-x64\Pixora.Agent.exe"
+    $AgentExe  = Join-Path $ScriptDir "..\..\publish\win-x64\Pikura.Agent.exe"
     $AgentExe  = [System.IO.Path]::GetFullPath($AgentExe)
 }
 
@@ -54,8 +54,8 @@ switch ($Action) {
 
     "install" {
         if (-not (Test-Path $AgentExe)) {
-            Write-Error "Pixora.Agent.exe not found at: $AgentExe"
-            Write-Host "Build the agent first:  dotnet publish src\Pixora.Agent -c Release -r win-x64"
+            Write-Error "Pikura.Agent.exe not found at: $AgentExe"
+            Write-Host "Build the agent first:  dotnet publish src\Pikura.Agent -c Release -r win-x64"
             exit 1
         }
 
@@ -79,7 +79,7 @@ switch ($Action) {
         Start-Service -Name $ServiceName
         Get-ServiceStatus
         Write-Host ""
-        Write-Host "Done. The Pixora Agent will now start automatically with Windows."
+        Write-Host "Done. The Pikura Agent will now start automatically with Windows."
     }
 
     "uninstall" {

@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="src/Pixora.Avalonia/Assets/pixora-logo.png" width="96" height="96" alt="Pixora logo"/>
-  <h1>Pixora · ピクラ</h1>
+  <img src="src/Pikura.Avalonia/Assets/pikura-logo.png" width="96" height="96" alt="Pikura logo"/>
+  <h1>Pikura · ピクラ</h1>
   <p>A modern desktop manager for Pixiv artwork — browse, download, schedule, and organise your collection.</p>
 
-  [![Release](https://img.shields.io/github/v/release/pikura-app/pixora?style=flat-square)](https://github.com/pikura-app/pixora/releases/latest)
+  [![Release](https://img.shields.io/github/v/release/pikura-app/pikura?style=flat-square)](https://github.com/pikura-app/pikura/releases/latest)
   [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
   [![.NET](https://img.shields.io/badge/.NET-10-purple?style=flat-square)](https://dotnet.microsoft.com)
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#download)
@@ -20,7 +20,7 @@
 
 ## Screenshots
 
-![Pixora Gallery screenshot](.github/screenshots/gallery.png)
+![Pikura Gallery screenshot](.github/screenshots/gallery.png)
 ---
 
 ## Features
@@ -48,11 +48,11 @@
 
 | Platform | Installer | Portable |
 |----------|-----------|----------|
-| **Windows** | [Pixora-Setup.exe](https://github.com/pikura-app/pixora/releases/latest) | [.zip](https://github.com/pikura-app/pixora/releases/latest) |
-| **macOS** | [Pixora.dmg](https://github.com/pikura-app/pixora/releases/latest) | — |
-| **Linux** | [.AppImage](https://github.com/pikura-app/pixora/releases/latest) | [.tar.gz](https://github.com/pikura-app/pixora/releases/latest) |
+| **Windows** | [Pikura-Setup.exe](https://github.com/pikura-app/pikura/releases/latest) | [.zip](https://github.com/pikura-app/pikura/releases/latest) |
+| **macOS** | [Pikura.dmg](https://github.com/pikura-app/pikura/releases/latest) | — |
+| **Linux** | [.AppImage](https://github.com/pikura-app/pikura/releases/latest) | [.tar.gz](https://github.com/pikura-app/pikura/releases/latest) |
 
-> **macOS note:** Pixora is not notarised. On first launch right-click → Open to bypass Gatekeeper.
+> **macOS note:** Pikura is not notarised. On first launch right-click → Open to bypass Gatekeeper.
 
 ## Requirements
 
@@ -65,20 +65,20 @@
 **Prerequisites:** [.NET 10 SDK](https://dotnet.microsoft.com/download)
 
 ```bash
-git clone https://github.com/pikura-app/pixora.git
-cd pixora
-dotnet build src/Pixora.Avalonia/Pixora.Avalonia.csproj
-dotnet run --project src/Pixora.Avalonia/Pixora.Avalonia.csproj
+git clone https://github.com/pikura-app/pikura.git
+cd pikura
+dotnet build src/Pikura.Avalonia/Pikura.Avalonia.csproj
+dotnet run --project src/Pikura.Avalonia/Pikura.Avalonia.csproj
 ```
 
 ## Project structure
 
 ```
 src/
-  Pixora.Core/        # Business logic, API clients, download services
-  Pixora.Avalonia/    # Avalonia UI — views, viewmodels, assets
+  Pikura.Core/        # Business logic, API clients, download services
+  Pikura.Avalonia/    # Avalonia UI — views, viewmodels, assets
 tools/
-  MakeIco/            # CLI tool to generate pixora.ico from SVG
+  MakeIco/            # CLI tool to generate pikura.ico from SVG
   installer/          # Inno Setup script for Windows installer
   convert-icon.ps1    # SVG → ICO helper script
 .github/workflows/

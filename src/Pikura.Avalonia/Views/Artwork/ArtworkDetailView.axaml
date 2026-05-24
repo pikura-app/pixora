@@ -1,0 +1,170 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pikura.Avalonia.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Pikura.Avalonia.Views.Artwork.ArtworkDetailView"
+             x:DataType="vm:ArtworkDetailViewModel">
+
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#FFF8F8F8" Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="← Back" Command="{Binding GoBackCommand}"/>
+                
+                <TextBlock Grid.Column="1" 
+                          Text="{Binding Artwork.Title}" 
+                          FontWeight="SemiBold" 
+                          FontSize="18" 
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"/>
+                
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button Content="Download Current" Command="{Binding DownloadCurrentPageCommand}"/>
+                    <Button Content="Download All" Command="{Binding DownloadAllPagesCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Image Display -->
+            <Border Grid.Column="0" 
+                    Background="#FFF0F0F0" 
+                    Margin="16"
+                    CornerRadius="8"
+                    BorderBrush="#FFE0E0E0" 
+                    BorderThickness="1">
+                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="Artwork Image" 
+                              FontSize="24" 
+                              Opacity="0.5"/>
+                    <StackPanel VerticalAlignment="Bottom" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,16">
+                        <TextBlock Text="{Binding CurrentPageIndex, StringFormat='Page {0}'}" 
+                                  HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding TotalPages, StringFormat='of {0}'}" 
+                                  HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Side Panel -->
+            <Border Grid.Column="1" 
+                    Background="White" 
+                    BorderBrush="#FFE0E0E0" 
+                    BorderThickness="1,0,0,0"
+                    Width="300"
+                    Padding="16">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Artwork Info" FontWeight="SemiBold" FontSize="16"/>
+                    
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Artist:" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding Artwork.UserName}"/>
+
+                        <TextBlock Text="ID:" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding Artwork.Id}"/>
+
+                        <TextBlock Text="Type:" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding Artwork.TypeLabel}"/>
+
+                        <TextBlock Text="Pages:" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding Artwork.PageCount}"/>
+
+                        <TextBlock Text="Tags:" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                        <ItemsControl ItemsSource="{Binding Tags}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Button Content="{Binding}"
+                                            Margin="0,2,6,2"
+                                            Padding="10,5"
+                                            CornerRadius="14"
+                                            Background="#FFF0F0F0"
+                                            Foreground="#444"
+                                            FontSize="12"
+                                            FontWeight="Medium"
+                                            BorderThickness="0"
+                                            Command="{Binding $parent[UserControl].((vm:ArtworkDetailViewModel)DataContext).SearchByTagCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Styles>
+                                            <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                                                <Setter Property="Background" Value="#FFE0E0E0"/>
+                                            </Style>
+                                        </Button.Styles>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Navigation Footer -->
+        <Border Grid.Row="2" 
+                Background="#FFF8F8F8" 
+                Padding="16,8" 
+                BorderBrush="#FFE0E0E0" 
+                BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="1" 
+                        Content="← Previous" 
+                        Command="{Binding GoToPreviousPageCommand}"
+                        IsEnabled="{Binding CanGoToPreviousPage}"/>
+                
+                <TextBlock Grid.Column="2" 
+                          Text="{Binding StatusMessage}" 
+                          VerticalAlignment="Center"
+                          Margin="16,0"/>
+                
+                <Button Grid.Column="3" 
+                        Content="Next →" 
+                        Command="{Binding GoToNextPageCommand}"
+                        IsEnabled="{Binding CanGoToNextPage}"/>
+            </Grid>
+        </Border>
+
+        <!-- Loading Overlay -->
+        <Grid Grid.Row="1" 
+              Background="#80000000" 
+              IsVisible="{Binding IsLoading}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="200" Margin="0,0,0,8"/>
+                <TextBlock Text="Loading..." Foreground="White" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

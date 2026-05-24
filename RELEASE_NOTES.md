@@ -1,24 +1,25 @@
-## Pixora 1.6.4
+﻿## Pikura 1.7.0
 
-Image editor improvements, new Opacity slider, and batch download fixes.
+Safer downloads with a new Safe Mode toggle, reliable Linux sign-in via Playwright Chromium, Hoshi sidebar fixes, and a fix for incomplete followed-artists lists.
 
 ### New Features
-- **Image editor — Opacity slider** — New slider in Basic Adjustments (0 – 100%) lets you make the entire image more or less transparent. The alpha channel is preserved on export to PNG.
-- **Download notifications** — Windows toast notifications for download jobs (individual, batch, and scheduled). Three separate toggles in **Settings → Config → Download Notifications**: *Download started*, *Download completed*, *Download failed*. Each toast shows the artist's profile photo as a hero image.
-- **Update notifications** — Toast notifications when a new Pixora version is detected, with the Pixora icon in the top-left corner.
+- **Safe Mode (anti-suspension)** — New toggle in **Settings → Downloads → Download Behavior**, default OFF. When enabled, downloads run sequentially with 2–4 s jittered gaps between artworks, 300–800 ms between pages of multi-page works, 2–4 s between targets in multi-target batch jobs, and honor `Retry-After` headers with exponential backoff on HTTP 429/503 — so Pikura no longer trips Pixiv's "unauthorized access attempts" suspensions on long batch jobs.
+- **Copy artist ID anywhere** — Added "Copy artist ID" to the inline viewer image context menu and to every gallery card context menu (grid + list, natural + fixed). The artist name in the inline viewer is now also a single-click copy target. Mirrors to both the OS clipboard and the in-app artist-ID queue.
+- **Linux sign-in via Playwright Chromium** — Linux login no longer relies on WPE WebKit / libwebkit2gtk and no longer asks users to paste their PHPSESSID. A real Chromium window opens, the user signs in normally, and the session cookie is captured automatically. First-run downloads ~150 MB of bundled Chromium with a clear progress dialog; subsequent sign-ins are instant. Works on Ubuntu, Debian, Fedora, Arch, openSUSE, and other distros.
+- **Pinned Chromium cache** — Playwright's Chromium is installed into a Pikura-owned cache directory so future upgrades don't silently re-download the browser when the existing install is still usable.
 
 ### Improvements
-- **Image editor — color overlay color picker** — Replaced the default Fluent `ColorPicker` with a clean full-width color swatch button that matches the slider layout. Clicking opens a `ColorView` flyout. The flyout now correctly renders in dark mode (white text and icons) via a `ThemeVariantScope`.
-- **Image editor — color overlay opacity** — Fixed: moving the Opacity slider now applies the overlay immediately even before a color has been explicitly chosen (defaults to black).
-- **Image editor — live preview performance** — Further reductions to preview lag: preview resolution reduced to 600 px wide; slider ticks coalesced to ~60 fps (16 ms debounce); `WriteableBitmap` reused across frames to eliminate per-frame ~6 MB allocations; color-matrix adjustments (brightness, contrast, saturation, hue, temperature, tint, highlights, shadows) composed into a single GPU filter pass; blur uses a downscale → blur → upscale strategy for large radii (~4× faster).
-- **Changelog dialog** — Increased dialog height and made it resizable so long release notes are fully readable without truncation.
-- **Toast icon** — App icon now appears as a small square in the top-left of notifications (matching the reference Windows toast style), not cropped in a circle.
+- **Inline viewer status feedback** — Copy actions now show confirmation in the status bar (e.g. *"Copied artist ID 12345 (Username)"*).
+- **Manual PHPSESSID dialog** — Reworded as an emergency fallback with an explanation of why it's appearing; shown only if the Playwright Chromium install fails. Most users will never see it again.
+- **Windows — Control Panel** — Pikura now shows its icon in Programs and Features (previously a generic placeholder). The version is also displayed without the leading "v". Upgrading from an old "Pixora" install? The new installer detects and offers to remove the old entry automatically.
+- **Windows installer — old Pixora cleanup** — The installer scans the registry for any existing "Pixora" uninstall entry and offers to silently remove it before installing Pikura, so users don't end up with two entries in Programs and Features.
 
 ### Fixes
-- **Inline viewer — blank image on expand** — Fixed: clicking Expand on the side viewer showed a blank screen. The full-screen overlay now correctly reloads the image when it becomes visible (affects Gallery, Rankings, Discover, and Bookmarks).
-- **Batch download — search results limit** — Fixed: searches were always capped at 60 results regardless of the "Max Results" setting. The downloader now paginates through Pixiv's 60-per-page API until the requested limit is reached.
-- **Batch download — search mode/sort order** — Fixed: the Safe/R-18/All mode selector and the Newest/Popular sort order selector were always behaving as "All" / default. Bindings now correctly use `SelectedValueBinding="{ReflectionBinding Tag}"` to round-trip the string tag values.
-- **Gallery — followed artists count badge** — Fixed: the count badge at the top of the Gallery was showing the unreliable Pixiv API `total` (which includes deleted/hidden accounts). It now shows the actual number of artists loaded (`Artists.Count`), matching the status bar.
-- **Artist select dialog — followed artists count** — The "Add Followed Artists" dialog in batch download now reuses the Gallery's already-loaded followed-artists list (same source, same count) instead of fetching independently, so the count is always consistent.
+- **Linux — Chromium permission denied on launch** — Fixed: .NET's single-file extractor unpacks embedded binaries without the executable bit set on Linux. Pikura now runs `chmod +x` on its embedded Playwright `node` binary before every login attempt, preventing the `EACCES (13)` error that caused the Chromium window to never open and fall back to the manual cookie dialog.
+- **Linux — Chromium login dialog threading** — Fixed: the Chromium install progress dialog and fallback manual-cookie dialog were being constructed on a background thread, causing a cross-thread `InvalidOperationException`. All Avalonia window creation is now correctly marshalled to the UI thread.
+- **Followed artists — incomplete list (#18)** — Fixed: only 48 of N followed artists loaded. Two root causes: (a) required Pixiv URL params (`tag=`, `acceptingRequests=0`, `lang=`) were missing, causing Pixiv to ignore `offset` and return the first page repeatedly; (b) the loader stopped paginating when `total` came back as 0. The gallery now does sequential discovery as a fallback so the whole list always loads.
+- **Hoshi sidebar — prompt bubble disappearing mid-response** — Fixed: clicking *Describe*/*Tags*/*R-18* showed the prompt briefly, then it vanished as the AI streamed its answer. The `SessionsChanged` event used by the account-switch handler was being raised by routine session create/delete/duplicate operations and wiping the active chat. It now fires only on actual account swaps.
+- **Hoshi sidebar — "I don't have the ability to see the image"** — Fixed: Pikura wiped the AI's image bytes on every card switch and only repopulated them after the full-resolution image finished downloading. The quick-action buttons now have an instant thumbnail-byte seed plus a belt-and-suspenders fallback that re-fetches from the cache before sending a vision query.
+- **Inline viewer — chat bubble race** — Assistant streaming chunks now marshal cleanly to the UI thread via `Dispatcher.InvokeAsync` instead of racing with the user prompt add from a background thread.
 
 

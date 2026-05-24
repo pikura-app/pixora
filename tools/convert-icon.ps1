@@ -1,9 +1,9 @@
-# Converts pixora-icon.svg -> pixora.ico
+# Converts pikura-icon.svg -> pikura.ico
 # Requires: Inkscape (winget install Inkscape.Inkscape) + ImageMagick (winget install ImageMagick.ImageMagick)
 
-$svgPath   = "$PSScriptRoot\..\src\Pixora.Avalonia\Assets\pixora-icon.svg"
-$icoPath   = "$PSScriptRoot\..\src\Pixora.Avalonia\Assets\pixora.ico"
-$tmpDir    = "$env:TEMP\pixora_icon_convert"
+$svgPath   = "$PSScriptRoot\..\src\Pikura.Avalonia\Assets\pikura-icon.svg"
+$icoPath   = "$PSScriptRoot\..\src\Pikura.Avalonia\Assets\pikura.ico"
+$tmpDir    = "$env:TEMP\pikura_icon_convert"
 
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 

@@ -40,7 +40,7 @@ out.txt
 err.txt
 startup_crash.txt
 
-# SQLite databases (user data — never commit)
+# SQLite databases (user data � never commit)
 *.db
 *.db-shm
 *.db-wal

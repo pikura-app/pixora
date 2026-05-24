@@ -1,0 +1,336 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pikura.Avalonia.ViewModels"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:conv="using:Pikura.Avalonia.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="Pikura.Avalonia.Views.DownloadByArtistView"
+             x:DataType="vm:DownloadByArtistViewModel">
+
+    <Design.DataContext>
+        <vm:DownloadByArtistViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="20,16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Download by Artist" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock Text="Download artworks from followed artists or specific artist IDs"
+                               FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="? Help" CornerRadius="6" Padding="12,6"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" Margin="20">
+
+                <!-- Selected Artists Section -->
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Selected Artists" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding SelectedArtists.Count, StringFormat='{}{0} artists'}"
+                                       FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                                       Grid.Column="1"/>
+                        </Grid>
+
+                        <!-- Artist List -->
+                        <Border Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Height="200">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SelectedArtists}"
+                                             Margin="8">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:SelectedArtist">
+                                            <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6"
+                                                    Padding="10,6" Margin="0,0,8,8">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                    <!-- Avatar -->
+                                                    <Border Grid.Column="0" Width="40" Height="40"
+                                                            CornerRadius="20"
+                                                            Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}">
+                                                        <TextBlock Text="👤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20"/>
+                                                    </Border>
+
+                                                    <!-- Name -->
+                                                    <TextBlock Grid.Column="1" Text="{Binding UserName}"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13" FontWeight="Medium"/>
+
+                                                    <!-- Page Range (if custom) -->
+                                                    <Border Grid.Column="2"
+                                                            IsVisible="{Binding HasCustomPageRange}"
+                                                            Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                                            CornerRadius="4" Padding="6,2">
+                                                        <TextBlock Text="{Binding DisplayPageRange}"
+                                                                   FontSize="11"/>
+                                                    </Border>
+
+                                                    <!-- Custom Settings Indicator -->
+                                                    <Border Grid.Column="3"
+                                                            IsVisible="{Binding HasCustomSettings}"
+                                                            Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                                            CornerRadius="4" Padding="6,2"
+                                                            ToolTip.Tip="Has custom download settings">
+                                                        <TextBlock Text="⚙️" FontSize="11"/>
+                                                    </Border>
+
+                                                    <!-- Settings Button -->
+                                                    <Button Grid.Column="4" Content="⚙️"
+                                                            FontSize="12" CornerRadius="4"
+                                                            Padding="4,2"
+                                                            ToolTip.Tip="Configure custom settings"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ConfigureArtistSettingsCommand}"
+                                                            CommandParameter="{Binding}"/>
+
+                                                    <!-- Remove Button -->
+                                                    <Button Grid.Column="5" Content="✕"
+                                                            FontSize="12" CornerRadius="4"
+                                                            Padding="4,2"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveArtistCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- Empty State -->
+                        <Border IsVisible="{Binding !SelectedArtists.Count}"
+                                Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                                CornerRadius="6" Padding="20" HorizontalAlignment="Center">
+                            <TextBlock Text="No artists selected. Add artists using the buttons below."
+                                       FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                        </Border>
+
+                        <!-- Add Artists Controls -->
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="+ Add Followed Artists"
+                                        Command="{Binding AddFollowedArtistsCommand}"
+                                        CornerRadius="6" Padding="12,8"/>
+                                <Button Content="📁 Import from File"
+                                        Command="{Binding ImportArtistsFromFileAsync}"
+                                        CornerRadius="6" Padding="12,8"/>
+                                <Button Content="Clear All"
+                                        Command="{Binding ClearArtistsCommand}"
+                                        IsEnabled="{Binding SelectedArtists.Count}"
+                                        CornerRadius="6" Padding="12,8"/>
+                            </StackPanel>
+
+                            <!-- Add by ID -->
+                            <StackPanel Spacing="8">
+                                <DockPanel LastChildFill="False">
+                                    <TextBlock DockPanel.Dock="Left" Text="Artist IDs or URLs" FontSize="14" FontWeight="SemiBold"/>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding ParsedArtistIds.Count, StringFormat='{}{0} IDs detected'}"
+                                               FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}" VerticalAlignment="Center"/>
+                                </DockPanel>
+
+                                <TextBox Text="{Binding NewArtistId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         Watermark="Enter artist IDs or URLs...&#x0a;One per line or comma-separated&#x0a;Example: 1234567&#x0a;https://www.pixiv.net/en/users/1234567"
+                                         CornerRadius="6" MinHeight="80"/>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                    <Button Content="📋 Paste"
+                                            Command="{Binding PasteFromClipboardCommand}"
+                                            ToolTip.Tip="Paste last copied ID"
+                                            CornerRadius="6" Padding="10,6"
+                                            IsVisible="{Binding HasClipboardContent}"/>
+                                    <Button Content="+ Add Artists"
+                                            Command="{Binding AddArtistByIdCommand}"
+                                            IsEnabled="{Binding ParsedArtistIds.Count}"
+                                            CornerRadius="6" Padding="12,6"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Page Range Configuration -->
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Page Range Configuration" FontSize="15" FontWeight="SemiBold"/>
+
+                        <!-- Default Page Range -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Default Page Range for All Artists"
+                                       FontSize="13" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                            <Grid ColumnDefinitions="200,*">
+                                <ComboBox Grid.Column="0"
+                                          ItemsSource="{Binding PageRangePresets}"
+                                          SelectedItem="{Binding DefaultPageRange, Mode=TwoWay}"
+                                          CornerRadius="6"/>
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                           Text="Examples: '0' or 'all' = all pages, '2' = page 2 only, '1-5' = pages 1 to 5, '2,4,6-10' = specific pages"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Per-Artist Toggle -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <CheckBox Grid.Column="0" Content="Set custom page ranges and settings per artist"
+                                      IsChecked="{Binding UsePerArtistPageRanges, Mode=TwoWay}"/>
+                        </Grid>
+
+                        <!-- Per-Artist Table (visible when enabled) -->
+                        <Border IsVisible="{Binding UsePerArtistPageRanges}"
+                                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                BorderThickness="1" CornerRadius="6">
+                            <StackPanel>
+                                <!-- Header -->
+                                <Grid ColumnDefinitions="*,150,Auto" Margin="8,8,8,4">
+                                    <TextBlock Grid.Column="0" Text="Artist" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    <TextBlock Grid.Column="1" Text="Page Range" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                    <TextBlock Grid.Column="2" Text="Settings" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SelectedArtists}"
+                                             Margin="8,0,8,8">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:SelectedArtist">
+                                            <Grid ColumnDefinitions="*,150,Auto" ColumnSpacing="8" Margin="0,4">
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding UserName}" VerticalAlignment="Center"/>
+                                                    <Border IsVisible="{Binding HasCustomSettings}"
+                                                            Background="{actipro:ThemeResource ControlBackgroundBrushSolidAccent}"
+                                                            CornerRadius="3" Padding="4,1"
+                                                            ToolTip.Tip="Has custom download settings">
+                                                        <TextBlock Text="Custom" FontSize="10"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding PageRange, Mode=TwoWay}"
+                                                         Watermark="Default"
+                                                         CornerRadius="4"/>
+                                                <Button Grid.Column="2"
+                                                        Content="⚙ Settings"
+                                                        FontSize="11" CornerRadius="4"
+                                                        Padding="8,4"
+                                                        ToolTip.Tip="Configure custom download settings for this artist"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.ConfigureArtistSettingsCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Settings Override -->
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Download Settings" FontSize="15" FontWeight="SemiBold"/>
+
+                        <StackPanel Spacing="8">
+                            <RadioButton Content="Use global settings" IsChecked="{Binding UseGlobalSettings, Mode=TwoWay}"/>
+                            <RadioButton Content="Use custom settings for this download" IsChecked="{Binding !UseGlobalSettings, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <!-- Custom Settings Panel -->
+                        <StackPanel IsVisible="{Binding !UseGlobalSettings}" Spacing="10">
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="Folder Template" FontSize="12"/>
+                                    <TextBox Text="{Binding CustomSettings.FolderTemplate, Mode=TwoWay}"
+                                             CornerRadius="4"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Filename Template" FontSize="12"/>
+                                    <TextBox Text="{Binding CustomSettings.FilenameTemplate, Mode=TwoWay}"
+                                             CornerRadius="4"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <CheckBox Content="Create subfolder per submission"
+                                          IsChecked="{Binding CustomSettings.CreateSubfolderPerSubmission, Mode=TwoWay}"/>
+                                <CheckBox Content="Separate R-18 folder"
+                                          IsChecked="{Binding CustomSettings.SeparateR18Folder, Mode=TwoWay}"/>
+                                <CheckBox Content="Filter AI-generated"
+                                          IsChecked="{Binding CustomSettings.FilterAiGenerated, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Progress Panel -->
+        <Border Grid.Row="2" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16"
+                IsVisible="{Binding HasActiveJob}">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="13"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ProgressPercent, StringFormat='{}{0:F0}%'}"
+                               FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+                <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="4"/>
+                <TextBlock Text="{Binding CurrentTargetName}"
+                           FontSize="11" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"
+                           IsVisible="{Binding CurrentTargetName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Action Bar -->
+        <Border Grid.Row="3" Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <Button Grid.Column="0" Content="💾 Save Preset"
+                        Command="{Binding SavePresetCommand}"
+                        CornerRadius="6" Padding="12,8"/>
+
+                <Button Grid.Column="1" Content="Cancel"
+                        Command="{Binding CancelDownloadCommand}"
+                        IsVisible="{Binding HasActiveJob}"
+                        CornerRadius="6" Padding="16,10" Margin="0,0,8,0"/>
+
+                <Button Grid.Column="2" Content="▶ Start Download"
+                        Command="{Binding StartDownloadCommand}"
+                        IsEnabled="{Binding SelectedArtists.Count}"
+                        IsVisible="{Binding !HasActiveJob}"
+                        Classes="accent"
+                        CornerRadius="6" Padding="20,12" FontWeight="SemiBold"/>
+            </Grid>
+        </Border>
+
+    </Grid>
+</UserControl>

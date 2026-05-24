@@ -1,0 +1,4 @@
+﻿<Solution>
+  <Project Path="src\Pikura.Core\Pikura.Core.csproj" />
+  <Project Path="src\Pikura.Avalonia\Pikura.Avalonia.csproj" />
+</Solution>

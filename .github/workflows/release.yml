@@ -23,9 +23,21 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Strip the leading "v" from the git tag once and expose it as $env:VERSION
+      # for every subsequent step. github.ref_name is "v1.7.0" but every artifact
+      # filename (zip / installer / DMG / AppImage) should use the plain "1.7.0"
+      # form so it lines up with the .NET assembly metadata and the Control Panel
+      # display.
+      - name: Compute version
+        id: ver
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+        shell: pwsh
+
       - name: Publish self-contained Windows x64
         run: |
-          dotnet publish src/Pixora.Avalonia/Pixora.Avalonia.csproj `
+          dotnet publish src/Pikura.Avalonia/Pikura.Avalonia.csproj `
             -c Release -r win-x64 `
             --self-contained true `
             -p:PublishSingleFile=true `
@@ -34,7 +46,7 @@ jobs:
         shell: pwsh
 
       - name: Create portable ZIP
-        run: Compress-Archive -Path publish/win-x64/* -DestinationPath publish/Pixora-${{ github.ref_name }}-windows-portable.zip
+        run: Compress-Archive -Path publish/win-x64/* -DestinationPath publish/Pikura-${{ env.VERSION }}-windows-portable.zip
         shell: pwsh
 
       - name: Install Inno Setup
@@ -42,7 +54,7 @@ jobs:
         shell: pwsh
 
       - name: Build installer
-        run: iscc tools/installer/pixora.iss /DMyAppVersion=${{ github.ref_name }}
+        run: iscc tools/installer/pikura.iss /DMyAppVersion=${{ env.VERSION }}
         shell: pwsh
 
       - name: Upload Windows artifacts
@@ -50,8 +62,8 @@ jobs:
         with:
           name: windows
           path: |
-            publish/Pixora-*-windows-portable.zip
-            publish/Pixora-*-Setup.exe
+            publish/Pikura-*-windows-portable.zip
+            publish/Pikura-*-Setup.exe
 
   # ── macOS ──────────────────────────────────────────────────────────────────
   build-macos:
@@ -72,9 +84,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Same v-strip as the Windows job, just in bash. Exposed as $VERSION /
+      # ${{ env.VERSION }} for every subsequent step so the DMG and arm64 zip
+      # names match the Windows installer ("1.7.0", no leading "v").
+      - name: Compute version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Publish self-contained macOS x64
         run: |
-          dotnet publish src/Pixora.Avalonia/Pixora.Avalonia.csproj \
+          dotnet publish src/Pikura.Avalonia/Pikura.Avalonia.csproj \
             -c Release -r osx-x64 \
             --self-contained true \
             -p:PublishSingleFile=true \
@@ -82,7 +102,7 @@ jobs:
 
       - name: Publish self-contained macOS arm64
         run: |
-          dotnet publish src/Pixora.Avalonia/Pixora.Avalonia.csproj \
+          dotnet publish src/Pikura.Avalonia/Pikura.Avalonia.csproj \
             -c Release -r osx-arm64 \
             --self-contained true \
             -p:PublishSingleFile=true \
@@ -90,16 +110,16 @@ jobs:
 
       - name: Bundle .app (universal binary)
         run: |
-          APP=publish/Pixora.app
+          APP=publish/Pikura.app
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
-          lipo -create publish/osx-x64/Pixora publish/osx-arm64/Pixora -output "$APP/Contents/MacOS/Pixora"
-          chmod +x "$APP/Contents/MacOS/Pixora"
+          lipo -create publish/osx-x64/Pikura publish/osx-arm64/Pikura -output "$APP/Contents/MacOS/Pikura"
+          chmod +x "$APP/Contents/MacOS/Pikura"
 
           # Generate .icns from PNG
-          ICONSET=publish/Pixora.iconset
+          ICONSET=publish/Pikura.iconset
           mkdir -p "$ICONSET"
-          SRC=src/Pixora.Avalonia/Assets/pixora-logo.png
+          SRC=src/Pikura.Avalonia/Assets/pikura-logo.png
           sips -z 16 16     "$SRC" --out "$ICONSET/icon_16x16.png"
           sips -z 32 32     "$SRC" --out "$ICONSET/icon_16x16@2x.png"
           sips -z 32 32     "$SRC" --out "$ICONSET/icon_32x32.png"
@@ -110,7 +130,7 @@ jobs:
           sips -z 512 512   "$SRC" --out "$ICONSET/icon_256x256@2x.png"
           sips -z 512 512   "$SRC" --out "$ICONSET/icon_512x512.png"
           sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
-          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Pixora.icns"
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Pikura.icns"
 
           VERSION=${{ github.ref_name }}
           VERSION=${VERSION#v}
@@ -121,25 +141,25 @@ jobs:
         run: |
           # Use ditto to preserve permissions/symlinks inside the .app
           mkdir -p dmg_staging
-          ditto publish/Pixora.app dmg_staging/Pixora.app
-          hdiutil create -volname Pixora \
+          ditto publish/Pikura.app dmg_staging/Pikura.app
+          hdiutil create -volname Pikura \
             -srcfolder dmg_staging \
             -ov -format UDZO \
-            publish/Pixora-${{ github.ref_name }}-macos.dmg
+            publish/Pikura-${{ env.VERSION }}-macos.dmg
 
       - name: Create arm64 standalone zip
         run: |
-          chmod +x publish/osx-arm64/Pixora
-          codesign --force --sign - publish/osx-arm64/Pixora
-          zip -j publish/Pixora-${{ github.ref_name }}-macos-arm64.zip publish/osx-arm64/Pixora
+          chmod +x publish/osx-arm64/Pikura
+          codesign --force --sign - publish/osx-arm64/Pikura
+          zip -j publish/Pikura-${{ env.VERSION }}-macos-arm64.zip publish/osx-arm64/Pikura
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4.6.2
         with:
           name: macos
           path: |
-            publish/Pixora-*-macos.dmg
-            publish/Pixora-*-macos-arm64.zip
+            publish/Pikura-*-macos.dmg
+            publish/Pikura-*-macos-arm64.zip
 
   # ── Linux ──────────────────────────────────────────────────────────────────
   build-linux:
@@ -152,9 +172,14 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Compute version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Publish self-contained Linux x64
         run: |
-          dotnet publish src/Pixora.Avalonia/Pixora.Avalonia.csproj \
+          dotnet publish src/Pikura.Avalonia/Pikura.Avalonia.csproj \
             -c Release -r linux-x64 \
             --self-contained true \
             -p:PublishSingleFile=true \
@@ -162,8 +187,8 @@ jobs:
 
       - name: Create tar.gz
         run: |
-          chmod +x publish/linux-x64/Pixora
-          tar -czf publish/Pixora-${{ github.ref_name }}-linux-x64.tar.gz \
+          chmod +x publish/linux-x64/Pikura
+          tar -czf publish/Pikura-${{ env.VERSION }}-linux-x64.tar.gz \
             -C publish/linux-x64 .
 
       - name: Build AppImage
@@ -174,35 +199,35 @@ jobs:
 
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
 
-          cp publish/linux-x64/Pixora AppDir/usr/bin/pixora
-          chmod +x AppDir/usr/bin/pixora
-          cp src/Pixora.Avalonia/Assets/pixora-logo.png AppDir/usr/share/icons/hicolor/256x256/apps/pixora.png
-          cp src/Pixora.Avalonia/Assets/pixora-logo.png AppDir/pixora.png
+          cp publish/linux-x64/Pikura AppDir/usr/bin/pikura
+          chmod +x AppDir/usr/bin/pikura
+          cp src/Pikura.Avalonia/Assets/pikura-logo.png AppDir/usr/share/icons/hicolor/256x256/apps/pikura.png
+          cp src/Pikura.Avalonia/Assets/pikura-logo.png AppDir/pikura.png
 
-          cat > AppDir/pixora.desktop <<EOF
+          cat > AppDir/pikura.desktop <<EOF
           [Desktop Entry]
-          Name=Pixora
-          Exec=pixora
-          Icon=pixora
+          Name=Pikura
+          Exec=pikura
+          Icon=pikura
           Type=Application
           Categories=Graphics;
           EOF
 
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
-          exec "$(dirname "$0")/usr/bin/pixora" "$@"
+          exec "$(dirname "$0")/usr/bin/pikura" "$@"
           EOF
           chmod +x AppDir/AppRun
 
-          ARCH=x86_64 ./appimagetool AppDir publish/Pixora-${{ github.ref_name }}-linux-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool AppDir publish/Pikura-${{ env.VERSION }}-linux-x86_64.AppImage
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4.6.2
         with:
           name: linux
           path: |
-            publish/Pixora-*-linux-x64.tar.gz
-            publish/Pixora-*-linux-x86_64.AppImage
+            publish/Pikura-*-linux-x64.tar.gz
+            publish/Pikura-*-linux-x86_64.AppImage
 
   # ── GitHub Release ─────────────────────────────────────────────────────────
   release:
@@ -221,7 +246,7 @@ jobs:
       - name: Upload assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Pixora ${{ github.ref_name }}
+          name: Pikura ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false

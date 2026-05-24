@@ -1,0 +1,415 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+        xmlns:anim="using:Pikura.Avalonia.Controls"
+        x:Class="Pikura.Avalonia.Views.Dialogs.ImageEditorWindow"
+        Title="Pikura — Image Editor"
+        Width="1500"
+        Height="950"
+        WindowStartupLocation="CenterOwner"
+        MinWidth="1000"
+        MinHeight="600">
+
+    <Grid ColumnDefinitions="*,380" RowDefinitions="*,Auto">
+        <!-- LEFT: Image Preview with Crop -->
+        <Grid Grid.Column="0" Grid.Row="0" RowDefinitions="Auto,*,Auto">
+            <!-- Toolbar -->
+            <Border Grid.Row="0"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="12">
+                <WrapPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,12,4">
+                        <TextBlock Text="Crop Ratio:" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="CropRatioCombo" SelectedIndex="1" SelectionChanged="OnCropRatioChanged" MinWidth="140">
+                            <ComboBoxItem Content="Free"/>
+                            <ComboBoxItem Content="Original"/>
+                            <ComboBoxItem Content="1:1 Square"/>
+                            <ComboBoxItem Content="16:9 Widescreen"/>
+                            <ComboBoxItem Content="9:16 Portrait"/>
+                            <ComboBoxItem Content="4:3 Standard"/>
+                            <ComboBoxItem Content="3:4 Portrait"/>
+                            <ComboBoxItem Content="21:9 UltraWide"/>
+                        </ComboBox>
+                        <CheckBox x:Name="LockAspectCheck" Content="Lock" IsChecked="True"/>
+                    </StackPanel>
+
+                    <!-- Zoom Controls -->
+                    <StackPanel x:Name="ZoomControls" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,12,4">
+                        <TextBlock Text="Zoom:" VerticalAlignment="Center"/>
+                        <Slider x:Name="ZoomSlider"
+                                Minimum="0.1"
+                                Maximum="5.0"
+                                Value="1.0"
+                                Width="110"
+                                ValueChanged="OnZoomChanged"/>
+                        <TextBlock x:Name="ZoomValue" Text="100%" VerticalAlignment="Center" Width="40"/>
+                    </StackPanel>
+
+                    <!-- Reset Buttons -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,12,4">
+                        <Button x:Name="ResetPositionButton" Content="Reset Pos" Click="OnResetPositionClick"/>
+                        <Button x:Name="ResetCropButton" Content="Reset Crop" Click="OnResetCropClick"/>
+                        <Button x:Name="ResetAllButton" Content="Reset All" Classes="accent" Click="OnResetAllClick"/>
+                    </StackPanel>
+
+                    <!-- Ugoira Mode Switcher (only visible for ugoira artworks) -->
+                    <StackPanel x:Name="UgoiraModePanel" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,12,4" IsVisible="False">
+                        <Button x:Name="UgoiraModeButton" Content="🎬 Ugoira Mode" Classes="accent" Click="OnUgoiraModeClick" ToolTip.Tip="Change how to handle this animated ugoira"/>
+                    </StackPanel>
+
+                    <!-- Submission/Page navigation -->
+                    <StackPanel x:Name="PageNavPanel" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,4,0,4" IsVisible="False">
+                        <Button x:Name="PrevPageButton" Content="◄" Click="OnPrevPageClick" ToolTip.Tip="Previous (←)" Width="32"/>
+                        <!-- Submission indicator (when multiple artworks) -->
+                        <Border x:Name="SubmissionIndicatorBorder" Background="#3B82F6" CornerRadius="4" Padding="6,2" IsVisible="False">
+                            <TextBlock x:Name="SubmissionIndicator" Text="1 / 1" VerticalAlignment="Center" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        </Border>
+                        <!-- Page indicator (when multiple pages in current submission) -->
+                        <TextBlock x:Name="PageIndicator" Text="1 / 1" VerticalAlignment="Center" MinWidth="50" TextAlignment="Center" FontWeight="SemiBold"/>
+                        <Button x:Name="NextPageButton" Content="►" Click="OnNextPageClick" ToolTip.Tip="Next (→)" Width="32"/>
+                    </StackPanel>
+                </WrapPanel>
+            </Border>
+
+            <!-- Image Preview Area - Clean simplified layout -->
+            <Border Grid.Row="1"
+                    Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                    Margin="16"
+                    ClipToBounds="True">
+                <Grid>
+                    <!-- ScrollViewer wraps the image for pan when zoomed -->
+                    <ScrollViewer x:Name="ImageScrollViewer"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto"
+                                  PointerWheelChanged="OnScrollViewerWheelChanged"
+                                  HorizontalContentAlignment="Center"
+                                  VerticalContentAlignment="Center">
+                        <!-- Image container with crop overlay - supports mouse drag pan -->
+                        <Grid x:Name="ImageCanvas"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Margin="16"
+                              PointerPressed="OnCanvasPointerPressed"
+                              PointerMoved="OnCanvasPointerMoved"
+                              PointerReleased="OnCanvasPointerReleased">
+                            <!-- Static Image -->
+                            <Image x:Name="EditorImage"
+                                   Stretch="Uniform"
+                                   MaxWidth="1100"
+                                   MaxHeight="780"
+                                   IsVisible="True"/>
+                            <!-- Animated Image (Ugoira) -->
+                            <anim:AnimatedImage x:Name="UgoiraImage"
+                                                Stretch="Uniform"
+                                                MaxWidth="1100"
+                                                MaxHeight="780"
+                                                IsVisible="False"
+                                                IsPlaying="True"/>
+                            <!-- Traditional Crop Overlay: white border with handles -->
+                            <Grid x:Name="CropOverlay" IsVisible="False" IsHitTestVisible="True">
+                                <!-- Crop frame border (white with black outline for visibility on any image) -->
+                                <Border x:Name="CropFrame"
+                                        BorderBrush="White"
+                                        BorderThickness="2"
+                                        Background="Transparent"
+                                        Width="300"
+                                        Height="300"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                    <!-- Inner black outline for contrast -->
+                                    <Border BorderBrush="Black" BorderThickness="1" Margin="-1">
+                                        <Grid>
+                                            <!-- Rule of thirds grid lines -->
+                                            <Grid ColumnDefinitions="*,*,*" RowDefinitions="*,*,*">
+                                                <Border Grid.Column="0" Grid.Row="0" BorderBrush="#80FFFFFF" BorderThickness="0,0,1,1"/>
+                                                <Border Grid.Column="1" Grid.Row="0" BorderBrush="#80FFFFFF" BorderThickness="0,0,1,1"/>
+                                                <Border Grid.Column="0" Grid.Row="1" BorderBrush="#80FFFFFF" BorderThickness="0,0,1,1"/>
+                                                <Border Grid.Column="1" Grid.Row="1" BorderBrush="#80FFFFFF" BorderThickness="0,0,1,1"/>
+                                            </Grid>
+                                            <!-- Corner handles - white squares with black border, Tag identifies handle position -->
+                                            <Border Tag="TL" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-8"/>
+                                            <Border Tag="TR" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="-8"/>
+                                            <Border Tag="BL" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="-8"/>
+                                            <Border Tag="BR" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="-8"/>
+                                            <!-- Side handles -->
+                                            <Border Tag="T" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,-8,0,0"/>
+                                            <Border Tag="B" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-8"/>
+                                            <Border Tag="L" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-8,0,0,0"/>
+                                            <Border Tag="R" Width="16" Height="16" Background="White" BorderBrush="Black" BorderThickness="1"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-8,0"/>
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- Loading Spinner Overlay - shows only on initial load -->
+                    <ProgressBar x:Name="LoadingSpinner"
+                                 IsIndeterminate="True"
+                                 IsVisible="False"
+                                 Width="120"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- Preview Info -->
+            <Border Grid.Row="2"
+                    Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="12">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock x:Name="ImageInfoText" Text="800 x 600 • 1.2 MB"/>
+                    <TextBlock Grid.Column="1" Text="Preview: 600px wide (live ~60 fps)" FontSize="11" Opacity="0.6"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- RIGHT: Adjustment Sliders -->
+        <Border Grid.Column="1" Grid.Row="0"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="1,0,0,0"
+                Padding="16">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Adjustments" FontSize="18" FontWeight="Bold"/>
+
+                    <!-- Resize Section -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Resize" FontWeight="SemiBold" FontSize="14"/>
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="W:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <NumericUpDown Grid.Column="1" x:Name="WidthNumeric" Minimum="1" Maximum="7680" Value="1920" ValueChanged="OnResizeChanged"/>
+                            <TextBlock Grid.Column="2" Text="px" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="H:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <NumericUpDown Grid.Column="1" x:Name="HeightNumeric" Minimum="1" Maximum="4320" Value="1080" ValueChanged="OnResizeChanged"/>
+                            <TextBlock Grid.Column="2" Text="px" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                        <CheckBox x:Name="MaintainAspectCheck" Content="Maintain aspect ratio" IsChecked="True" IsCheckedChanged="OnMaintainAspectChanged"/>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Basic Adjustments -->
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Basic Adjustments" FontWeight="SemiBold" FontSize="14"/>
+
+                        <!-- Brightness -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Brightness" FontSize="12"/>
+                                <TextBlock x:Name="BrightnessValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="BrightnessSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Contrast -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Contrast" FontSize="12"/>
+                                <TextBlock x:Name="ContrastValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="ContrastSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Saturation -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Saturation" FontSize="12"/>
+                                <TextBlock x:Name="SaturationValue" Grid.Column="1" Text="100" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="SaturationSlider" Minimum="0" Maximum="200" Value="100" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Hue Rotation -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Hue Rotation" FontSize="12"/>
+                                <TextBlock x:Name="HueValue" Grid.Column="1" Text="0°" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="HueSlider" Minimum="-180" Maximum="180" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Opacity -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Opacity" FontSize="12"/>
+                                <TextBlock x:Name="OpacityValue" Grid.Column="1" Text="100%" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Value="100" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Color Adjustments -->
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Color Adjustments" FontWeight="SemiBold" FontSize="14"/>
+
+                        <!-- Temperature -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="50,*,50">
+                                <TextBlock Grid.Column="0" Text="Cool" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                                <TextBlock Grid.Column="1" Text="Temperature" FontSize="12" HorizontalAlignment="Center" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="Warm" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Slider x:Name="TemperatureSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Tint -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="50,*,50">
+                                <TextBlock Grid.Column="0" Text="Green" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                                <TextBlock Grid.Column="1" Text="Tint" FontSize="12" HorizontalAlignment="Center" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="Magenta" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Slider x:Name="TintSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Highlights -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Highlights" FontSize="12"/>
+                                <TextBlock x:Name="HighlightsValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="HighlightsSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Shadows -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Shadows" FontSize="12"/>
+                                <TextBlock x:Name="ShadowsValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="ShadowsSlider" Minimum="-100" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Effects -->
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Effects" FontWeight="SemiBold" FontSize="14"/>
+
+                        <!-- Sharpness -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Sharpness" FontSize="12"/>
+                                <TextBlock x:Name="SharpnessValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="SharpnessSlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Blur -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Gaussian Blur" FontSize="12"/>
+                                <TextBlock x:Name="BlurValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="BlurSlider" Minimum="0" Maximum="20" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Vignette -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Vignette Intensity" FontSize="12"/>
+                                <TextBlock x:Name="VignetteIntensityValue" Grid.Column="1" Text="0" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="VignetteIntensitySlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Vignette Radius" FontSize="12"/>
+                                <TextBlock x:Name="VignetteRadiusValue" Grid.Column="1" Text="50" FontSize="12"/>
+                            </Grid>
+                            <Slider x:Name="VignetteRadiusSlider" Minimum="0" Maximum="100" Value="50" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+
+                        <!-- Color Overlay -->
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Color Overlay" FontSize="12"/>
+                                <TextBlock x:Name="OverlayColorHexLabel" Grid.Column="1"
+                                           Text="#000000" FontSize="11"
+                                           Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                            </Grid>
+                            <Button x:Name="OverlayColorButton"
+                                    HorizontalAlignment="Stretch"
+                                    Height="24"
+                                    Padding="0"
+                                    CornerRadius="4"
+                                    BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                                    BorderThickness="1"
+                                    ToolTip.Tip="Click to choose overlay color">
+                                <Button.Background>
+                                    <SolidColorBrush Color="#000000"/>
+                                </Button.Background>
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <ThemeVariantScope RequestedThemeVariant="Dark">
+                                            <ColorView x:Name="OverlayColorView"
+                                                       Color="#000000"
+                                                       ColorChanged="OnOverlayColorPickerChanged"
+                                                       IsAlphaEnabled="False"
+                                                       IsAlphaVisible="False"
+                                                       IsColorPaletteVisible="True"
+                                                       IsColorSpectrumVisible="True"
+                                                       IsColorPreviewVisible="True"
+                                                       IsColorComponentsVisible="True"/>
+                                        </ThemeVariantScope>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Opacity" FontSize="11"/>
+                                <TextBlock x:Name="OverlayOpacityValue" Grid.Column="1" Text="0" FontSize="11"/>
+                            </Grid>
+                            <Slider x:Name="OverlayOpacitySlider" Minimum="0" Maximum="100" Value="0" ValueChanged="OnAdjustmentChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- Preset Name -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Save as Preset" FontWeight="SemiBold" FontSize="14"/>
+                        <TextBox x:Name="PresetNameTextBox" PlaceholderText="Enter preset name..."/>
+                        <Button x:Name="SaveAsPresetButton" Content="💾 Save Preset" HorizontalAlignment="Stretch" Click="OnSaveAsPresetClick"/>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Bottom Action Bar -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1"
+                Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+                    <TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center" Opacity="0.6"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="CancelButton" Content="Cancel" Click="OnCancelClick" MinWidth="100"/>
+                    <Button x:Name="SaveButton" Content="✓ Apply &amp; Close" Classes="accent" Click="OnSaveClick" MinWidth="120"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

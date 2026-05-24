@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pikura.Avalonia.ViewModels"
+             xmlns:actipro="http://schemas.actiprosoftware.com/avaloniaui"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="Pikura.Avalonia.Views.DownloadBookmarksView"
+             x:DataType="vm:DownloadBookmarksViewModel">
+
+    <Design.DataContext>
+        <vm:DownloadBookmarksViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+        <Border Grid.Row="0" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,0,0,1" Padding="20,16">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Download from Bookmarks" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock Text="Download artworks from your bookmarked artists and images"
+                           FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" Margin="20">
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Source" FontSize="15" FontWeight="SemiBold"/>
+                        <StackPanel Spacing="8">
+                            <RadioButton Content="Bookmarked Images (Illustrations/Manga)"
+                                         IsChecked="{Binding IsBookmarkedImages, Mode=TwoWay}"/>
+                            <RadioButton Content="Bookmarked Artists"
+                                         IsChecked="{Binding !IsBookmarkedImages, Mode=TwoWay}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Visibility" FontSize="15" FontWeight="SemiBold"/>
+                        <StackPanel Spacing="8">
+                            <RadioButton Content="Public bookmarks only"
+                                         IsChecked="{Binding IsPublicOnly, Mode=TwoWay}"/>
+                            <RadioButton Content="Private bookmarks only"
+                                         IsChecked="{Binding IsPrivateOnly, Mode=TwoWay}"/>
+                            <RadioButton Content="Both public and private"
+                                         IsChecked="{Binding IsBothVisibility, Mode=TwoWay}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                        BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Filter Options" FontSize="15" FontWeight="SemiBold"/>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <CheckBox Content="Include R-18" IsChecked="{Binding IncludeR18, Mode=TwoWay}"/>
+                            <CheckBox Content="Include AI-generated" IsChecked="{Binding IncludeAiGenerated, Mode=TwoWay}"/>
+                            <CheckBox Content="Include Manga" IsChecked="{Binding IncludeManga, Mode=TwoWay}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Background="{actipro:ThemeResource Container1BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16"
+                IsVisible="{Binding HasActiveJob}">
+            <StackPanel Spacing="8">
+                <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"/>
+                <TextBlock Text="{Binding StatusMessage}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" Background="{actipro:ThemeResource Container2BackgroundBrush}"
+                BorderBrush="{actipro:ThemeResource Container2BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16">
+            <Button Content="▶ Start Download" Command="{Binding StartDownloadCommand}"
+                    Classes="accent" HorizontalAlignment="Right"
+                    CornerRadius="6" Padding="20,12" FontWeight="SemiBold"/>
+        </Border>
+    </Grid>
+</UserControl>

@@ -41,7 +41,7 @@ static byte[] MakeDib(string pngPath)
     // BITMAPINFOHEADER (40 bytes)
     bw.Write((int)40);       // biSize
     bw.Write((int)w);        // biWidth
-    bw.Write((int)(h * 2));  // biHeight × 2 (XOR + AND mask)
+    bw.Write((int)(h * 2));  // biHeight � 2 (XOR + AND mask)
     bw.Write((short)1);      // biPlanes
     bw.Write((short)32);     // biBitCount
     bw.Write((int)0);        // biCompression = BI_RGB
@@ -84,7 +84,7 @@ outBw.Write((ushort)0);               // reserved
 outBw.Write((ushort)1);               // type = ICO
 outBw.Write((ushort)frames.Count);    // image count
 
-// Data starts after header (6) + directory entries (16 × count)
+// Data starts after header (6) + directory entries (16 � count)
 uint dataOffset = (uint)(6 + frames.Count * 16);
 
 // ICONDIRENTRY for each frame
@@ -112,5 +112,5 @@ File.WriteAllBytes(icoPath, outMs.ToArray());
 
 // Validate
 using var icon = new Icon(icoPath);
-Console.WriteLine($"OK: {icoPath} — {frames.Count} frames, {new FileInfo(icoPath).Length} bytes, largest={icon.Width}x{icon.Height}");
+Console.WriteLine($"OK: {icoPath} � {frames.Count} frames, {new FileInfo(icoPath).Length} bytes, largest={icon.Width}x{icon.Height}");
 return 0;

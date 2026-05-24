@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pikura.Avalonia.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Pikura.Avalonia.Views.DownloadsView"
+             x:DataType="vm:DownloadsViewModel">
+
+    <Design.DataContext>
+        <vm:DownloadsViewModel/>
+    </Design.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#FFF8F8F8" Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" 
+                          Text="Downloads" 
+                          FontWeight="SemiBold" 
+                          FontSize="20"/>
+                
+                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshDownloadsCommand}"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Border Background="White" 
+                    BorderBrush="#FFE0E0E0" 
+                    BorderThickness="1" 
+                    CornerRadius="8"
+                    Margin="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Padding="32">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+                    <TextBlock Text="⬇️" FontSize="48" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Downloads" 
+                              FontWeight="SemiBold" 
+                              FontSize="24" 
+                              HorizontalAlignment="Center"/>
+                    <TextBlock Text="Manage and monitor your downloads" 
+                              TextAlignment="Center" 
+                              Opacity="0.7"/>
+                    <Button Content="Refresh Downloads" 
+                            Command="{Binding RefreshDownloadsCommand}"
+                            HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" 
+                Background="#FFF8F8F8" 
+                Padding="16,8" 
+                BorderBrush="#FFE0E0E0" 
+                BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}"/>
+                <ProgressBar Grid.Column="1" 
+                             IsIndeterminate="{Binding IsLoading}" 
+                             Width="100" 
+                             IsVisible="{Binding IsLoading}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
