@@ -1,5 +1,5 @@
 ---
-name: Feature Request
+name: Feature Request (Classic)
 about: Suggest an idea or improvement
 labels: enhancement
 ---

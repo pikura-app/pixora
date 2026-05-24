@@ -1,5 +1,5 @@
 ---
-name: Bug Report
+name: Bug Report (Classic)
 about: Something isn't working as expected
 labels: bug
 ---
