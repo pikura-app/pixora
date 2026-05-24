@@ -868,6 +868,8 @@ public partial class GalleryViewModel : ViewModelBase
             foreach (var page in firstPages)
             {
                 if (page?.Users == null) continue;
+                Logger.LogInformation("[FollowedArtists] First page: Total={Total} Users={Count} hidden={Hidden}",
+                    page.Total, page.Users.Count, page == firstPages[1]);
                 if (page.Total > 0) realTotal += page.Total;
                 var batch = page.Users
                     .Where(u => { lock (seenLock) return seen.Add(u.UserId); })
@@ -886,11 +888,13 @@ public partial class GalleryViewModel : ViewModelBase
                     });
                 }
             }
+            Logger.LogInformation("[FollowedArtists] After first pages: realTotal={RealTotal} seen={Seen}", realTotal, seen.Count);
 
             // Step 2: Fetch remaining pages for public and private.
             await FetchRemainingFollowedPagesAsync(userId, firstPages, limit, seen, seenLock);
 
             ArtistsTotal = realTotal > 0 ? realTotal : Artists.Count;
+            Logger.LogInformation("[FollowedArtists] Load complete: Artists.Count={Count} ArtistsTotal={Total}", Artists.Count, ArtistsTotal);
             ArtistsLoaded = true;
             if (!IsLoading)
                 StatusMessage = $"{Artists.Count} followed artists";
@@ -1082,13 +1086,21 @@ public partial class GalleryViewModel : ViewModelBase
         {
             var first = firstPages[idx];
             var hidden = idx == 1;
+            Logger.LogInformation("[FollowedArtists] FetchRemaining: hidden={Hidden} first.Total={Total} first.Users.Count={Count} limit={Limit}",
+                hidden, first?.Total ?? -1, first?.Users?.Count ?? -1, limit);
             // A short first page (or no page at all) means we already have everything.
-            if (first?.Users == null || first.Users.Count < limit) continue;
+            if (first?.Users == null || first.Users.Count < limit)
+            {
+                Logger.LogInformation("[FollowedArtists] Skipping remaining pages for hidden={Hidden} (short/empty first page)", hidden);
+                continue;
+            }
 
             if (first.Total > 0)
             {
                 // Known total → fire all remaining pages in parallel.
                 var maxRemaining = Math.Min(first.Total, 5000);
+                Logger.LogInformation("[FollowedArtists] Parallel fetch hidden={Hidden}: offsets {Start}..{End} (step {Limit})",
+                    hidden, limit, maxRemaining, limit);
                 for (int offset = limit; offset < maxRemaining; offset += limit)
                 {
                     var off = offset;
@@ -1098,6 +1110,8 @@ public partial class GalleryViewModel : ViewModelBase
                         try
                         {
                             var page = await _pixivClient.GetFollowedArtistsAsync(userId, off, limit, hiddenCapture);
+                            Logger.LogInformation("[FollowedArtists] Parallel page hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
+                                hiddenCapture, off, page?.Total ?? -1, page?.Users?.Count ?? -1);
                             if (page?.Users == null || page.Users.Count == 0) return;
                             await AddBatchAsync(page.Users);
                         }
@@ -1114,6 +1128,7 @@ public partial class GalleryViewModel : ViewModelBase
                 // Stops as soon as Pixiv returns a short page (fewer than limit users)
                 // or an empty one. Caps at 5000 just in case the API gets stuck.
                 var hiddenCapture = hidden;
+                Logger.LogInformation("[FollowedArtists] Sequential discovery hidden={Hidden} (total was 0)", hiddenCapture);
                 tasks.Add(Task.Run(async () =>
                 {
                     int offset = limit;
@@ -1130,6 +1145,8 @@ public partial class GalleryViewModel : ViewModelBase
                             break;
                         }
 
+                        Logger.LogInformation("[FollowedArtists] Discovery hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
+                            hiddenCapture, offset, page?.Total ?? -1, page?.Users?.Count ?? -1);
                         if (page?.Users == null || page.Users.Count == 0) break;
                         await AddBatchAsync(page.Users);
                         if (page.Users.Count < limit) break;
