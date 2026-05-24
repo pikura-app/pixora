@@ -49,8 +49,14 @@ jobs:
         run: Compress-Archive -Path publish/win-x64/* -DestinationPath publish/Pikura-${{ env.VERSION }}-windows-portable.zip
         shell: pwsh
 
-      - name: Install Inno Setup
-        run: choco install innosetup -y
+      - name: Install Inno Setup (with ISPP)
+        run: |
+          $url = "https://jrsoftware.org/download.php/is.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\issetup.exe" -UseBasicParsing
+          Start-Process "$env:TEMP\issetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+          # Add to PATH for subsequent steps
+          $isDir = "C:\Program Files (x86)\Inno Setup 6"
+          echo "$isDir" >> $env:GITHUB_PATH
         shell: pwsh
 
       - name: Build installer
