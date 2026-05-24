@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/pikura-app/pikura/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories.
+  - name: Question / Discussion
+    url: https://github.com/pikura-app/pikura/discussions
+    about: For general questions, use Discussions rather than Issues.
