@@ -154,7 +154,8 @@ public static class AppServices
                         provider.GetRequiredService<DialogService>(),
                         provider.GetRequiredService<DownloadJobRepository>(),
                         provider.GetRequiredService<DownloadCoordinator>(),
-                        provider.GetRequiredService<AccountService>()));
+                        provider.GetRequiredService<AccountService>(),
+                        provider.GetRequiredService<ILogger<GalleryViewModel>>()));
                 services.AddTransient<ArtworkDetailViewModel>();
                 services.AddTransient<RankingsViewModel>();
                 services.AddSingleton<EnhancedRankingsViewModel>();

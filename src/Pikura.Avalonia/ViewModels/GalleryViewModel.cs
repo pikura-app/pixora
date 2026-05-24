@@ -219,7 +219,8 @@ public partial class GalleryViewModel : ViewModelBase
         DialogService dialogService,
         DownloadJobRepository jobRepository,
         DownloadCoordinator coordinator,
-        AccountService? accountService = null)
+        AccountService? accountService = null,
+        ILogger<GalleryViewModel>? logger = null) : base((ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
     {
         _pixivClient = pixivClient;
         _imageLoader = imageLoader;

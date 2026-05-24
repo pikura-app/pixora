@@ -12,4 +12,9 @@ public abstract class ViewModelBase : ObservableObject
     {
         Logger = NullLogger.Instance;
     }
+
+    protected ViewModelBase(ILogger logger)
+    {
+        Logger = logger;
+    }
 }
