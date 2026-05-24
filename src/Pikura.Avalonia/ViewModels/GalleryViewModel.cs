@@ -853,9 +853,16 @@ public partial class GalleryViewModel : ViewModelBase
             }
 
             if (isInitialLoad) ArtistsLoaded = false;
-            var seen = new HashSet<string>(Artists.Select(a => a.UserId));
             const int limit = 48;
             var seenLock = new object();
+            // Seed 'seen' inside the lock so the initial read of Artists is
+            // consistent with the locked writes done by parallel page tasks.
+            var seen = new HashSet<string>();
+            lock (seenLock)
+            {
+                foreach (var a in Artists)
+                    seen.Add(a.UserId);
+            }
             var realTotal = 0;
 
             // Step 1: Fetch first page of public AND private in parallel to get totals
@@ -1098,10 +1105,13 @@ public partial class GalleryViewModel : ViewModelBase
             if (first.Total > 0)
             {
                 // Known total → fire all remaining pages in parallel.
-                var maxRemaining = Math.Min(first.Total, 5000);
+                // Cap at 5000 as a safety bound; use first.Total as the exclusive
+                // upper bound so offset walks all pages (e.g. Total=49, limit=48
+                // fires one extra page at offset=48 to pick up the last artist).
+                var totalBound = Math.Min(first.Total, 5000);
                 Logger.LogInformation("[FollowedArtists] Parallel fetch hidden={Hidden}: offsets {Start}..{End} (step {Limit})",
-                    hidden, limit, maxRemaining, limit);
-                for (int offset = limit; offset < maxRemaining; offset += limit)
+                    hidden, limit, totalBound, limit);
+                for (int offset = limit; offset < totalBound; offset += limit)
                 {
                     var off = offset;
                     var hiddenCapture = hidden;
