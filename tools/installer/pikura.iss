@@ -130,11 +130,11 @@ begin
     Exit; // no old Pixora found — nothing to do
 
   if MsgBox(
-    'An older installation of Pixora was detected on this computer.' + #13#10 +
-    #13#10 +
+    'An older installation of Pixora was detected on this computer.' + Chr(13) + Chr(10) +
+    Chr(13) + Chr(10) +
     'Pikura is the new name for the same application. The old entry will ' +
-    'remain in "Apps & features" alongside Pikura unless it is removed.' + #13#10 +
-    #13#10 +
+    'remain in "Apps & features" alongside Pikura unless it is removed.' + Chr(13) + Chr(10) +
+    Chr(13) + Chr(10) +
     'Would you like to remove the old Pixora entry now?',
     mbConfirmation, MB_YESNO) <> IDYES then
     Exit; // user declined — leave the old entry alone
@@ -158,7 +158,7 @@ begin
   // Run the old uninstaller and wait for it to finish
   if not Exec(ExeFile, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     MsgBox(
-      'Could not launch the Pixora uninstaller.' + #13#10 +
+      'Could not launch the Pixora uninstaller.' + Chr(13) + Chr(10) +
       'You can remove it manually via "Apps & features".',
       mbError, MB_OK);
 end;
