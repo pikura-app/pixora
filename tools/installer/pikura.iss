@@ -79,23 +79,24 @@ const
 
 function ScanHiveForPixora(RootKey: Integer; out UninstallStr: String): Boolean;
 var
+  SubkeyNames: TArrayOfString;
   Idx: Integer;
-  SubkeyName: String;
   DisplayName: String;
   UninstallString: String;
 begin
   Result := False;
-  Idx := 0;
-  while RegEnumSubKey(RootKey, UninstallBase, Idx, SubkeyName) do
+  if not RegGetSubkeyNames(RootKey, UninstallBase, SubkeyNames) then
+    Exit;
+  for Idx := 0 to GetArrayLength(SubkeyNames) - 1 do
   begin
     if RegQueryStringValue(RootKey,
-         UninstallBase + '\' + SubkeyName,
+         UninstallBase + '\' + SubkeyNames[Idx],
          'DisplayName', DisplayName) then
     begin
       if CompareText(Trim(DisplayName), 'Pixora') = 0 then
       begin
         if RegQueryStringValue(RootKey,
-             UninstallBase + '\' + SubkeyName,
+             UninstallBase + '\' + SubkeyNames[Idx],
              'UninstallString', UninstallString) then
         begin
           UninstallStr := UninstallString;
@@ -104,7 +105,6 @@ begin
         end;
       end;
     end;
-    Idx := Idx + 1;
   end;
 end;
 
