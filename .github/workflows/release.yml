@@ -51,12 +51,11 @@ jobs:
 
       - name: Install Inno Setup (with ISPP)
         run: |
-          $url = "https://jrsoftware.org/download.php/is.exe"
+          # Download Inno Setup + ISPP from the official GitHub release (includes ISPP)
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_3_3/innosetup-6.3.3.exe"
           Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\issetup.exe" -UseBasicParsing
           Start-Process "$env:TEMP\issetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
-          # Add to PATH for subsequent steps
-          $isDir = "C:\Program Files (x86)\Inno Setup 6"
-          echo "$isDir" >> $env:GITHUB_PATH
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
         shell: pwsh
 
       - name: Build installer
