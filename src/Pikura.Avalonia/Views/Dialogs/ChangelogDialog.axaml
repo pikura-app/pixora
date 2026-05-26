@@ -30,8 +30,11 @@
         </Border>
 
         <!-- Release notes body -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,14">
-            <StackPanel x:Name="NotesPanel" Spacing="4"/>
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="20,14">
+            <StackPanel x:Name="NotesPanel" Spacing="4" HorizontalAlignment="Stretch"/>
         </ScrollViewer>
 
         <!-- Footer -->
