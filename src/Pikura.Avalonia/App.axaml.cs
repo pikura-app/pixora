@@ -110,7 +110,23 @@ public partial class App : Application
         if (_crashService?.WasCrashDetected() != true) return;
 
         var crashInfo = _crashService.GetLastCrashInfo();
-        if (crashInfo == null) return;
+        if (crashInfo == null) { _crashService?.ClearCrashFlag(); return; }
+
+        // Don't surface crashes that are stale (> 5 min old) — these are leftover flags
+        // from failed build/launch attempts that the user has already moved past.
+        if ((DateTime.Now - crashInfo.Timestamp).TotalMinutes > 5)
+        {
+            _crashService?.ClearCrashFlag();
+            return;
+        }
+
+        // Don't surface build-artifact exceptions — XamlLoadException means the binary
+        // was stale/incomplete, not that the app itself crashed in a meaningful way.
+        if (crashInfo.ExceptionType.Contains("XamlLoad", StringComparison.OrdinalIgnoreCase))
+        {
+            _crashService?.ClearCrashFlag();
+            return;
+        }
 
         var dialog = new CrashReportDialog(crashInfo);
 
