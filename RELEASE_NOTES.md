@@ -1,3 +1,23 @@
+## Pikura 1.7.3
+
+Quality-of-life improvements to job naming, followed-artists loading reliability, and download job lifecycle fixes.
+
+### Fixes
+
+- **Followed artists — overlapping page fetch to prevent gap drift** — Pagination now steps by half the page size (24 instead of 48) so consecutive windows overlap. Artists that shift between pages mid-fetch due to Pixiv's unstable offset ordering are no longer missed. The shared deduplication set discards any duplicates introduced by the overlap.
+- **Pause triggers "Completed" notification** — Pausing a job no longer double-fires the JobCompleted event. The ContinueWith handler now owns the event exclusively, preventing paused jobs from appearing in the Completed list.
+- **Job restart loop after pause** — Pausing a job no longer triggers TryStartNextPendingJobAsync, which was causing the just-paused job (or another queued job) to restart immediately.
+- **Cancel does not route to Cancelled list** — Fixed a JobStatus enum ordering regression introduced in 1.7.2 where adding Queued without explicit integer values shifted all existing database status codes by one, causing Cancelled jobs to be read as Failed, Paused jobs to restart as Running, and so on. All enum values now have explicit fixed integers.
+- **Orphaned Queued/Pending jobs restart on launch** — Startup cleanup now cancels all Queued and Pending jobs from prior sessions, not just Running ones.
+
+### Improvements
+
+- **Descriptive download job names** — Artist download jobs now show the artist name instead of "Download N Artists". Single artist shows name and ID; 2–3 artists listed by name; 4 or more shows the first three names and a count of the rest.
+- **Gallery job names include artist** — Downloading selected or all artworks from an artist's gallery now prefixes the job name with the artist's name (e.g. "ArtistName: 42 artworks").
+- **Scheduled job names include artist** — Scheduled artist downloads show the same descriptive artist label in the job name.
+
+---
+
 ## Pikura 1.7.2
 
 Followed-artists pagination reliability, download queue status accuracy, and job lifecycle fixes.
