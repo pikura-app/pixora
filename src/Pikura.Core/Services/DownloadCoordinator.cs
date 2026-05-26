@@ -214,11 +214,12 @@ public sealed class DownloadCoordinator : IDisposable
             _activeJobs.TryRemove(jobId, out _);
             _runningTasks.TryRemove(jobId, out _);
 
-            // If already set to Paused (by PauseJobAsync), don't overwrite it
+            // If already set to Paused (by PauseJobAsync), don't overwrite it.
+            // Don't start the next job either — pausing doesn't free a slot.
             var currentJob = await _jobRepository.GetJobAsync(jobId);
             if (currentJob?.Status == JobStatus.Paused)
             {
-                _ = TryStartNextPendingJobAsync();
+                JobCompleted?.Invoke(this, new JobCompletedEventArgs(currentJob));
                 return;
             }
 
@@ -292,12 +293,7 @@ public sealed class DownloadCoordinator : IDisposable
         // Set Paused in DB before cancelling so the ContinueWith guard skips overwriting it.
         await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Paused, null, ct);
         await cts.CancelAsync();
-
-        // Fire JobCompleted so listeners (HistoryViewModel) route the job to the paused state.
-        var pausedJob = await _jobRepository.GetJobAsync(jobId, ct);
-        if (pausedJob != null)
-            JobCompleted?.Invoke(this, new JobCompletedEventArgs(pausedJob));
-
+        // ContinueWith will detect Paused status and fire JobCompleted with the correct state.
         _logger.LogInformation("Paused job {JobId}", jobId);
         return true;
     }
