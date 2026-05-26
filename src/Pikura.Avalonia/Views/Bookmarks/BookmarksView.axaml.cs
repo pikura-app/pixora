@@ -30,6 +30,7 @@ public partial class BookmarksView : UserControl
         BookmarksFullViewer.ViewerClosed   += OnViewerClosed;
         DataContextChanged += OnDataContextChanged;
         LayoutUpdated += OnLayoutUpdated;
+        SortComboBox.SelectionChanged += OnSortChanged;
         AttachedToVisualTree += (_, _) =>
         {
             if (VM is { } vm && vm.GalleryVm.HasTabs && !vm.ShowPreview)
@@ -422,5 +423,12 @@ public partial class BookmarksView : UserControl
                 _ = VM.GalleryVm.DownloadWithPresetAsync(card, result);
             }
         }
+    }
+
+    private void OnSortChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (VM is not { } vm) return;
+        if (SortComboBox.SelectedItem is (BookmarksViewModel.BookmarkSortMode mode, string _))
+            vm.SortMode = mode;
     }
 }

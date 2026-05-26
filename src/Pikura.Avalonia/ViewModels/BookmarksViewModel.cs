@@ -150,6 +150,21 @@ public partial class BookmarksViewModel : ViewModelBase
         NotifyFavoritesSelectionChanged();
     }
 
+    // ── Sort ───────────────────────────────────────────────────────────────
+    public enum BookmarkSortMode { Default, NewestPosted, OldestPosted, TitleAZ, TitleZA, MostPages }
+    [ObservableProperty] private BookmarkSortMode _sortMode = BookmarkSortMode.Default;
+    partial void OnSortModeChanged(BookmarkSortMode _) => UpdateFiltered();
+
+    public static IReadOnlyList<(BookmarkSortMode Mode, string Label)> SortOptions { get; } =
+    [
+        (BookmarkSortMode.Default,      "Newest Bookmarked"),
+        (BookmarkSortMode.NewestPosted, "Newest Posted"),
+        (BookmarkSortMode.OldestPosted, "Oldest Posted"),
+        (BookmarkSortMode.TitleAZ,      "Title A → Z"),
+        (BookmarkSortMode.TitleZA,      "Title Z → A"),
+        (BookmarkSortMode.MostPages,    "Most Pages"),
+    ];
+
     // ── Tag filter ─────────────────────────────────────────────────────────
     [ObservableProperty] private string _tagFilter = string.Empty;
     partial void OnTagFilterChanged(string _) => UpdateFiltered();
@@ -456,6 +471,16 @@ public partial class BookmarksViewModel : ViewModelBase
             items = items.Where(a => !a.Artwork.IsR18);
         if (applyFolder && !string.IsNullOrWhiteSpace(FolderFilter))
             items = items.Where(a => _favoritesService.GetFolder(a.Id) == FolderFilter);
+
+        items = SortMode switch
+        {
+            BookmarkSortMode.NewestPosted => items.OrderByDescending(a => a.Id),
+            BookmarkSortMode.OldestPosted => items.OrderBy(a => a.Id),
+            BookmarkSortMode.TitleAZ      => items.OrderBy(a => a.Title, StringComparer.OrdinalIgnoreCase),
+            BookmarkSortMode.TitleZA      => items.OrderByDescending(a => a.Title, StringComparer.OrdinalIgnoreCase),
+            BookmarkSortMode.MostPages    => items.OrderByDescending(a => a.PageCount),
+            _                             => items, // Default = API order (newest bookmarked first)
+        };
 
         dst.Clear();
         foreach (var a in items) dst.Add(a);
