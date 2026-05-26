@@ -727,7 +727,7 @@ public partial class DownloadByArtistViewModel : ViewModelBase
             // Create and start job
             var job = await _coordinator.CreateJobAsync(
                 DownloadJobType.Artist,
-                $"Download {SelectedArtists.Count} Artists",
+                BuildArtistJobName(SelectedArtists),
                 targets,
                 settingsOverride,
                 startImmediately: true);
@@ -812,7 +812,7 @@ public partial class DownloadByArtistViewModel : ViewModelBase
 
             await _coordinator.CreateJobAsync(
                 DownloadJobType.Artist,
-                $"Download {SelectedArtists.Count} Artists",
+                BuildArtistJobName(SelectedArtists),
                 targets,
                 settingsOverride,
                 startImmediately: false);
@@ -936,6 +936,17 @@ public partial class DownloadByArtistViewModel : ViewModelBase
     }
 
     #endregion
+
+    private static string BuildArtistJobName(IReadOnlyList<SelectedArtist> artists)
+    {
+        if (artists.Count == 0) return "Download Artists";
+        if (artists.Count == 1)
+            return $"{artists[0].UserName} ({artists[0].UserId})";
+        if (artists.Count <= 3)
+            return string.Join(", ", artists.Select(a => a.UserName));
+        var first3 = string.Join(", ", artists.Take(3).Select(a => a.UserName));
+        return $"{first3} and {artists.Count - 3} others";
+    }
 }
 
 /// <summary>
@@ -1026,3 +1037,4 @@ public sealed partial class SelectableArtist : ObservableObject
         }
     }
 }
+

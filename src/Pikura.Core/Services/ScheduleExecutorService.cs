@@ -225,7 +225,7 @@ public sealed class ScheduleExecutorService : IDisposable
         // Create job
         await _coordinator.CreateJobAsync(
             DownloadJobType.BookmarkArtist,
-            $"Scheduled: {schedule.Name}",
+            $"Scheduled: {schedule.Name} — {BuildArtistLabel(targets)}",
             targets,
             settings,
             startImmediately: true,
@@ -286,7 +286,7 @@ public sealed class ScheduleExecutorService : IDisposable
 
         await _coordinator.CreateJobAsync(
             DownloadJobType.Artist,
-            $"Scheduled: {schedule.Name}",
+            $"Scheduled: {schedule.Name} — {BuildArtistLabel(targets)}",
             targets,
             settings,
             startImmediately: true,
@@ -375,6 +375,18 @@ public sealed class ScheduleExecutorService : IDisposable
     public void Dispose()
     {
         _checkTimer.Dispose();
+    }
+
+    private static string BuildArtistLabel(List<DownloadTarget> targets)
+    {
+        var names = targets.Where(t => t.Type == TargetType.Artist)
+                           .Select(t => t.Name)
+                           .Where(n => !string.IsNullOrWhiteSpace(n))
+                           .ToList();
+        if (names.Count == 0) return $"{targets.Count} targets";
+        if (names.Count == 1) return names[0]!;
+        if (names.Count <= 3) return string.Join(", ", names);
+        return $"{string.Join(", ", names.Take(3))} and {names.Count - 3} others";
     }
 }
 
