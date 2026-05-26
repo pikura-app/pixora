@@ -1,10 +1,34 @@
 ## Pikura 1.7.2
 
-Followed-artists pagination reliability fix and download queue status accuracy improvements.
+Followed-artists pagination reliability, download queue status accuracy, and job lifecycle fixes.
 
 ### Fixes
-- **Followed artists — missing artists after partial load (#18)** — Fixed: the parallel offset-based pagination strategy was vulnerable to Pixiv's unstable page ordering. When artists are followed or unfollowed during a fetch, pages shift — parallel requests at fixed offsets would then miss some artists and duplicate others, resulting in counts like 197/234. Pagination is now fully sequential per branch (public/private) with a shared deduplication set, which correctly handles page drift at the cost of slightly higher latency on large lists.
-- **Download queue — incorrect initial job status** — Fixed: `CreateJobAsync` had a dead-code branch (`startImmediately ? Pending : Pending`) that always set the initial status to `Pending` regardless of whether concurrent slots were available. A new `Queued` status has been added to `JobStatus` to distinguish jobs waiting for a slot from jobs about to start (`Pending`). The UI now shows **⏳ Queued** for jobs waiting in line and **⏳ Starting…** for jobs about to execute, with correct cancellable/resumable button visibility for both states.
+
+- **Followed artists — missing artists after partial load (#18)**
+  Fixed: sequential pagination was stopping early whenever Pixiv returned a short page
+  (e.g. 46 instead of 48). Pixiv returns inconsistently-sized pages throughout the list,
+  not just at the end, so a short page is not a reliable end-of-list signal. Pagination
+  now only stops on a truly empty page or when `offset >= Total`. Also switched from
+  parallel to sequential per-branch fetching so that page drift caused by follows/unfollows
+  mid-fetch no longer causes missed or duplicated artists.
+
+- **Download queue — incorrect initial job status**
+  Fixed: `CreateJobAsync` had a dead-code branch (`startImmediately ? Pending : Pending`)
+  that always saved jobs as `Pending` regardless of slot availability. A new `Queued`
+  status has been added to `JobStatus` to distinguish jobs waiting for a slot from jobs
+  about to start. The UI now shows **⏳ Queued** for waiting jobs and **⏳ Starting…**
+  for jobs about to execute, with correct cancellable/resumable button visibility.
+
+- **Pause triggers "Completed" notification**
+  Fixed: `PauseJobAsync` was firing `JobCompleted` immediately after cancelling the task
+  token, while `ContinueWith` was also about to fire it once the task actually ended.
+  The double-fire caused paused jobs to appear in the Completed list. `PauseJobAsync`
+  no longer fires the event directly — `ContinueWith` now owns it exclusively.
+
+- **Job restart loop after pause**
+  Fixed: the `ContinueWith` Paused guard was calling `TryStartNextPendingJobAsync()`
+  before returning, which could pick up the paused job (or another queued job) and
+  restart it immediately. Pausing a job no longer triggers the next-job dequeue.
 
 ---
 
