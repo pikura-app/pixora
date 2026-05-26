@@ -155,15 +155,25 @@ public partial class BookmarksViewModel : ViewModelBase
     [ObservableProperty] private BookmarkSortMode _sortMode = BookmarkSortMode.Default;
     partial void OnSortModeChanged(BookmarkSortMode _) => UpdateFiltered();
 
-    public static IReadOnlyList<(BookmarkSortMode Mode, string Label)> SortOptions { get; } =
+    public static IReadOnlyList<string> SortOptions { get; } =
     [
-        (BookmarkSortMode.Default,      "Newest Bookmarked"),
-        (BookmarkSortMode.NewestPosted, "Newest Posted"),
-        (BookmarkSortMode.OldestPosted, "Oldest Posted"),
-        (BookmarkSortMode.TitleAZ,      "Title A → Z"),
-        (BookmarkSortMode.TitleZA,      "Title Z → A"),
-        (BookmarkSortMode.MostPages,    "Most Pages"),
+        "Newest Bookmarked",
+        "Newest Posted",
+        "Oldest Posted",
+        "Title A → Z",
+        "Title Z → A",
+        "Most Pages",
     ];
+
+    public static BookmarkSortMode SortModeFromIndex(int index) => index switch
+    {
+        1 => BookmarkSortMode.NewestPosted,
+        2 => BookmarkSortMode.OldestPosted,
+        3 => BookmarkSortMode.TitleAZ,
+        4 => BookmarkSortMode.TitleZA,
+        5 => BookmarkSortMode.MostPages,
+        _ => BookmarkSortMode.Default,
+    };
 
     // ── Tag filter ─────────────────────────────────────────────────────────
     [ObservableProperty] private string _tagFilter = string.Empty;

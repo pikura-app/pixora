@@ -33,8 +33,18 @@ public partial class BookmarksView : UserControl
         SortComboBox.SelectionChanged += OnSortChanged;
         AttachedToVisualTree += (_, _) =>
         {
-            if (VM is { } vm && vm.GalleryVm.HasTabs && !vm.ShowPreview)
+            if (VM is not { } vm) return;
+            if (vm.GalleryVm.HasTabs && !vm.ShowPreview)
                 vm.ShowPreview = true;
+            // Force the viewer to reload the current card — without this, navigating
+            // back to Bookmarks when a tab is already open leaves the image blank because
+            // IsVisible never changed (HasTabs was already true) so the re-trigger in
+            // OnPropertyChanged never fired.
+            var gvm = vm.GalleryVm;
+            BookmarksInlineViewer.DataContext = null;
+            BookmarksInlineViewer.DataContext = gvm;
+            BookmarksFullViewer.DataContext = null;
+            BookmarksFullViewer.DataContext = gvm;
         };
     }
 
@@ -428,7 +438,6 @@ public partial class BookmarksView : UserControl
     private void OnSortChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (VM is not { } vm) return;
-        if (SortComboBox.SelectedItem is (BookmarksViewModel.BookmarkSortMode mode, string _))
-            vm.SortMode = mode;
+        vm.SortMode = BookmarksViewModel.SortModeFromIndex(SortComboBox.SelectedIndex);
     }
 }

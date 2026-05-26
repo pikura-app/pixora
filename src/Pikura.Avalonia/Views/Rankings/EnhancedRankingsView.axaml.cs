@@ -59,6 +59,19 @@ public partial class EnhancedRankingsView : UserControl
                 overlayViewer.ExpandViewer  += OnExpandViewer;
                 overlayViewer.ViewerClosed += OnViewerClosed;
             }
+
+            // Force viewers to reload the current card when navigating back to Rankings
+            // with an existing open tab — same fix applied to Bookmarks and Discover.
+            try
+            {
+                var gvm = AppServices.Get<GalleryViewModel>();
+                if (gvm.InlineViewerCard != null)
+                {
+                    if (inlineViewer != null)  { inlineViewer.DataContext  = null; inlineViewer.DataContext  = gvm; }
+                    if (overlayViewer != null) { overlayViewer.DataContext = null; overlayViewer.DataContext = gvm; }
+                }
+            }
+            catch { }
         };
     }
 
