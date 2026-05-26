@@ -1111,47 +1111,20 @@ public partial class GalleryViewModel : ViewModelBase
                 continue;
             }
 
-            if (first.Total > 0)
             {
-                // Known total → fire all remaining pages in parallel.
-                // Cap at 5000 as a safety bound; use first.Total as the exclusive
-                // upper bound so offset walks all pages (e.g. Total=49, limit=48
-                // fires one extra page at offset=48 to pick up the last artist).
-                var totalBound = Math.Min(first.Total, 5000);
-                Logger.LogInformation("[FollowedArtists] Parallel fetch hidden={Hidden}: offsets {Start}..{End} (step {Limit})",
-                    hidden, limit, totalBound, limit);
-                for (int offset = limit; offset < totalBound; offset += limit)
-                {
-                    var off = offset;
-                    var hiddenCapture = hidden;
-                    tasks.Add(Task.Run(async () =>
-                    {
-                        try
-                        {
-                            var page = await _pixivClient.GetFollowedArtistsAsync(userId, off, limit, hiddenCapture);
-                            Logger.LogInformation("[FollowedArtists] Parallel page hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
-                                hiddenCapture, off, page?.Total ?? -1, page?.Users?.Count ?? -1);
-                            if (page?.Users == null || page.Users.Count == 0) return;
-                            await AddBatchAsync(page.Users);
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogDebug(ex, "Followed-artists page fetch failed at offset {Off}", off);
-                        }
-                    }));
-                }
-            }
-            else
-            {
-                // Total unknown → sequential discovery on a single background task.
-                // Stops as soon as Pixiv returns a short page (fewer than limit users)
-                // or an empty one. Caps at 5000 just in case the API gets stuck.
+                // Sequential page-by-page fetch with deduplication.
+                // Pixiv's offset-based API has unstable ordering — if artists are
+                // followed/unfollowed mid-fetch, pages shift and parallel requests
+                // miss some artists entirely while duplicating others. Sequential
+                // fetch with the shared 'seen' set handles this correctly.
                 var hiddenCapture = hidden;
-                Logger.LogInformation("[FollowedArtists] Sequential discovery hidden={Hidden} (total was 0)", hiddenCapture);
+                var totalBound = first.Total > 0 ? Math.Min(first.Total, 5000) : 5000;
+                Logger.LogInformation("[FollowedArtists] Sequential fetch hidden={Hidden}: up to offset {End} (step {Limit})",
+                    hiddenCapture, totalBound, limit);
                 tasks.Add(Task.Run(async () =>
                 {
                     int offset = limit;
-                    while (offset < 5000)
+                    while (offset < totalBound)
                     {
                         FollowingResponseBody? page;
                         try
@@ -1160,11 +1133,11 @@ public partial class GalleryViewModel : ViewModelBase
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogDebug(ex, "Followed-artists discovery fetch failed at offset {Off}", offset);
+                            Logger.LogDebug(ex, "Followed-artists fetch failed at offset {Off}", offset);
                             break;
                         }
 
-                        Logger.LogInformation("[FollowedArtists] Discovery hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
+                        Logger.LogInformation("[FollowedArtists] Page hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
                             hiddenCapture, offset, page?.Total ?? -1, page?.Users?.Count ?? -1);
                         if (page?.Users == null || page.Users.Count == 0) break;
                         await AddBatchAsync(page.Users);

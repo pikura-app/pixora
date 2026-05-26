@@ -1,4 +1,14 @@
-﻿## Pikura 1.7.1
+## Pikura 1.7.2
+
+Followed-artists pagination reliability fix and download queue status accuracy improvements.
+
+### Fixes
+- **Followed artists — missing artists after partial load (#18)** — Fixed: the parallel offset-based pagination strategy was vulnerable to Pixiv's unstable page ordering. When artists are followed or unfollowed during a fetch, pages shift — parallel requests at fixed offsets would then miss some artists and duplicate others, resulting in counts like 197/234. Pagination is now fully sequential per branch (public/private) with a shared deduplication set, which correctly handles page drift at the cost of slightly higher latency on large lists.
+- **Download queue — incorrect initial job status** — Fixed: `CreateJobAsync` had a dead-code branch (`startImmediately ? Pending : Pending`) that always set the initial status to `Pending` regardless of whether concurrent slots were available. A new `Queued` status has been added to `JobStatus` to distinguish jobs waiting for a slot from jobs about to start (`Pending`). The UI now shows **⏳ Queued** for jobs waiting in line and **⏳ Starting…** for jobs about to execute, with correct cancellable/resumable button visibility for both states.
+
+---
+
+## Pikura 1.7.1
 
 Polish and bug-fix release covering job queue UX, download history, folder resolution, and selection controls across all views. Closes issues #18, #19, and #20.
 

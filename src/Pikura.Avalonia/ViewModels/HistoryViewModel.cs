@@ -401,9 +401,9 @@ public partial class DownloadJobViewModel : ObservableObject
         _coordinator = coordinator;
         _settingsService = settingsService;
         UpdateStatus();
-        IsCancellable = job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsCancellable = job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         IsPausable    = job.Status == JobStatus.Running;
-        IsResumable   = job.Status is JobStatus.Pending or JobStatus.Paused;
+        IsResumable   = job.Status is JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         var firstTarget = job.Targets.FirstOrDefault();
         if (firstTarget != null && !string.IsNullOrEmpty(firstTarget.UserName))
             CurrentArtist = firstTarget.UserName;
@@ -554,9 +554,9 @@ public partial class DownloadJobViewModel : ObservableObject
             JobStatus.Paused => "⏸ Paused",
             _ => progress.Status.ToString()
         };
-        IsCancellable     = progress.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsCancellable     = progress.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         IsPausable        = progress.Status == JobStatus.Running;
-        IsResumable       = progress.Status is JobStatus.Pending or JobStatus.Paused;
+        IsResumable       = progress.Status is JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         CompletedCount    = progress.CompletedTargets;
         TotalCount        = progress.TotalTargets;
         if (progress.CurrentTargetName != null)
@@ -619,7 +619,8 @@ public partial class DownloadJobViewModel : ObservableObject
     {
         StatusText = Job.Status switch
         {
-            JobStatus.Pending => "⏳ Queued",
+            JobStatus.Queued  => "⏳ Queued",
+            JobStatus.Pending => "⏳ Starting…",
             JobStatus.Running => "▶ Running",
             JobStatus.Paused => "⏸ Paused",
             JobStatus.Completed => "✅ Completed",
@@ -628,9 +629,9 @@ public partial class DownloadJobViewModel : ObservableObject
             _ => Job.Status.ToString()
         };
 
-        IsCancellable = Job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsCancellable = Job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         IsPausable    = Job.Status == JobStatus.Running;
-        IsResumable   = Job.Status is JobStatus.Pending or JobStatus.Paused;
+        IsResumable   = Job.Status is JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
 
         if (Job.Status == JobStatus.Completed ||
             Job.Status == JobStatus.Failed)

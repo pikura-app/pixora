@@ -17,6 +17,7 @@ public enum DownloadJobType
 /// <summary>Status of a download job.</summary>
 public enum JobStatus
 {
+    Queued,
     Pending,
     Running,
     Paused,

@@ -133,20 +133,26 @@ public sealed class DownloadCoordinator : IDisposable
         bool startImmediately = false,
         CancellationToken ct = default)
     {
+        // Queued = waiting for a concurrent slot to open.
+        // Pending = slot is available, StartJobAsync will transition to Running immediately.
+        var maxJobs = _settingsService.Current.MaxConcurrentJobs;
+        var hasSlot = maxJobs <= 0 || _activeJobs.Count < maxJobs;
+        var initialStatus = (startImmediately && hasSlot) ? JobStatus.Pending : JobStatus.Queued;
+
         var job = new DownloadJob
         {
             Name = name,
             Type = type,
             Targets = targets,
             Settings = settingsOverride ?? new SettingsOverride { UseGlobalSettings = true },
-            Status = startImmediately ? JobStatus.Pending : JobStatus.Pending,
+            Status = initialStatus,
             CreatedAt = DateTime.UtcNow
         };
 
         // Save to database
         await _jobRepository.SaveJobAsync(job, ct);
-        _logger.LogInformation("Created download job {JobId} ({Name}) with {TargetCount} targets",
-            job.Id, job.Name, job.Targets.Count);
+        _logger.LogInformation("Created download job {JobId} ({Name}) with {TargetCount} targets, status={Status}",
+            job.Id, job.Name, job.Targets.Count, initialStatus);
 
         if (startImmediately)
         {
@@ -168,7 +174,7 @@ public sealed class DownloadCoordinator : IDisposable
             return false;
         }
 
-        if (job.Status != JobStatus.Pending && job.Status != JobStatus.Paused)
+        if (job.Status != JobStatus.Pending && job.Status != JobStatus.Queued && job.Status != JobStatus.Paused)
         {
             _logger.LogWarning("Cannot start job {JobId}: status is {Status}", jobId, job.Status);
             return false;
@@ -179,7 +185,7 @@ public sealed class DownloadCoordinator : IDisposable
         if (maxJobs > 0 && _activeJobs.Count >= maxJobs)
         {
             _logger.LogInformation("Job {JobId} queued: concurrent job limit ({Max}) reached", jobId, maxJobs);
-            await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Pending, null, ct);
+            await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Queued, null, ct);
             return false;
         }
 
@@ -379,7 +385,7 @@ public sealed class DownloadCoordinator : IDisposable
         var maxJobs = _settingsService.Current.MaxConcurrentJobs;
         if (maxJobs > 0 && _activeJobs.Count >= maxJobs) return;
 
-        var pending = await _jobRepository.GetJobsAsync(status: JobStatus.Pending);
+        var pending = await _jobRepository.GetJobsAsync(status: JobStatus.Queued);
         var next = pending
             .Where(j => !_activeJobs.ContainsKey(j.Id))
             .OrderBy(j => j.CreatedAt)
