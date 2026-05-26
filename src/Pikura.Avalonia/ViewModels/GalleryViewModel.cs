@@ -1820,7 +1820,8 @@ public partial class GalleryViewModel : ViewModelBase
             TargetId = c.Id, Name = c.Title, ThumbnailUrl = c.ThumbnailUrl, UserName = c.UserName, UserId = c.UserId, Type = TargetType.Artwork, Status = TargetStatus.Pending
         }).ToList();
 
-        var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks (with preset)";
+        var artistPrefix = SelectedArtist != null ? $"{SelectedArtist.Name}: " : "";
+        var jobName = approved.Count == 1 ? $"{artistPrefix}{approved[0].Title}" : $"{artistPrefix}{approved.Count} artworks (with preset)";
         var activeJob = await _coordinator.CreateJobAsync(
             DownloadJobType.ImageId, jobName, targets,
             settingsOverride: acctOverride, startImmediately: false);
@@ -2002,7 +2003,8 @@ public partial class GalleryViewModel : ViewModelBase
             TargetId = c.Id, Name = c.Title, ThumbnailUrl = c.ThumbnailUrl, UserName = c.UserName, UserId = c.UserId, Type = TargetType.Artwork, Status = TargetStatus.Pending
         }).ToList();
 
-        var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks";
+        var artistPrefix = SelectedArtist != null ? $"{SelectedArtist.Name}: " : "";
+        var jobName = approved.Count == 1 ? $"{artistPrefix}{approved[0].Title}" : $"{artistPrefix}{approved.Count} artworks";
         var activeJob = await _coordinator.CreateJobAsync(
             DownloadJobType.ImageId, jobName, targets,
             settingsOverride: acctOverride, startImmediately: false);
