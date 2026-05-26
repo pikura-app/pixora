@@ -30,17 +30,9 @@
         </Border>
 
         <!-- Release notes body -->
-        <TextBox Grid.Row="1"
-                 x:Name="NotesText"
-                 IsReadOnly="True"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 FontSize="12.5"
-                 BorderThickness="0"
-                 Background="Transparent"
-                 Foreground="{actipro:ThemeResource DefaultForegroundBrushSecondary}"
-                 Padding="20,14"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,14">
+            <StackPanel x:Name="NotesPanel" Spacing="4"/>
+        </ScrollViewer>
 
         <!-- Footer -->
         <Border Grid.Row="2"
