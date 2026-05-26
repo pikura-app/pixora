@@ -1,3 +1,18 @@
+## Pikura 1.7.4
+
+Quality-of-life fixes for bookmark sorting, cross-section viewer persistence, and crash report noise.
+
+### Features
+
+- **Bookmark sorting** — New sort dropdown in the Bookmarks toolbar lets you order by Newest Bookmarked (default/API order), Newest Posted, Oldest Posted, Title A→Z, Title Z→A, or Most Pages. Sorting is client-side and applies instantly across all three tabs (Public, Private, Local Favorites).
+
+### Fixes
+
+- **Viewer image blank when switching sections** — Navigating back to Bookmarks or Rankings when a viewer tab was already open left the image panel empty. Each section now forces the inline viewer to reload the current card on attach.
+- **Stale crash report dialog** — The crash report dialog no longer appears for crashes older than 5 minutes or for XamlLoadException (which is a build-artifact issue, not a real app crash). The flag is cleared automatically in both cases.
+
+---
+
 ## Pikura 1.7.3
 
 Quality-of-life improvements to job naming, followed-artists loading reliability, and download job lifecycle fixes.
