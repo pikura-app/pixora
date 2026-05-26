@@ -151,10 +151,13 @@ public sealed class DownloadJobRepository : IDisposable
         var sql = @"
             SELECT id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder
             FROM download_jobs
-            WHERE status IN (0, 1, 2)
+            WHERE status IN (@queued, @pending, @running)
             ORDER BY sort_order ASC, created_at DESC";
-
         using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@queued",   (int)JobStatus.Queued);
+        cmd.Parameters.AddWithValue("@pending",  (int)JobStatus.Pending);
+        cmd.Parameters.AddWithValue("@running",  (int)JobStatus.Running);
+
         var jobs = new List<DownloadJob>();
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -355,11 +358,13 @@ public sealed class DownloadJobRepository : IDisposable
             SET status = @cancelled,
                 completed_at = @now,
                 error_message = COALESCE(error_message, 'Abandoned: app restarted while running')
-            WHERE status = @running";
+            WHERE status IN (@running, @pending, @queued)";
 
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("@cancelled", (int)JobStatus.Cancelled);
-        cmd.Parameters.AddWithValue("@running", (int)JobStatus.Running);
+        cmd.Parameters.AddWithValue("@running",   (int)JobStatus.Running);
+        cmd.Parameters.AddWithValue("@pending",   (int)JobStatus.Pending);
+        cmd.Parameters.AddWithValue("@queued",    (int)JobStatus.Queued);
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
 
         var rows = await cmd.ExecuteNonQueryAsync(ct);

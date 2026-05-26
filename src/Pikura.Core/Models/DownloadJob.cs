@@ -17,13 +17,13 @@ public enum DownloadJobType
 /// <summary>Status of a download job.</summary>
 public enum JobStatus
 {
-    Queued,
-    Pending,
-    Running,
-    Paused,
-    Completed,
-    Failed,
-    Cancelled
+    Pending   = 0,
+    Running   = 1,
+    Paused    = 2,
+    Completed = 3,
+    Failed    = 4,
+    Cancelled = 5,
+    Queued    = 10,  // waiting for a concurrent slot; added in 1.7.2 — high value avoids shifting existing DB rows
 }
 
 /// <summary>Type of download target.</summary>
