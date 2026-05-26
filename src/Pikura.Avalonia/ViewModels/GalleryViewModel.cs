@@ -1123,8 +1123,15 @@ public partial class GalleryViewModel : ViewModelBase
                     hiddenCapture, totalBound, limit);
                 tasks.Add(Task.Run(async () =>
                 {
+                    // Step by half the page size so consecutive windows overlap.
+                    // Pixiv's list drifts as artists are followed/unfollowed mid-fetch —
+                    // a full-step advance can skip artists that shifted into the gap.
+                    // Overlapping windows ensure every artist appears in at least one
+                    // page. The shared dedup set discards the duplicates cheaply.
+                    var step = Math.Max(1, limit / 2);
                     int offset = limit;
-                    while (offset < totalBound)
+                    int consecutiveEmpty = 0;
+                    while (offset < totalBound + limit) // fetch one window past Total to catch tail drift
                     {
                         FollowingResponseBody? page;
                         try
@@ -1140,13 +1147,16 @@ public partial class GalleryViewModel : ViewModelBase
                         Logger.LogInformation("[FollowedArtists] Page hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
                             hiddenCapture, offset, page?.Total ?? -1, page?.Users?.Count ?? -1);
 
-                        // Only stop on a truly empty page — Pixiv returns inconsistently
-                        // short pages mid-list (e.g. 46, 36, 35 out of 48) so a short
-                        // page is NOT a reliable end-of-list signal. Use offset >= Total
-                        // (the totalBound loop condition) as the stop criterion instead.
-                        if (page?.Users == null || page.Users.Count == 0) break;
-                        await AddBatchAsync(page.Users);
-                        offset += limit;
+                        if (page?.Users == null || page.Users.Count == 0)
+                        {
+                            if (++consecutiveEmpty >= 2) break; // two empty windows in a row = truly done
+                        }
+                        else
+                        {
+                            consecutiveEmpty = 0;
+                            await AddBatchAsync(page.Users);
+                        }
+                        offset += step;
                     }
                 }));
             }
