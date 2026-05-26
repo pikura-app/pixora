@@ -892,15 +892,25 @@
                                     <StackPanel Spacing="6">
                                         <TextBlock Text="Max concurrent downloads" FontSize="13"
                                                    Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
-                                        <Slider Minimum="1" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True"
-                                                IsEnabled="{Binding !SafeMode}"
-                                                Value="{Binding MaxConcurrentDownloads, Mode=TwoWay}"/>
+                                        <NumericUpDown Minimum="1" Maximum="99" Increment="1" FormatString="0"
+                                                       IsEnabled="{Binding !SafeMode}"
+                                                       Value="{Binding MaxConcurrentDownloads, Mode=TwoWay}"
+                                                       Width="100" HorizontalAlignment="Left"/>
                                         <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
-                                                   Text="{Binding MaxConcurrentDownloads, StringFormat='{}{0} parallel downloads'}"
+                                                   Text="Parallel file downloads within a single job"
                                                    IsVisible="{Binding !SafeMode}"/>
                                         <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
                                                    Text="Overridden by Safe Mode (forced to 1)"
                                                    IsVisible="{Binding SafeMode}"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Max concurrent jobs" FontSize="13"
+                                                   Foreground="{actipro:ThemeResource DefaultForegroundBrushTertiary}"/>
+                                        <NumericUpDown Minimum="1" Maximum="99" Increment="1" FormatString="0"
+                                                       Value="{Binding MaxConcurrentJobs, Mode=TwoWay}"
+                                                       Width="100" HorizontalAlignment="Left"/>
+                                        <TextBlock FontSize="12" Foreground="{actipro:ThemeResource DefaultForegroundBrushDisabled}"
+                                                   Text="Jobs running at once — extras queue as pending"/>
                                     </StackPanel>
                                     <StackPanel Spacing="6">
                                         <TextBlock Text="Overwrite behavior" FontSize="13"

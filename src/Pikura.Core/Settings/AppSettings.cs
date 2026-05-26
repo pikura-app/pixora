@@ -50,6 +50,9 @@ public sealed class AppSettings
     /// <summary>Maximum number of artworks downloaded in parallel.</summary>
     public int MaxConcurrentDownloads { get; set; } = 3;
 
+    /// <summary>Maximum number of download jobs that may run simultaneously (0 = unlimited).</summary>
+    public int MaxConcurrentJobs { get; set; } = 3;
+
     /// <summary>When true, multi-page submissions are saved into their own subfolder
     /// (e.g., "Title (123456)/" instead of "Title (123456)-page1.jpg").</summary>
     public bool CreateFolderForManga { get; set; } = true;

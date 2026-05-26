@@ -69,6 +69,34 @@ public sealed class DownloadCoordinator : IDisposable
     /// </summary>
     public void NotifyJobSaved(DownloadJob job) => JobCompleted?.Invoke(this, new JobCompletedEventArgs(job));
 
+    /// <summary>
+    /// Registers an externally-managed CancellationTokenSource for a job so that
+    /// PauseJobAsync and CancelJobAsync can reach it via _activeJobs.
+    /// </summary>
+    public void RegisterExternalJob(Guid jobId, CancellationTokenSource cts)
+        => _activeJobs.TryAdd(jobId, cts);
+
+    /// <summary>
+    /// Removes an externally-registered job from the active tracking dictionary.
+    /// Call this when the external download loop has finished.
+    /// </summary>
+    public void UnregisterExternalJob(Guid jobId)
+    {
+        _activeJobs.TryRemove(jobId, out _);
+        _runningTasks.TryRemove(jobId, out _);
+    }
+
+    /// <summary>
+    /// Updates a job's status to Running in the DB and fires JobStarted.
+    /// Use with RegisterExternalJob when the caller owns the execution loop.
+    /// </summary>
+    public async Task NotifyJobRunningAsync(DownloadJob job, CancellationToken ct = default)
+    {
+        await _jobRepository.UpdateJobStatusAsync(job.Id, JobStatus.Running, null, ct);
+        job.Status = JobStatus.Running;
+        JobStarted?.Invoke(this, new JobCompletedEventArgs(job));
+    }
+
     public DownloadCoordinator(
         PixivClient client,
         PixivDownloadService downloadService,
@@ -146,6 +174,15 @@ public sealed class DownloadCoordinator : IDisposable
             return false;
         }
 
+        // Enforce MaxConcurrentJobs limit
+        var maxJobs = _settingsService.Current.MaxConcurrentJobs;
+        if (maxJobs > 0 && _activeJobs.Count >= maxJobs)
+        {
+            _logger.LogInformation("Job {JobId} queued: concurrent job limit ({Max}) reached", jobId, maxJobs);
+            await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Pending, null, ct);
+            return false;
+        }
+
         // Create cancellation token for this job
         var cts = new CancellationTokenSource();
         if (!_activeJobs.TryAdd(jobId, cts))
@@ -171,6 +208,14 @@ public sealed class DownloadCoordinator : IDisposable
             _activeJobs.TryRemove(jobId, out _);
             _runningTasks.TryRemove(jobId, out _);
 
+            // If already set to Paused (by PauseJobAsync), don't overwrite it
+            var currentJob = await _jobRepository.GetJobAsync(jobId);
+            if (currentJob?.Status == JobStatus.Paused)
+            {
+                _ = TryStartNextPendingJobAsync();
+                return;
+            }
+
             // Update final status
             var finalStatus = t.IsFaulted ? JobStatus.Failed :
                              t.IsCanceled ? JobStatus.Cancelled : JobStatus.Completed;
@@ -186,6 +231,9 @@ public sealed class DownloadCoordinator : IDisposable
             }
 
             _logger.LogInformation("Job {JobId} completed with status {Status}", jobId, finalStatus);
+
+            // Auto-start next pending job if a slot is now free
+            _ = TryStartNextPendingJobAsync();
         }, TaskContinuationOptions.ExecuteSynchronously);
 
         _logger.LogInformation("Started download job {JobId}", jobId);
@@ -223,6 +271,79 @@ public sealed class DownloadCoordinator : IDisposable
     public Task<List<DownloadJob>> GetJobsAsync(JobStatus? status = null, int? limit = null, CancellationToken ct = default)
         => _jobRepository.GetJobsAsync(status, limit, ct);
 
+    public enum ReorderAction { MoveUp, MoveDown, MoveToTop, MoveToBottom }
+
+    /// <summary>
+    /// Pauses a running job. The job's completed targets are preserved so it can resume.
+    /// </summary>
+    public async Task<bool> PauseJobAsync(Guid jobId, CancellationToken ct = default)
+    {
+        if (!_activeJobs.TryGetValue(jobId, out var cts))
+        {
+            _logger.LogWarning("Cannot pause job {JobId}: not running", jobId);
+            return false;
+        }
+        // Set Paused in DB before cancelling so the ContinueWith guard skips overwriting it.
+        await _jobRepository.UpdateJobStatusAsync(jobId, JobStatus.Paused, null, ct);
+        await cts.CancelAsync();
+
+        // Fire JobCompleted so listeners (HistoryViewModel) route the job to the paused state.
+        var pausedJob = await _jobRepository.GetJobAsync(jobId, ct);
+        if (pausedJob != null)
+            JobCompleted?.Invoke(this, new JobCompletedEventArgs(pausedJob));
+
+        _logger.LogInformation("Paused job {JobId}", jobId);
+        return true;
+    }
+
+    /// <summary>
+    /// Reorders a pending or paused job relative to others in the queue.
+    /// </summary>
+    public async Task ReorderJobAsync(Guid jobId, ReorderAction action, CancellationToken ct = default)
+    {
+        var orders = await _jobRepository.GetPendingJobSortOrdersAsync(ct);
+        var idx = orders.FindIndex(x => x.Id == jobId);
+        if (idx < 0) return;
+
+        switch (action)
+        {
+            case ReorderAction.MoveToTop:
+            {
+                var minOrder = orders.Count > 0 ? orders[0].SortOrder - 1 : 0;
+                await _jobRepository.UpdateSortOrderAsync(jobId, minOrder, ct);
+                break;
+            }
+            case ReorderAction.MoveToBottom:
+            {
+                var maxOrder = orders.Count > 0 ? orders[^1].SortOrder + 1 : 0;
+                await _jobRepository.UpdateSortOrderAsync(jobId, maxOrder, ct);
+                break;
+            }
+            case ReorderAction.MoveUp when idx > 0:
+            {
+                var above = orders[idx - 1];
+                var current = orders[idx];
+                await _jobRepository.UpdateSortOrderAsync(current.Id, above.SortOrder, ct);
+                await _jobRepository.UpdateSortOrderAsync(above.Id, current.SortOrder, ct);
+                break;
+            }
+            case ReorderAction.MoveDown when idx < orders.Count - 1:
+            {
+                var below = orders[idx + 1];
+                var current = orders[idx];
+                await _jobRepository.UpdateSortOrderAsync(current.Id, below.SortOrder, ct);
+                await _jobRepository.UpdateSortOrderAsync(below.Id, current.SortOrder, ct);
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets an explicit sort order for a job (used by drag-and-drop reordering).
+    /// </summary>
+    public Task SetJobSortOrderAsync(Guid jobId, int sortOrder, CancellationToken ct = default)
+        => _jobRepository.UpdateSortOrderAsync(jobId, sortOrder, ct);
+
     /// <summary>
     /// Deletes a job and all its targets.
     /// </summary>
@@ -249,6 +370,24 @@ public sealed class DownloadCoordinator : IDisposable
     #endregion
 
     #region Queuing
+
+    /// <summary>
+    /// If there is a free concurrent-job slot, starts the oldest Pending job from the database.
+    /// </summary>
+    private async Task TryStartNextPendingJobAsync()
+    {
+        var maxJobs = _settingsService.Current.MaxConcurrentJobs;
+        if (maxJobs > 0 && _activeJobs.Count >= maxJobs) return;
+
+        var pending = await _jobRepository.GetJobsAsync(status: JobStatus.Pending);
+        var next = pending
+            .Where(j => !_activeJobs.ContainsKey(j.Id))
+            .OrderBy(j => j.CreatedAt)
+            .FirstOrDefault();
+
+        if (next != null)
+            await StartJobAsync(next.Id);
+    }
 
     private readonly ConcurrentDictionary<Guid, (DownloadTarget, ImageEditPreset)> _presetQueue = [];
 
@@ -389,6 +528,16 @@ public sealed class DownloadCoordinator : IDisposable
         var completedCount = job.Targets.Count(t => t.Status == TargetStatus.Completed);
         var totalCount = job.Targets.Count;
 
+        // Emit initial progress immediately so the UI shows correct counts on resume
+        ReportProgress(job.Id, new JobProgress(
+            job.Id,
+            JobStatus.Running,
+            completedCount,
+            totalCount,
+            totalCount > 0 ? completedCount * 100.0 / totalCount : 0,
+            null,
+            null));
+
         // Get effective settings for this job — start from global, then apply per-account overrides
         var effectiveSettings = job.Settings.UseGlobalSettings
             ? SettingsOverride.FromGlobalSettings(_settingsService.Current)
@@ -496,7 +645,15 @@ public sealed class DownloadCoordinator : IDisposable
                     {
                         (found, downloaded) = target.Type switch
                         {
-                            TargetType.Artwork => await DownloadArtworkAsync(target, targetSettings, ct),
+                            TargetType.Artwork => await DownloadArtworkAsync(target, targetSettings, ct,
+                                onOutputFolder: folder =>
+                                {
+                                    if (string.IsNullOrWhiteSpace(job.OutputFolder))
+                                    {
+                                        job.OutputFolder = folder;
+                                        _ = _jobRepository.SaveJobAsync(job, ct);
+                                    }
+                                }),
                             TargetType.Post    => await DownloadFanboxPostAsync(target, targetSettings, ct),
                             _ => throw new NotSupportedException($"Target type {target.Type} not supported")
                         };
@@ -732,7 +889,8 @@ public sealed class DownloadCoordinator : IDisposable
     private async Task<(int Found, int Downloaded)> DownloadArtworkAsync(
         DownloadTarget target,
         SettingsOverride settings,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<string>? onOutputFolder = null)
     {
         var detail = await _client.GetArtworkDetailAsync(target.TargetId, ct);
         if (detail == null)
@@ -773,7 +931,9 @@ public sealed class DownloadCoordinator : IDisposable
             Tags = detail.Tags?.Tags.Select(t => t.Tag ?? "").Where(t => !string.IsNullOrEmpty(t)).ToList() ?? new List<string>()
         };
 
-        await _downloadService.DownloadArtworkPagesAsync(artworkPreview, pageIndices, null, ct, settings);
+        var savedFiles = await _downloadService.DownloadArtworkPagesAsync(artworkPreview, pageIndices, null, ct, settings);
+        if (savedFiles.Count > 0)
+            onOutputFolder?.Invoke(Path.GetDirectoryName(savedFiles[0])!);
 
         return (1, 1);
     }

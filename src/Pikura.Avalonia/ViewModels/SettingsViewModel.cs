@@ -73,6 +73,7 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _dateFormat = "yyyy-MM-dd";
     [ObservableProperty] private string _tagsSeparator = ", ";
     [ObservableProperty] private int _maxConcurrentDownloads = 3;
+    [ObservableProperty] private int _maxConcurrentJobs = 3;
     [ObservableProperty] private bool _createSubfolderPerSubmission;
     [ObservableProperty] private bool _separateR18Folder;
     // Anti-suspension safe mode (issue #19): forces concurrency=1, jittered delays,
@@ -500,6 +501,7 @@ public partial class SettingsViewModel : ViewModelBase
 
         // Core download settings
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
+        MaxConcurrentJobs = s.MaxConcurrentJobs;
         CreateSubfolderPerSubmission = s.CreateSubfolderPerSubmission;
         SeparateR18Folder = s.SeparateR18Folder;
         SafeMode = s.SafeMode;
@@ -788,6 +790,9 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnMaxConcurrentDownloadsChanged(int value)
         => _settingsService.Update(s => s.MaxConcurrentDownloads = value);
+
+    partial void OnMaxConcurrentJobsChanged(int value)
+        => _settingsService.Update(s => s.MaxConcurrentJobs = value);
 
     partial void OnSafeModeChanged(bool value)
         => _settingsService.Update(s => s.SafeMode = value);

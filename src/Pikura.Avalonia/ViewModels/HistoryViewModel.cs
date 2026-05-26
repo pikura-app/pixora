@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -11,6 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 using Pikura.Core.Data;
 using Pikura.Core.Models;
 using Pikura.Core.Services;
+using Pikura.Core.Settings;
 using Pikura.Avalonia.Services;
 
 namespace Pikura.Avalonia.ViewModels;
@@ -21,21 +23,30 @@ public partial class HistoryViewModel : ViewModelBase
     private readonly DownloadCoordinator _coordinator;
     private readonly DialogService _dialogService;
     private readonly PixivImageLoader _imageLoader;
+    private readonly SettingsService _settingsService;
 
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _activeJobs = new();
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _completedJobs = new();
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _failedJobs = new();
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _cancelledJobs = new();
 
-    public HistoryViewModel(DownloadJobRepository jobRepository, DownloadCoordinator coordinator, DialogService dialogService, PixivImageLoader imageLoader)
+    public HistoryViewModel(DownloadJobRepository jobRepository, DownloadCoordinator coordinator, DialogService dialogService, PixivImageLoader imageLoader, SettingsService settingsService)
     {
         _jobRepository = jobRepository;
         _coordinator = coordinator;
         _dialogService = dialogService;
         _imageLoader = imageLoader;
+        _settingsService = settingsService;
 
         coordinator.JobStarted  += OnJobStarted;
         coordinator.JobCompleted += OnJobCompleted;
+        _activeJobs.CollectionChanged += (_, _) => UpdateQueuePositions();
+    }
+
+    private void UpdateQueuePositions()
+    {
+        for (int i = 0; i < _activeJobs.Count; i++)
+            _activeJobs[i].QueuePosition = i + 1;
     }
 
     [RelayCommand]
@@ -114,6 +125,26 @@ public partial class HistoryViewModel : ViewModelBase
         }
     }
 
+    public async Task PersistActiveJobOrderAsync(IReadOnlyList<Guid> orderedIds)
+    {
+        for (int i = 0; i < orderedIds.Count; i++)
+            await _coordinator.SetJobSortOrderAsync(orderedIds[i], i);
+    }
+
+    [RelayCommand]
+    private async Task PauseAllAsync()
+    {
+        foreach (var job in ActiveJobs.ToList())
+            await job.PauseCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private async Task ResumeAllAsync()
+    {
+        foreach (var job in ActiveJobs.ToList())
+            await job.ResumeCommand.ExecuteAsync(null);
+    }
+
     [RelayCommand]
     private async Task RetryAllFailedAsync()
     {
@@ -131,15 +162,32 @@ public partial class HistoryViewModel : ViewModelBase
 
     private void OnJobStarted(object? sender, JobCompletedEventArgs e)
     {
-        Console.Error.WriteLine($"[History] OnJobStarted: {e.Job.Id} '{e.Job.Name}'");
-        var jobVm = new DownloadJobViewModel(e.Job, _imageLoader, _coordinator);
-        var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
-        _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
         void AddToActive()
         {
-            Console.Error.WriteLine($"[History] AddToActive: {e.Job.Id} — already: {ActiveJobs.Any(j => j.Job.Id == e.Job.Id)}");
-            if (ActiveJobs.Any(j => j.Job.Id == e.Job.Id)) return;
-            ActiveJobs.Add(jobVm);
+            var existing = ActiveJobs.FirstOrDefault(j => j.Job.Id == e.Job.Id);
+            if (existing != null)
+            {
+                // Reuse the existing VM (preserves progress counters) — just update status and move to top
+                existing.IsPausable    = true;
+                existing.IsResumable   = false;
+                existing.IsCancellable = true;
+                existing.StatusText    = "▶ Running";
+                existing.Job.Status    = JobStatus.Running;
+                // Re-subscribe progress so events flow again after resume
+                var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, existing));
+                _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
+                ActiveJobs.Remove(existing);
+                ActiveJobs.Insert(0, existing);
+            }
+            else
+            {
+                // Truly new job — create fresh VM
+                var jobVm = new DownloadJobViewModel(e.Job, _imageLoader, _coordinator, _settingsService)
+                    { OnReordered = () => Dispatcher.UIThread.InvokeAsync(LoadJobsAsync) };
+                var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
+                _coordinator.SubscribeToProgress(e.Job.Id, progressHandler);
+                ActiveJobs.Insert(0, jobVm);
+            }
         }
         if (Dispatcher.UIThread.CheckAccess())
             AddToActive();
@@ -156,7 +204,12 @@ public partial class HistoryViewModel : ViewModelBase
             Console.Error.WriteLine($"[History] Route: status={job.Status} activeCount={ActiveJobs.Count}");
             var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == job.Id);
             if (active != null) ActiveJobs.Remove(active);
-            var vm = new DownloadJobViewModel(job, _imageLoader);
+            // Paused jobs need the coordinator so Resume/Pause commands work
+            var vm = new DownloadJobViewModel(job, _imageLoader,
+                job.Status == JobStatus.Paused ? _coordinator : null)
+                { OnReordered = job.Status == JobStatus.Paused
+                    ? () => Dispatcher.UIThread.InvokeAsync(LoadJobsAsync)
+                    : null };
             switch (job.Status)
             {
                 case JobStatus.Completed:
@@ -165,6 +218,14 @@ public partial class HistoryViewModel : ViewModelBase
                     if (!FailedJobs.Any(j => j.Job.Id == job.Id))     FailedJobs.Insert(0, vm);     break;
                 case JobStatus.Cancelled:
                     if (!CancelledJobs.Any(j => j.Job.Id == job.Id))  CancelledJobs.Insert(0, vm);  break;
+                case JobStatus.Paused:
+                    // Paused jobs stay in the active list, inserted after all Running jobs
+                    if (!ActiveJobs.Any(j => j.Job.Id == job.Id))
+                    {
+                        var insertIdx = ActiveJobs.Count(j => j.Job.Status == JobStatus.Running);
+                        ActiveJobs.Insert(insertIdx, vm);
+                    }
+                    break;
             }
             Console.Error.WriteLine($"[History] After Route: completed={CompletedJobs.Count} failed={FailedJobs.Count}");
         }
@@ -178,16 +239,19 @@ public partial class HistoryViewModel : ViewModelBase
         {
             jobVm.ApplyProgress(progress);
 
-            // Immediately move cancelled jobs from Active to Cancelled
-            if (progress.Status == JobStatus.Cancelled)
+            // Move finished/paused jobs out of Active list immediately
+            if (progress.Status == JobStatus.Cancelled || progress.Status == JobStatus.Paused)
             {
                 var active = ActiveJobs.FirstOrDefault(j => j.Job.Id == progress.JobId);
                 if (active != null)
                 {
                     ActiveJobs.Remove(active);
-                    active.Job.Status = JobStatus.Cancelled;
-                    if (!CancelledJobs.Any(j => j.Job.Id == active.Job.Id))
+                    active.Job.Status = progress.Status;
+                    if (progress.Status == JobStatus.Cancelled &&
+                        !CancelledJobs.Any(j => j.Job.Id == active.Job.Id))
                         CancelledJobs.Insert(0, active);
+                    // Paused jobs stay in DB as Paused — they reappear via LoadJobsAsync
+                    // when the queue view refreshes; no separate list needed here.
                 }
             }
         });
@@ -208,9 +272,15 @@ public partial class HistoryViewModel : ViewModelBase
         ActiveJobs.Clear();
         CompletedJobs.Clear();
 
-        foreach (var job in activeJobs)
+        // Sort: Running first, then Paused, then Pending
+        // (CollectionChanged will call UpdateQueuePositions after each Add)
+        var sortedActive = activeJobs
+            .OrderBy(j => j.Status switch { JobStatus.Running => 0, JobStatus.Paused => 1, _ => 2 })
+            .ThenBy(j => j.CreatedAt);
+        foreach (var job in sortedActive)
         {
-            var jobVm = new DownloadJobViewModel(job, _imageLoader, _coordinator);
+            var jobVm = new DownloadJobViewModel(job, _imageLoader, _coordinator, _settingsService)
+                { OnReordered = () => Dispatcher.UIThread.InvokeAsync(LoadJobsAsync) };
             var progressHandler = new Progress<JobProgress>(p => OnProgressReceived(p, jobVm));
             _coordinator.SubscribeToProgress(job.Id, progressHandler);
             ActiveJobs.Add(jobVm);
@@ -221,7 +291,7 @@ public partial class HistoryViewModel : ViewModelBase
 
         foreach (var job in completedJobs.OrderByDescending(j => j.CompletedAt))
         {
-            var vm = new DownloadJobViewModel(job, _imageLoader);
+            var vm = new DownloadJobViewModel(job, _imageLoader, settingsService: _settingsService);
             switch (job.Status)
             {
                 case JobStatus.Completed:  CompletedJobs.Add(vm);  break;
@@ -254,10 +324,48 @@ public partial class DownloadJobViewModel : ObservableObject
     private string? _lastThumbnailUrl;
     private PixivImageLoader? _imageLoader;
     private DownloadCoordinator? _coordinator;
+    private SettingsService? _settingsService;
 
     [ObservableProperty] private bool _isCancellable;
+    [ObservableProperty] private bool _isPausable;
+    [ObservableProperty] private bool _isResumable;
+    [ObservableProperty] private int _queuePosition;
 
-    public bool HasOutputFolder => !string.IsNullOrWhiteSpace(Job.OutputFolder) && Directory.Exists(Job.OutputFolder);
+    public bool HasOutputFolder => !string.IsNullOrWhiteSpace(ResolvedOutputFolder)
+                                   && Directory.Exists(ResolvedOutputFolder);
+
+    private string? ResolvedOutputFolder
+    {
+        get
+        {
+            var downloadRoot = _settingsService?.Current.DownloadRoot;
+
+            // Multi-artist job: targets span more than one distinct user → open DownloadRoot
+            var distinctUsers = Job.Targets
+                .Select(t => t.UserId)
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Distinct()
+                .ToList();
+            if (distinctUsers.Count > 1)
+                return !string.IsNullOrWhiteSpace(downloadRoot) && Directory.Exists(downloadRoot)
+                    ? downloadRoot : null;
+
+            // Single-artist: use stored OutputFolder if available
+            if (!string.IsNullOrWhiteSpace(Job.OutputFolder))
+                return ResolveArtistRootFolder(Job.OutputFolder, downloadRoot);
+
+            // Fallback: search DownloadRoot for a folder matching the artist's UserId
+            if (string.IsNullOrWhiteSpace(downloadRoot) || !Directory.Exists(downloadRoot)) return null;
+            var userId = distinctUsers.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(userId)) return null;
+            try
+            {
+                return Directory.EnumerateDirectories(downloadRoot, "*", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault(d => Path.GetFileName(d).Contains(userId, StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return null; }
+        }
+    }
     public bool HasThumbnail => Thumbnail != null;
 
     partial void OnThumbnailChanged(Bitmap? value) => OnPropertyChanged(nameof(HasThumbnail));
@@ -286,13 +394,16 @@ public partial class DownloadJobViewModel : ObservableObject
     }
     public bool HasArtistInfo => !string.IsNullOrEmpty(ArtistInfo);
 
-    public DownloadJobViewModel(DownloadJob job, PixivImageLoader imageLoader, DownloadCoordinator? coordinator = null)
+    public DownloadJobViewModel(DownloadJob job, PixivImageLoader imageLoader, DownloadCoordinator? coordinator = null, SettingsService? settingsService = null)
     {
         Job = job;
         _imageLoader = imageLoader;
         _coordinator = coordinator;
+        _settingsService = settingsService;
         UpdateStatus();
-        IsCancellable = job.Status == JobStatus.Running || job.Status == JobStatus.Pending;
+        IsCancellable = job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsPausable    = job.Status == JobStatus.Running;
+        IsResumable   = job.Status is JobStatus.Pending or JobStatus.Paused;
         var firstTarget = job.Targets.FirstOrDefault();
         if (firstTarget != null && !string.IsNullOrEmpty(firstTarget.UserName))
             CurrentArtist = firstTarget.UserName;
@@ -308,6 +419,52 @@ public partial class DownloadJobViewModel : ObservableObject
         if (_coordinator == null) return;
         await _coordinator.CancelJobAsync(Job.Id);
         IsCancellable = false;
+        IsPausable    = false;
+        IsResumable   = false;
+    }
+
+    [RelayCommand]
+    private async Task PauseAsync()
+    {
+        if (_coordinator == null) return;
+        // Optimistic update — immediate UI feedback
+        IsPausable    = false;
+        IsResumable   = true;
+        IsCancellable = true;
+        StatusText    = "⏸ Paused";
+        Job.Status    = JobStatus.Paused;
+        await _coordinator.PauseJobAsync(Job.Id);
+    }
+
+    [RelayCommand]
+    private async Task ResumeAsync()
+    {
+        if (_coordinator == null) return;
+        // Optimistic update — immediate UI feedback
+        IsPausable    = true;
+        IsResumable   = false;
+        IsCancellable = true;
+        StatusText    = "▶ Running";
+        Job.Status    = JobStatus.Running;
+        await _coordinator.StartJobAsync(Job.Id);
+    }
+
+    public Func<Task>? OnReordered { get; set; }
+
+    [RelayCommand]
+    private async Task MoveToTopAsync()    => await ReorderAsync(DownloadCoordinator.ReorderAction.MoveToTop);
+    [RelayCommand]
+    private async Task MoveUpAsync()       => await ReorderAsync(DownloadCoordinator.ReorderAction.MoveUp);
+    [RelayCommand]
+    private async Task MoveDownAsync()     => await ReorderAsync(DownloadCoordinator.ReorderAction.MoveDown);
+    [RelayCommand]
+    private async Task MoveToBottomAsync() => await ReorderAsync(DownloadCoordinator.ReorderAction.MoveToBottom);
+
+    private async Task ReorderAsync(DownloadCoordinator.ReorderAction action)
+    {
+        if (_coordinator == null) return;
+        await _coordinator.ReorderJobAsync(Job.Id, action);
+        if (OnReordered != null) await OnReordered();
     }
 
     private async Task LoadThumbnailAsync(string url, PixivImageLoader loader)
@@ -330,10 +487,10 @@ public partial class DownloadJobViewModel : ObservableObject
     [RelayCommand]
     private void OpenFolder()
     {
-        if (string.IsNullOrWhiteSpace(Job.OutputFolder)) return;
+        var folder = ResolvedOutputFolder;
+        if (string.IsNullOrWhiteSpace(folder)) return;
         try
         {
-            var folder = ResolveArtistRootFolder(Job.OutputFolder);
             Process.Start(new ProcessStartInfo
             {
                 FileName = folder,
@@ -345,24 +502,43 @@ public partial class DownloadJobViewModel : ObservableObject
     }
 
     /// <summary>
-    /// If <paramref name="outputFolder"/> is an artwork subfolder, returns its parent
-    /// (the artist folder). Falls back to <paramref name="outputFolder"/> itself if the
-    /// parent doesn't exist or is a drive root.
+    /// Returns the artist-level folder for a given output path.
+    /// When <paramref name="downloadRoot"/> is known, walks up until the path is a
+    /// direct child of DownloadRoot (handles R-18 and per-artwork subfolders).
+    /// Otherwise walks up until an existing directory is found.
     /// </summary>
-    private static string ResolveArtistRootFolder(string outputFolder)
+    private static string ResolveArtistRootFolder(string outputFolder, string? downloadRoot = null)
     {
         try
         {
-            var full = Path.GetFullPath(outputFolder);
-            var folderName = Path.GetFileName(full);
-            // Artwork subfolders are named "{numericId}_title" — walk up to the artist folder
-            if (!string.IsNullOrEmpty(folderName) && char.IsDigit(folderName[0]))
+            var current = Path.GetFullPath(outputFolder);
+
+            if (!string.IsNullOrWhiteSpace(downloadRoot))
             {
-                var parent = Path.GetDirectoryName(full);
-                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent)
-                    && !string.IsNullOrEmpty(Path.GetDirectoryName(parent))) // not a drive root
-                    return parent;
+                var root = Path.GetFullPath(downloadRoot);
+                // Walk up until current's parent IS the download root (i.e. current is the artist folder)
+                while (!string.IsNullOrEmpty(current))
+                {
+                    var parent = Path.GetDirectoryName(current);
+                    if (parent == null || parent == current) break;
+                    // Stop when parent equals DownloadRoot — current is the artist folder
+                    if (string.Equals(parent, root, StringComparison.OrdinalIgnoreCase))
+                        return Directory.Exists(current) ? current : root;
+                    current = parent;
+                }
+                // Fallback: return DownloadRoot if we overshot
+                if (Directory.Exists(root)) return root;
             }
+
+            // No DownloadRoot known — walk up until we find an existing directory
+            current = Path.GetFullPath(outputFolder);
+            while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
+            {
+                var parent = Path.GetDirectoryName(current);
+                if (parent == null || parent == current) break;
+                current = parent;
+            }
+            if (Directory.Exists(current)) return current;
         }
         catch { }
         return outputFolder;
@@ -378,7 +554,9 @@ public partial class DownloadJobViewModel : ObservableObject
             JobStatus.Paused => "⏸ Paused",
             _ => progress.Status.ToString()
         };
-        IsCancellable     = progress.Status == JobStatus.Running || progress.Status == JobStatus.Pending;
+        IsCancellable     = progress.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsPausable        = progress.Status == JobStatus.Running;
+        IsResumable       = progress.Status is JobStatus.Pending or JobStatus.Paused;
         CompletedCount    = progress.CompletedTargets;
         TotalCount        = progress.TotalTargets;
         if (progress.CurrentTargetName != null)
@@ -450,7 +628,9 @@ public partial class DownloadJobViewModel : ObservableObject
             _ => Job.Status.ToString()
         };
 
-        IsCancellable = Job.Status == JobStatus.Running || Job.Status == JobStatus.Pending;
+        IsCancellable = Job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Paused;
+        IsPausable    = Job.Status == JobStatus.Running;
+        IsResumable   = Job.Status is JobStatus.Pending or JobStatus.Paused;
 
         if (Job.Status == JobStatus.Completed ||
             Job.Status == JobStatus.Failed)

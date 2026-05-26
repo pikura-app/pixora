@@ -1,4 +1,30 @@
-﻿## Pikura 1.7.0
+﻿## Pikura 1.7.1
+
+Polish and bug-fix release covering job queue UX, download history, folder resolution, and selection controls across all views. Closes issues #18, #19, and #20.
+
+### New Features
+- **Select All / Deselect All** — Added to the main toolbar in **Gallery**, **Bookmarks**, **Discover**, and **Rankings**. "☑ Select All" is always visible; "☒ Deselect All (n)" appears whenever items are selected. Consistent across all four views.
+- **Queue number badge** — Active job cards in History now show a numbered badge (1, 2, 3…) indicating their position in the running queue, updating dynamically as jobs start, pause, and complete.
+- **Open Folder — multi-artist jobs** — "Open Folder" for Discover / Rankings / Bookmarks "Download Selected" jobs (which span multiple artists) now opens the **DownloadRoot** directly instead of one artist's subfolder.
+
+### Improvements
+- **Job queue ordering** — Running jobs are always sorted to the top of the Active list; Paused jobs appear next; Pending jobs at the bottom.
+- **Pause / Resume responsiveness** — Pause and Resume commands update the UI optimistically before the async call completes, eliminating the visible lag.
+- **Progress preserved across pause/resume** — Resuming a paused job reuses the existing VM so the completed/total counter and progress bar are never reset to zero. A fresh progress subscription is registered on each resume so events continue flowing.
+- **Initial progress on resume** — An immediate progress event is emitted at the start of job execution so the counter is correct from the very first frame after resume.
+- **Open Folder — artist-level resolution** — For single-artist jobs with multi-page subfolders or R-18 subfolders (`ArtistName/R-18/12345_Title/`), Open Folder now correctly walks up to the artist-level folder (the direct child of DownloadRoot), not the artwork subfolder.
+- **Open Folder — legacy jobs** — Jobs downloaded before `output_folder` was tracked now fall back to searching DownloadRoot for a folder whose name contains the artist's user ID.
+- **Gallery toolbar** — "☒ Deselect All" button added to the top toolbar (next to "Download Selected"), matching the existing bottom-area button.
+
+### Fixes
+- **Folder named by member ID only (closes #19)** — "Download Selected" (image ID) jobs were creating folders named `(141556065)` with no artist name. Root cause: `ArtworkDetailBody` had wrong JSON property names (`"id"` / `"name"` instead of `"userId"` / `"userName"`), so the artist name always deserialized as null and `%artist%` resolved to empty in the folder template. Fixed.
+- **Output folder not saved for image ID jobs (closes #20)** — `DownloadArtworkAsync` never captured the saved file's directory and never set `job.OutputFolder`, so "Open Folder" never appeared for image-ID download jobs. Fixed by adding an `onOutputFolder` callback matching the pattern used by artist downloads.
+- **R-18 badge overlapping checkbox in Bookmarks** — The R-18 badge was positioned top-left, colliding with the selection checkbox. Moved to top-right in both Fixed card templates, matching Gallery layout.
+- **Blue selection highlight clipped in Bookmarks** — Selection border overlay was inside a `ClipToBounds` container and not visible. Restructured so the overlay sits outside the clipped border.
+
+---
+
+## Pikura 1.7.0
 
 Safer downloads with a new Safe Mode toggle, reliable Linux sign-in via Playwright Chromium, Hoshi sidebar fixes, and a fix for incomplete followed-artists lists.
 

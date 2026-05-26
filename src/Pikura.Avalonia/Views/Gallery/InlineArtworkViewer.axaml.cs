@@ -453,6 +453,11 @@ public partial class InlineArtworkViewer : UserControl
                     ViewerImage.Source = bmp;
                     ResetZoom();
                 });
+
+                // Eagerly upgrade to full-res Original in the background so the viewer
+                // always displays the highest quality image, not just when zoomed in.
+                if (!string.IsNullOrEmpty(_currentOriginalUrl) && !_fullResLoaded)
+                    _ = LoadFullResAsync(_currentOriginalUrl!);
             }
         }
         SetLoading(false);
@@ -595,10 +600,21 @@ public partial class InlineArtworkViewer : UserControl
         _fullResLoaded = true;
         var bytes = await _imageLoader.FetchBytesAsync(originalUrl);
         if (bytes == null || _currentOriginalUrl != originalUrl) return;
+
+        // Decode off the UI thread — originals can be large (4–8 MB JPEG)
+        var bmp = await Task.Run(() =>
+        {
+            try { using var ms = new MemoryStream(bytes); return new Bitmap(ms); }
+            catch { return null; }
+        });
+        if (bmp == null || _currentOriginalUrl != originalUrl) { bmp?.Dispose(); return; }
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            using var ms = new MemoryStream(bytes);
-            ViewerImage.Source = new Bitmap(ms);
+            if (_currentOriginalUrl != originalUrl) { bmp.Dispose(); return; }
+            var old = ViewerImage.Source as Bitmap;
+            ViewerImage.Source = bmp;
+            old?.Dispose();
         });
     }
 
@@ -611,13 +627,26 @@ public partial class InlineArtworkViewer : UserControl
     private void OnImageWheel(object? sender, PointerWheelEventArgs e)
     {
         var delta = e.Delta.Y > 0 ? 1.15 : 1.0 / 1.15;
-        var pos = e.GetPosition(ImageCanvas);
-        // Zoom towards the cursor
-        _translateX = pos.X - (pos.X - _translateX) * delta;
-        _translateY = pos.Y - (pos.Y - _translateY) * delta;
-        _scale = Math.Clamp(_scale * delta, 0.1, 10.0);
-        ApplyTransform();
+        ZoomAroundCenter(delta);
         e.Handled = true;
+    }
+
+    // Zoom toward a canvas-coordinate point (cursor for wheel, canvas center for +/- buttons).
+    // RenderTransformOrigin="0.5,0.5" means scale pivots around the image's own center.
+    // The image's center in canvas coords = (canvasW/2 + _translateX, canvasH/2 + _translateY).
+    // To keep canvas point P fixed: translateX_new = translateX + (P.x - canvasW/2 - translateX) * (1 - factor)
+    private void ZoomToward(Point pivot, double factor)
+    {
+        if (ImageCanvas == null) return;
+        var cx = ImageCanvas.Bounds.Width  / 2.0;
+        var cy = ImageCanvas.Bounds.Height / 2.0;
+        // Offset of pivot from image center
+        var dx = pivot.X - cx - _translateX;
+        var dy = pivot.Y - cy - _translateY;
+        _translateX += dx * (1.0 - factor);
+        _translateY += dy * (1.0 - factor);
+        _scale = Math.Clamp(_scale * factor, 0.1, 10.0);
+        ApplyTransform();
     }
 
     private void OnImagePointerPressed(object? sender, PointerPressedEventArgs e)
@@ -648,11 +677,8 @@ public partial class InlineArtworkViewer : UserControl
 
     private void ZoomAroundCenter(double factor)
     {
-        if (ImageCanvas == null) return;
-        var cx = ImageCanvas.Bounds.Width  / 2;
-        var cy = ImageCanvas.Bounds.Height / 2;
-        _translateX = cx - (cx - _translateX) * factor;
-        _translateY = cy - (cy - _translateY) * factor;
+        // Scale in place: translate stays the same, image grows/shrinks from its current center.
+        // This produces the "zoom from all four sides equally" effect.
         _scale = Math.Clamp(_scale * factor, 0.1, 10.0);
         ApplyTransform();
     }
@@ -771,6 +797,19 @@ if (result != null && presetWindow.DownloadClicked)
         if (_currentCard == null) return;
         var url = $"https://www.pixiv.net/artworks/{_currentCard.Id}";
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+    }
+
+    private void OnOpenImageInBrowser(object? sender, RoutedEventArgs e)
+    {
+        var url = _currentOriginalUrl
+               ?? (_pages.Count > 0 ? _pages[_currentPageIndex].Urls.Regular : null);
+        if (string.IsNullOrEmpty(url)) return;
+        var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (cb == null) return;
+        var dt = new global::Avalonia.Input.DataTransfer();
+        dt.Add(global::Avalonia.Input.DataTransferItem.CreateText(url));
+        _ = cb.SetDataAsync(dt);
+        if (VM != null) VM.StatusMessage = "Image URL copied — paste into a download manager (browser will 403; Pixiv CDN requires Referer header).";
     }
 
     // Use the active tab's nav list, then InlineViewerCardList, then FilteredArtworks.

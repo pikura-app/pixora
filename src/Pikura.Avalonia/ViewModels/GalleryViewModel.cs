@@ -1096,8 +1096,16 @@ public partial class GalleryViewModel : ViewModelBase
             var hidden = idx == 1;
             Logger.LogInformation("[FollowedArtists] FetchRemaining: hidden={Hidden} first.Total={Total} first.Users.Count={Count} limit={Limit}",
                 hidden, first?.Total ?? -1, first?.Users?.Count ?? -1, limit);
-            // A short first page (or no page at all) means we already have everything.
-            if (first?.Users == null || first.Users.Count < limit)
+            // A short first page (or no page at all) means we already have everything —
+            // but only when Total confirms it. If Total says there are more users than
+            // what the first page returned, we must still paginate (the API can return
+            // a slightly-short first page even when more pages exist, e.g. 47 of 232).
+            if (first?.Users == null || first.Users.Count == 0)
+            {
+                Logger.LogInformation("[FollowedArtists] Skipping remaining pages for hidden={Hidden} (empty first page)", hidden);
+                continue;
+            }
+            if (first.Users.Count < limit && (first.Total <= 0 || first.Total <= first.Users.Count))
             {
                 Logger.LogInformation("[FollowedArtists] Skipping remaining pages for hidden={Hidden} (short/empty first page)", hidden);
                 continue;
@@ -1826,22 +1834,22 @@ public partial class GalleryViewModel : ViewModelBase
         }).ToList();
 
         var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks (with preset)";
-        var activeJob = new DownloadJob
-        {
-            Name = jobName, Type = DownloadJobType.ImageId,
-            Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
-            Targets = targets
-        };
-        await _jobRepository.SaveJobAsync(activeJob);
-        _coordinator.NotifyJobStarted(activeJob);
+        var activeJob = await _coordinator.CreateJobAsync(
+            DownloadJobType.ImageId, jobName, targets,
+            settingsOverride: acctOverride, startImmediately: false);
 
+        using var cts = new System.Threading.CancellationTokenSource();
+        _coordinator.RegisterExternalJob(activeJob.Id, cts);
+        await _coordinator.NotifyJobRunningAsync(activeJob);
         await Task.Delay(50);
 
+        var ct = cts.Token;
         var tasks = approved.Select(async (card, idx) =>
         {
-            await gate.WaitAsync();
+            await gate.WaitAsync(ct);
             try
             {
+                ct.ThrowIfCancellationRequested();
                 card.IsDownloading = true;
                 targets[idx].Status = TargetStatus.Running;
                 var localDone = done;
@@ -1866,12 +1874,18 @@ public partial class GalleryViewModel : ViewModelBase
                         CurrentBytesSoFar: p.BytesSoFar,
                         CurrentTotalBytes: p.TotalBytes));
                 });
-                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, overrideSettings: acctOverride);
+                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, ct, overrideSettings: acctOverride);
                 Interlocked.Increment(ref done);
                 targets[idx].Status = TargetStatus.Completed;
                 targets[idx].DownloadedItems = files.Count;
                 if (outputFolder == null && files.Count > 0)
                     outputFolder = Path.GetDirectoryName(files[0]);
+            }
+            catch (OperationCanceledException)
+            {
+                targets[idx].Status = TargetStatus.Cancelled;
+                card.IsDownloading = false;
+                throw;
             }
             catch (Exception ex)
             {
@@ -1887,15 +1901,17 @@ public partial class GalleryViewModel : ViewModelBase
             }
         }).ToList();
 
-        await Task.WhenAll(tasks);
+        try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
         IsBulkDownloading = false;
-        StatusMessage = failed == 0
-            ? $"Downloaded {done}/{total} artworks with preset."
-            : $"Done: {done} ok, {failed} failed.";
 
-        activeJob.Status      = failed == 0 ? JobStatus.Completed : JobStatus.Failed;
+        var currentStatus = (await _coordinator.GetJobsAsync()).FirstOrDefault(j => j.Id == activeJob.Id)?.Status;
+        if (currentStatus == JobStatus.Paused) { StatusMessage = "Download paused."; _coordinator.UnregisterExternalJob(activeJob.Id); return; }
+
+        StatusMessage = failed == 0 ? $"Downloaded {done}/{total} artworks with preset." : $"Done: {done} ok, {failed} failed.";
+        activeJob.Status      = ct.IsCancellationRequested ? JobStatus.Cancelled : failed == 0 ? JobStatus.Completed : JobStatus.Failed;
         activeJob.CompletedAt = DateTime.UtcNow;
         activeJob.OutputFolder = outputFolder;
+        _coordinator.UnregisterExternalJob(activeJob.Id);
         _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(activeJob); _coordinator.NotifyJobSaved(activeJob); });
     }
 
@@ -2000,24 +2016,24 @@ public partial class GalleryViewModel : ViewModelBase
         }).ToList();
 
         var jobName = approved.Count == 1 ? approved[0].Title : $"{approved.Count} artworks";
-        var activeJob = new DownloadJob
-        {
-            Name = jobName, Type = DownloadJobType.ImageId,
-            Status = JobStatus.Running, StartedAt = DateTime.UtcNow,
-            Targets = targets
-        };
-        await _jobRepository.SaveJobAsync(activeJob);
-        _coordinator.NotifyJobStarted(activeJob);
+        var activeJob = await _coordinator.CreateJobAsync(
+            DownloadJobType.ImageId, jobName, targets,
+            settingsOverride: acctOverride, startImmediately: false);
 
-        // Yield so HistoryViewModel's Dispatcher.UIThread.Post can run and
-        // render the Active Downloads row before we start downloading.
+        // Register a semaphore-based executor so pause/cancel tokens flow through.
+        using var cts = new System.Threading.CancellationTokenSource();
+        _coordinator.RegisterExternalJob(activeJob.Id, cts);
+
+        await _coordinator.NotifyJobRunningAsync(activeJob);
         await Task.Delay(50);
 
+        var ct = cts.Token;
         var tasks = approved.Select(async (card, idx) =>
         {
-            await gate.WaitAsync();
+            await gate.WaitAsync(ct);
             try
             {
+                ct.ThrowIfCancellationRequested();
                 card.IsDownloading = true;
                 targets[idx].Status = TargetStatus.Running;
                 var localDone = done;
@@ -2042,12 +2058,18 @@ public partial class GalleryViewModel : ViewModelBase
                         CurrentBytesSoFar: p.BytesSoFar,
                         CurrentTotalBytes: p.TotalBytes));
                 });
-                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, overrideSettings: acctOverride);
+                var files = await _downloader.DownloadArtworkAsync(card.Artwork, progress, ct, overrideSettings: acctOverride);
                 Interlocked.Increment(ref done);
                 targets[idx].Status = TargetStatus.Completed;
                 targets[idx].DownloadedItems = files.Count;
                 if (outputFolder == null && files.Count > 0)
                     outputFolder = Path.GetDirectoryName(files[0]);
+            }
+            catch (OperationCanceledException)
+            {
+                targets[idx].Status = TargetStatus.Cancelled;
+                card.IsDownloading = false;
+                throw;
             }
             catch (Exception ex)
             {
@@ -2063,15 +2085,29 @@ public partial class GalleryViewModel : ViewModelBase
             }
         }).ToList();
 
-        await Task.WhenAll(tasks);
+        try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
+
         IsBulkDownloading = false;
+
+        // Check if paused — coordinator already updated DB status via PauseJobAsync
+        var currentStatus = (await _coordinator.GetJobsAsync()).FirstOrDefault(j => j.Id == activeJob.Id)?.Status;
+        if (currentStatus == JobStatus.Paused)
+        {
+            StatusMessage = "Download paused.";
+            _coordinator.UnregisterExternalJob(activeJob.Id);
+            return;
+        }
+
         StatusMessage = failed == 0
             ? $"Downloaded {done}/{total} artworks."
             : $"Done: {done} ok, {failed} failed.";
 
-        activeJob.Status      = failed == 0 ? JobStatus.Completed : JobStatus.Failed;
+        activeJob.Status      = ct.IsCancellationRequested && currentStatus != JobStatus.Paused
+            ? JobStatus.Cancelled
+            : failed == 0 ? JobStatus.Completed : JobStatus.Failed;
         activeJob.CompletedAt = DateTime.UtcNow;
         activeJob.OutputFolder = outputFolder;
+        _coordinator.UnregisterExternalJob(activeJob.Id);
         _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(activeJob); _coordinator.NotifyJobSaved(activeJob); });
     }
 

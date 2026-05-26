@@ -16,8 +16,8 @@ public sealed class ArtworkDetailBody
     [JsonPropertyName("illustId")] public string? IllustId { get; init; }
     [JsonPropertyName("illustTitle")] public string? IllustTitle { get; init; }
     [JsonPropertyName("illustComment")] public string? IllustComment { get; init; }
-    [JsonPropertyName("id")] public string? UserId { get; init; }
-    [JsonPropertyName("name")] public string? UserName { get; init; }
+    [JsonPropertyName("userId")] public string? UserId { get; init; }
+    [JsonPropertyName("userName")] public string? UserName { get; init; }
     [JsonPropertyName("url")] public string? ThumbnailUrl { get; init; }
 
     // Stats - these are the key fields we need!

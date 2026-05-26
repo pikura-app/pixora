@@ -95,6 +95,7 @@ public sealed class DownloadJobRepository : IDisposable
             "ALTER TABLE download_targets ADD COLUMN user_name TEXT",
             "ALTER TABLE download_targets ADD COLUMN user_id TEXT",
             "ALTER TABLE download_jobs ADD COLUMN owner_user_id TEXT",
+            "ALTER TABLE download_jobs ADD COLUMN sort_order INTEGER DEFAULT 0",
         };
         foreach (var migration in migrations)
         {
@@ -150,8 +151,8 @@ public sealed class DownloadJobRepository : IDisposable
         var sql = @"
             SELECT id, name, type, status, settings_json, created_at, started_at, completed_at, last_retried_at, error_message, retry_count, output_folder
             FROM download_jobs
-            WHERE status IN (0, 1)
-            ORDER BY created_at DESC";
+            WHERE status IN (0, 1, 2)
+            ORDER BY sort_order ASC, created_at DESC";
 
         using var cmd = new SqliteCommand(sql, connection);
         var jobs = new List<DownloadJob>();
@@ -181,7 +182,7 @@ public sealed class DownloadJobRepository : IDisposable
         if (status.HasValue)
             sql += " AND status = @status";
 
-        sql += " ORDER BY created_at DESC";
+        sql += " ORDER BY sort_order ASC, created_at DESC";
 
         if (limit.HasValue)
             sql += " LIMIT @limit";
@@ -354,12 +355,11 @@ public sealed class DownloadJobRepository : IDisposable
             SET status = @cancelled,
                 completed_at = @now,
                 error_message = COALESCE(error_message, 'Abandoned: app restarted while running')
-            WHERE status IN (@running, @pending)";
+            WHERE status = @running";
 
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("@cancelled", (int)JobStatus.Cancelled);
         cmd.Parameters.AddWithValue("@running", (int)JobStatus.Running);
-        cmd.Parameters.AddWithValue("@pending", (int)JobStatus.Pending);
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
 
         var rows = await cmd.ExecuteNonQueryAsync(ct);
@@ -368,6 +368,32 @@ public sealed class DownloadJobRepository : IDisposable
             _logger.LogInformation("Marked {Count} orphaned (Running/Pending) jobs as Cancelled on startup", rows);
         }
         return rows;
+    }
+
+    public async Task UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
+    {
+        using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = new SqliteCommand("UPDATE download_jobs SET sort_order = @order WHERE id = @id", connection);
+        cmd.Parameters.AddWithValue("@order", sortOrder);
+        cmd.Parameters.AddWithValue("@id", id.ToString());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<List<(Guid Id, int SortOrder)>> GetPendingJobSortOrdersAsync(CancellationToken ct = default)
+    {
+        using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        var sql = "SELECT id, sort_order FROM download_jobs WHERE status IN (@pending, @paused, @running) ORDER BY sort_order ASC, created_at DESC";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@pending", (int)JobStatus.Pending);
+        cmd.Parameters.AddWithValue("@paused", (int)JobStatus.Paused);
+        cmd.Parameters.AddWithValue("@running", (int)JobStatus.Running);
+        var result = new List<(Guid, int)>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add((Guid.Parse(reader.GetString(0)), reader.GetInt32(1)));
+        return result;
     }
 
     #endregion

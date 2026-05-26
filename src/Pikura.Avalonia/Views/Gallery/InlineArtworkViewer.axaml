@@ -288,6 +288,7 @@
                             <Separator/>
                             <MenuItem Header="Open in popup window" Click="OnOpenPopup"/>
                             <MenuItem Header="🌐 Open artwork on Pixiv" Click="OnOpenInPixiv"/>
+                            <MenuItem Header="� Copy direct image URL" Click="OnOpenImageInBrowser"/>
                             <Separator/>
                             <MenuItem x:Name="GoToArtistMenuItem"
                                       Header="👤 Go to artist's gallery" Click="OnGoToArtist"/>

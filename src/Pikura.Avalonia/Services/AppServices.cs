@@ -210,7 +210,8 @@ public static class AppServices
                         provider.GetRequiredService<DownloadJobRepository>(),
                         provider.GetRequiredService<DownloadCoordinator>(),
                         provider.GetRequiredService<DialogService>(),
-                        provider.GetRequiredService<PixivImageLoader>()));
+                        provider.GetRequiredService<PixivImageLoader>(),
+                        provider.GetRequiredService<SettingsService>()));
                 services.AddSingleton<DiscoverViewModel>();
                 services.AddSingleton<BookmarksViewModel>(provider =>
                     new BookmarksViewModel(

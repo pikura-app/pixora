@@ -63,6 +63,7 @@ public partial class DiscoverView : UserControl
         if (VM is { } vm)
         {
             vm.PropertyChanged += OnVmPropertyChanged;
+            vm.CopyAllArtistIdsRequested += text => CopyToClipboard(text);
             WireInlineViewer(vm);
         }
     }
@@ -277,14 +278,32 @@ public partial class DiscoverView : UserControl
             NavigateToArtistGallery(user.UserId);
     }
 
-    // Clicking the ID text copies it; don't bubble to card
+    // Clicking the ID text copies it + shows green flash; don't bubble to card
     private void OnUserIdPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(null).Properties.IsLeftButtonPressed) return;
-        if (sender is not Control ctrl) return;
-        if (ctrl.DataContext is not DiscoveryUserCardViewModel user) return;
+        if (sender is not TextBlock tb) return;
+        if (tb.DataContext is not DiscoveryUserCardViewModel user) return;
         e.Handled = true;
+
         CopyToClipboard(user.UserId);
+        try { QuickClipboardService.CopyArtist(user.UserId); } catch { }
+        if (VM != null) VM.StatusMessage = $"Copied artist ID {user.UserId} ({user.UserName})";
+
+        // Green flash: detach binding → set "✓ copied" text → reattach after delay
+        var originalBrush = tb.Foreground;
+        tb.ClearValue(TextBlock.TextProperty); // detach binding
+        tb.Text = $"ID {user.UserId} ✓ copied!";
+        tb.Foreground = new global::Avalonia.Media.SolidColorBrush(global::Avalonia.Media.Color.FromRgb(34, 197, 94));
+        var uid = user.UserId;
+        System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ =>
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                tb.Foreground = originalBrush;
+                tb.Bind(TextBlock.TextProperty,
+                    new global::Avalonia.Data.Binding(nameof(DiscoveryUserCardViewModel.UserId))
+                    { StringFormat = "ID {0}" });
+            }));
     }
 
     private void NavigateToArtistGallery(string userId)

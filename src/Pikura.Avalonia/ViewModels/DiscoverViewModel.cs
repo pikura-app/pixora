@@ -40,6 +40,7 @@ public partial class DiscoverViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowNoWorksPlaceholder));
     }
     [ObservableProperty] private string _statusMessage = "Discover new artwork and artists";
+    [ObservableProperty] private int _queuedArtistCount;
 
     // ── Tab state ────────────────────────────────────────────────────────────
 
@@ -138,6 +139,22 @@ public partial class DiscoverViewModel : ViewModelBase
     public double FixedCardTotalHeight => CardSize;
 
     // ── Commands ─────────────────────────────────────────────────────────────
+
+    [RelayCommand]
+    public void CopyAllArtistIds()
+    {
+        var flushed = QuickClipboardService.FlushArtistIds();
+        if (flushed == null)
+        {
+            StatusMessage = "No artist IDs queued — click individual artist IDs first.";
+            return;
+        }
+        var count = flushed.Split(',').Length;
+        CopyAllArtistIdsRequested?.Invoke(flushed);
+        StatusMessage = $"Copied {count} queued artist ID{(count == 1 ? "" : "s")} to clipboard";
+    }
+
+    public event Action<string>? CopyAllArtistIdsRequested;
 
     [RelayCommand] public void SetFixedHeight()   { IsFixedHeight = true;  IsNaturalHeight = false; }
     [RelayCommand] public void SetNaturalHeight() { IsFixedHeight = false; IsNaturalHeight = true; }
@@ -239,6 +256,11 @@ public partial class DiscoverViewModel : ViewModelBase
         _showPreview      = s.DiscoverShowPreview;
         _showR18          = s.DiscoverShowR18;
         _browsePanelWidth = s.BrowsePanelWidth >= 200 ? s.BrowsePanelWidth : 420;
+
+        QuickClipboardService.ClipboardChanged += () =>
+        {
+            QueuedArtistCount = QuickClipboardService.QueuedArtistCount;
+        };
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────

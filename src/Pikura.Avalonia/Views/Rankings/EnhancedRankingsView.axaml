@@ -158,9 +158,10 @@
                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                 BorderThickness="0,0,0,1" Padding="20,7">
-            <Grid ColumnDefinitions="*,Auto">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                 <!-- LEFT: content type tabs -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <Button Content="Overall"      CornerRadius="6" Padding="14,5" FontSize="12"
                             Command="{Binding SelectContentCommand}" CommandParameter="all"
                             Classes.accent="{Binding SelectedContent, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=all}"/>
@@ -175,7 +176,7 @@
                             Classes.accent="{Binding SelectedContent, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=manga}"/>
                 </StackPanel>
                 <!-- RIGHT: grid/list | fixed/natural | size slider | info/tags -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
                     <!-- Grid/List -->
                     <ToggleButton IsChecked="{Binding IsGridView}" CornerRadius="5" Padding="9,5" FontSize="11"
                                   Command="{Binding SetGridViewCommand}"
@@ -236,7 +237,8 @@
                     <ToggleButton IsChecked="{Binding ShowTags}" CornerRadius="5" Padding="9,5" FontSize="11"
                                   ToolTip.Tip="Show/hide tags">Tags</ToggleButton>
                 </StackPanel>
-            </Grid>
+            </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <!-- ══ Row 2: Mode pills ══ -->
@@ -244,6 +246,7 @@
                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                 BorderThickness="0,0,0,1" Padding="20,7">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="4">
                 <!-- Overall modes: Daily, Weekly, AI, Male, Female -->
                 <StackPanel Orientation="Horizontal" Spacing="4"
@@ -313,6 +316,7 @@
                             Classes.accent="{Binding SelectedMode, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=rookie}"/>
                 </StackPanel>
             </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <!-- ══ Row 3: Action buttons ══ -->
@@ -320,6 +324,7 @@
                 Background="{actipro:ThemeResource Container1BackgroundBrush}"
                 BorderBrush="{actipro:ThemeResource Container1BorderBrush}"
                 BorderThickness="0,0,0,1" Padding="20,6">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="6">
                 <Button CornerRadius="6" Padding="12,6" FontSize="11"
                         Classes.accent="{Binding HasSelection}"
@@ -344,11 +349,15 @@
                         Click="OnDownloadPresetClicked"
                         IsEnabled="{Binding !IsLoading}"
                         ToolTip.Tip="Download with image processing preset"/>
-                <Button Content="{Binding SelectedCount, StringFormat='Clear ({0})'}"
+                <Button Content="☑ Select All" CornerRadius="6" Padding="12,6" FontSize="11"
+                        Command="{Binding SelectAllCommand}"
+                        ToolTip.Tip="Select all visible artworks"/>
+                <Button Content="{Binding SelectedCount, StringFormat='☒ Deselect All ({0})'}"
                         CornerRadius="6" Padding="12,6" FontSize="11"
                         Command="{Binding ClearSelectionCommand}"
                         IsVisible="{Binding HasSelection}"/>
             </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <!-- ══ Row 4: Artwork area ══ -->
