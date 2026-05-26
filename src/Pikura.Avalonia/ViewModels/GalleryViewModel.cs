@@ -1139,9 +1139,13 @@ public partial class GalleryViewModel : ViewModelBase
 
                         Logger.LogInformation("[FollowedArtists] Page hidden={Hidden} offset={Off}: Total={Total} Users={Count}",
                             hiddenCapture, offset, page?.Total ?? -1, page?.Users?.Count ?? -1);
+
+                        // Only stop on a truly empty page — Pixiv returns inconsistently
+                        // short pages mid-list (e.g. 46, 36, 35 out of 48) so a short
+                        // page is NOT a reliable end-of-list signal. Use offset >= Total
+                        // (the totalBound loop condition) as the stop criterion instead.
                         if (page?.Users == null || page.Users.Count == 0) break;
                         await AddBatchAsync(page.Users);
-                        if (page.Users.Count < limit) break;
                         offset += limit;
                     }
                 }));
