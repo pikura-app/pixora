@@ -111,19 +111,16 @@
 
                     <!-- Download buttons — only shown when an artist is selected -->
                     <StackPanel Orientation="Horizontal" Spacing="4"
-                                IsVisible="{Binding SelectedArtist, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                IsVisible="{Binding SelectedArtist}">
                         <Button Content="↓ Download All" CornerRadius="6" Padding="10,6" FontSize="11"
                                 Classes="accent"
-                                Command="{Binding DownloadAllCommand}"
-                                IsEnabled="{Binding !IsBulkDownloading}"
+                                Click="OnDownloadAllClicked"
                                 ToolTip.Tip="Download every artwork from this artist to disk"/>
                         <Button Content="↓ Download Loaded" CornerRadius="6" Padding="10,6" FontSize="11"
-                                Command="{Binding DownloadVisibleCommand}"
-                                IsEnabled="{Binding !IsBulkDownloading}"
+                                Click="OnDownloadLoadedClicked"
                                 ToolTip.Tip="Download only the artworks currently shown in the grid"/>
                         <Button CornerRadius="6" Padding="10,6" FontSize="11"
-                                Command="{Binding DownloadSelectedCommand}"
-                                IsEnabled="{Binding !IsBulkDownloading}"
+                                Click="OnDownloadSelectedClicked"
                                 IsVisible="{Binding SelectedCount}"
                                 ToolTip.Tip="Download only the checked artworks">
                             <StackPanel Orientation="Horizontal" Spacing="5">
@@ -138,13 +135,20 @@
                                 ToolTip.Tip="Clear selection"/>
                         <Button Content="↓ Download Range…" CornerRadius="6" Padding="10,6" FontSize="11"
                                 Click="OnDownloadRangeClicked"
-                                IsEnabled="{Binding !IsBulkDownloading}"
                                 ToolTip.Tip="Choose a numbered range to download (e.g. 1-20)"/>
                         <Button Content="🎨 Download Preset" CornerRadius="6" Padding="10,6" FontSize="11"
                                 Classes="accent"
                                 Click="OnDownloadPresetClicked"
-                                IsEnabled="{Binding !IsBulkDownloading}"
                                 ToolTip.Tip="Download with image processing preset"/>
+                        <Border IsVisible="{Binding HasQueuedDownloads}"
+                                Background="{actipro:ThemeResource Container3BackgroundBrush}"
+                                BorderBrush="{actipro:ThemeResource Container3BorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="8,4"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Downloads waiting in queue (auto-start when current finishes)">
+                            <TextBlock Text="{Binding QueuedDownloadCount, StringFormat='⏳ Queued: {0}'}"
+                                       FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
                     </StackPanel>
 
                     <Rectangle Width="1" Height="20" Fill="{actipro:ThemeResource Container1BorderBrush}" Margin="2,0"

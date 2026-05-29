@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Interactivity;
@@ -88,6 +88,7 @@ public partial class ChangelogDialog : Window
                     FontWeight = FontWeight.SemiBold,
                     Margin = new Thickness(0, 10, 0, 2),
                     TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = double.PositiveInfinity,
                 });
                 continue;
             }
@@ -102,6 +103,7 @@ public partial class ChangelogDialog : Window
                     FontWeight = FontWeight.Bold,
                     Margin = new Thickness(0, 8, 0, 4),
                     TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = double.PositiveInfinity,
                 });
                 continue;
             }
@@ -128,6 +130,7 @@ public partial class ChangelogDialog : Window
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Margin = new Thickness(indent ? 10 : 0, 1, 0, 1),
+            MaxWidth = double.PositiveInfinity,
         };
 
         // Split on **bold** markers

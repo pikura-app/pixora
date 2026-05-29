@@ -30,6 +30,21 @@ public partial class HistoryViewModel : ViewModelBase
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _failedJobs = new();
     [ObservableProperty] private ObservableCollection<DownloadJobViewModel> _cancelledJobs = new();
 
+    // Date-grouped, virtualization-friendly views for the archival tabs. The flat
+    // source collections above remain the source of truth (counts, empty-state,
+    // add/remove logic); these derived views interleave collapsible date headers
+    // with their jobs for display in a single virtualizing ListBox.
+    private readonly HistoryTabGrouping _completedGrouping;
+    private readonly HistoryTabGrouping _failedGrouping;
+    private readonly HistoryTabGrouping _cancelledGrouping;
+    public ObservableCollection<object> CompletedView => _completedGrouping.View;
+    public ObservableCollection<object> FailedView => _failedGrouping.View;
+    public ObservableCollection<object> CancelledView => _cancelledGrouping.View;
+
+    // When true, CollectionChanged-triggered regroups are deferred (used during
+    // bulk LoadJobsAsync population so we regroup once instead of per-add).
+    private bool _suppressRegroup;
+
     public HistoryViewModel(DownloadJobRepository jobRepository, DownloadCoordinator coordinator, DialogService dialogService, PixivImageLoader imageLoader, SettingsService settingsService)
     {
         _jobRepository = jobRepository;
@@ -38,10 +53,21 @@ public partial class HistoryViewModel : ViewModelBase
         _imageLoader = imageLoader;
         _settingsService = settingsService;
 
+        _completedGrouping = new HistoryTabGrouping(_completedJobs, useCompletedDate: true);
+        _failedGrouping    = new HistoryTabGrouping(_failedJobs, useCompletedDate: true);
+        _cancelledGrouping = new HistoryTabGrouping(_cancelledJobs, useCompletedDate: true);
+
         coordinator.JobStarted  += OnJobStarted;
         coordinator.JobCompleted += OnJobCompleted;
-        _activeJobs.CollectionChanged += (_, _) => UpdateQueuePositions();
+        _activeJobs.CollectionChanged    += (_, _) => UpdateQueuePositions();
+        _completedJobs.CollectionChanged += (_, _) => RegroupCompleted();
+        _failedJobs.CollectionChanged    += (_, _) => RegroupFailed();
+        _cancelledJobs.CollectionChanged += (_, _) => RegroupCancelled();
     }
+
+    private void RegroupCompleted() { if (!_suppressRegroup) _completedGrouping.Regroup(); }
+    private void RegroupFailed()    { if (!_suppressRegroup) _failedGrouping.Regroup(); }
+    private void RegroupCancelled() { if (!_suppressRegroup) _cancelledGrouping.Regroup(); }
 
     private void UpdateQueuePositions()
     {
@@ -289,16 +315,30 @@ public partial class HistoryViewModel : ViewModelBase
         FailedJobs.Clear();
         CancelledJobs.Clear();
 
-        foreach (var job in completedJobs.OrderByDescending(j => j.CompletedAt))
+        // Defer regrouping until all rows are added so we group once, not per-add
+        // (O(n) instead of O(n²) — critical for histories with 1000+ entries).
+        _suppressRegroup = true;
+        try
         {
-            var vm = new DownloadJobViewModel(job, _imageLoader, settingsService: _settingsService);
-            switch (job.Status)
+            foreach (var job in completedJobs.OrderByDescending(j => j.CompletedAt))
             {
-                case JobStatus.Completed:  CompletedJobs.Add(vm);  break;
-                case JobStatus.Failed:     FailedJobs.Add(vm);     break;
-                case JobStatus.Cancelled:  CancelledJobs.Add(vm);  break;
+                var vm = new DownloadJobViewModel(job, _imageLoader, settingsService: _settingsService);
+                switch (job.Status)
+                {
+                    case JobStatus.Completed:  CompletedJobs.Add(vm);  break;
+                    case JobStatus.Failed:     FailedJobs.Add(vm);     break;
+                    case JobStatus.Cancelled:  CancelledJobs.Add(vm);  break;
+                }
             }
         }
+        finally
+        {
+            _suppressRegroup = false;
+        }
+
+        _completedGrouping.Regroup();
+        _failedGrouping.Regroup();
+        _cancelledGrouping.Regroup();
     }
 }
 
@@ -401,9 +441,10 @@ public partial class DownloadJobViewModel : ObservableObject
         _coordinator = coordinator;
         _settingsService = settingsService;
         UpdateStatus();
+        var isPlaceholder = job.Name != null && job.Name.StartsWith("(Queued) ");
         IsCancellable = job.Status is JobStatus.Running or JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
-        IsPausable    = job.Status == JobStatus.Running;
-        IsResumable   = job.Status is JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
+        IsPausable    = !isPlaceholder && job.Status == JobStatus.Running;
+        IsResumable   = !isPlaceholder && job.Status is JobStatus.Pending or JobStatus.Queued or JobStatus.Paused;
         var firstTarget = job.Targets.FirstOrDefault();
         if (firstTarget != null && !string.IsNullOrEmpty(firstTarget.UserName))
             CurrentArtist = firstTarget.UserName;

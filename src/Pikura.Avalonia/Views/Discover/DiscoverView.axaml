@@ -617,10 +617,40 @@
                                 Padding="12,6"
                                 IsVisible="{Binding SelectedUser, Converter={x:Static ObjectConverters.IsNotNull}}">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" FontSize="13" FontWeight="SemiBold"
-                                           Text="{Binding SelectedUser.UserName}"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock FontSize="13" FontWeight="SemiBold"
+                                               Text="{Binding SelectedUser.UserName}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    
+                                    <!-- Download buttons -->
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Button Content="↓ Download All" CornerRadius="6" Padding="10,6" FontSize="11"
+                                                Classes="accent"
+                                                Command="{Binding DownloadAllCommand}"
+                                                IsEnabled="{Binding !IsBulkDownloading}"
+                                                ToolTip.Tip="Download every artwork from this artist"/>
+                                        <Button Content="↓ Download Loaded" CornerRadius="6" Padding="10,6" FontSize="11"
+                                                Command="{Binding DownloadVisibleCommand}"
+                                                IsEnabled="{Binding !IsBulkDownloading}"
+                                                ToolTip.Tip="Download only the artworks currently shown"/>
+                                        <Button CornerRadius="6" Padding="10,6" FontSize="11"
+                                                Command="{Binding DownloadSelectedCommand}"
+                                                IsEnabled="{Binding !IsBulkDownloading}"
+                                                IsVisible="{Binding SelectedCount}"
+                                                ToolTip.Tip="Download only the checked artworks">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <TextBlock Text="↓" FontSize="12"/>
+                                                <TextBlock Text="{Binding SelectedCount, StringFormat='Download Selected ({0})'}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Content="🎨 Download Preset" CornerRadius="6" Padding="10,6" FontSize="11"
+                                                Classes="accent"
+                                                Click="OnDownloadPresetClicked"
+                                                IsEnabled="{Binding !IsBulkDownloading}"
+                                                ToolTip.Tip="Download with image processing preset"/>
+                                    </StackPanel>
+                                </StackPanel>
                                 <Button Grid.Column="1" FontSize="11" Padding="8,4" CornerRadius="6"
                                         ToolTip.Tip="Open artist's full gallery"
                                         Click="OnOpenSelectedUserGalleryClicked">↗ Open Gallery</Button>

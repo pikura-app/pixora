@@ -306,11 +306,14 @@ public partial class DiscoverView : UserControl
             }));
     }
 
-    private void NavigateToArtistGallery(string userId)
+    private async void NavigateToArtistGallery(string userId)
     {
         if (TopLevel.GetTopLevel(this) is not MainWindow main) return;
         main.LoadGalleryView();
-        _ = VM?.GalleryVm.LoadArtistByIdCommand.ExecuteAsync(userId);
+        if (VM?.GalleryVm != null)
+        {
+            await VM.GalleryVm.LoadArtistByIdAsync(userId);
+        }
     }
 
     // ── Artwork context menu helpers ────────────────────────────────────────

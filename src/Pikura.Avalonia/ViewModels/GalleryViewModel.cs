@@ -87,6 +87,71 @@ public partial class GalleryViewModel : ViewModelBase
     [ObservableProperty] private bool _isLoadingArtists;
     [ObservableProperty] private bool _isBulkDownloading;
     [ObservableProperty] private string _statusMessage = "Ready";
+    
+    // Download queue system
+    // _bulkClaims tracks slots claimed by ANY in-flight bulk operation
+    // (including the metadata-fetch phase before DownloadCoreAsync starts),
+    // so concurrency is enforced atomically at click time.
+    private int _bulkClaims;
+    [ObservableProperty] private bool _isDownloadInProgress;
+    [ObservableProperty] private int _queuedDownloadCount;
+    public bool HasQueuedDownloads => QueuedDownloadCount > 0;
+    partial void OnQueuedDownloadCountChanged(int value) => OnPropertyChanged(nameof(HasQueuedDownloads));
+
+    /// <summary>
+    /// Atomically attempts to claim a concurrent-job slot.
+    /// Returns true and increments the claim count if a slot was available;
+    /// false otherwise.
+    /// </summary>
+    private bool TryClaimBulkSlot()
+    {
+        var max = MaxConcurrentBulkJobs;
+        while (true)
+        {
+            var current = Volatile.Read(ref _bulkClaims);
+            if (current >= max) return false;
+            if (Interlocked.CompareExchange(ref _bulkClaims, current + 1, current) == current)
+            {
+                if (!IsBulkDownloading) IsBulkDownloading = true;
+                return true;
+            }
+        }
+    }
+
+    /// <summary>Releases a slot previously claimed by <see cref="TryClaimBulkSlot"/>.</summary>
+    private void ReleaseBulkSlot()
+    {
+        var remaining = Interlocked.Decrement(ref _bulkClaims);
+        if (remaining <= 0)
+        {
+            _bulkClaims = 0; // clamp
+            IsBulkDownloading = false;
+        }
+        // Pump queue to fill freed slot
+        if (_queueEntries.Count > 0)
+        {
+            PumpQueue();
+        }
+    }
+
+    // Backwards-compat shims for DownloadPagesAsync (single-artwork page downloads).
+    // These don't enforce slot limits — single-page downloads are quick.
+    private void BeginBulkDownload()
+    {
+        Interlocked.Increment(ref _bulkClaims);
+        if (!IsBulkDownloading) IsBulkDownloading = true;
+    }
+
+    private void EndBulkDownload() => ReleaseBulkSlot();
+
+    private int MaxConcurrentBulkJobs
+    {
+        get
+        {
+            var n = _settingsService?.Current?.MaxConcurrentJobs ?? 1;
+            return n <= 0 ? 1 : n;
+        }
+    }
     [ObservableProperty] private bool _showR18;
     [ObservableProperty] private ArtistCardViewModel? _selectedArtist;
     [ObservableProperty] private int _selectedCount;
@@ -182,6 +247,165 @@ public partial class GalleryViewModel : ViewModelBase
         vm.IsCurrentArtist = artistId != null && artistId == vm.UserId;
         VisibleArtworks.Add(vm);
     }
+    
+    partial void OnIsBulkDownloadingChanged(bool value)
+    {
+        // When a slot frees, kick the queue
+        if (!value && _queueEntries.Count > 0)
+        {
+            PumpQueue();
+        }
+    }
+
+    // Download queue management
+    // Each queued entry pairs the actual download lambda with an optional
+    // placeholder DownloadJob (status=Queued) registered in the coordinator so
+    // it is visible in History → Active while waiting.
+    private readonly Queue<(Func<Task> Task, Guid? PlaceholderJobId)> _queueEntries = new();
+    private readonly object _queueLock = new();
+
+    /// <summary>
+    /// Pulls entries from the queue and runs each in its own claimed slot.
+    /// Safe to call repeatedly; only spawns runners for available slots.
+    /// </summary>
+    private void PumpQueue()
+    {
+        while (true)
+        {
+            // Peek before claiming — avoid claim/release churn when queue is empty
+            lock (_queueLock)
+            {
+                if (_queueEntries.Count == 0) return;
+            }
+            if (!TryClaimBulkSlot()) return;
+
+            (Func<Task> Task, Guid? PlaceholderJobId) entry;
+            lock (_queueLock)
+            {
+                if (_queueEntries.Count == 0)
+                {
+                    ReleaseBulkSlot(); // unused claim, give it back
+                    return;
+                }
+                entry = _queueEntries.Dequeue();
+                QueuedDownloadCount = _queueEntries.Count;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (entry.PlaceholderJobId is { } pid)
+                    {
+                        try
+                        {
+                            // Mark Cancelled first so the History UI removes it
+                            // from Active without requiring a manual refresh.
+                            var jobs = await _coordinator.GetJobsAsync();
+                            var ph = jobs.FirstOrDefault(x => x.Id == pid);
+                            if (ph != null)
+                            {
+                                ph.Status = JobStatus.Cancelled;
+                                ph.CompletedAt = DateTime.UtcNow;
+                                _coordinator.NotifyJobSaved(ph);
+                            }
+                            await _coordinator.DeleteJobAsync(pid);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "Failed to delete placeholder {Id}", pid);
+                        }
+                    }
+                    await entry.Task();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Queued download failed");
+                    StatusMessage = $"Queued download failed: {ex.Message}";
+                }
+                finally
+                {
+                    ReleaseBulkSlot();
+                }
+            });
+        }
+    }
+
+    private Task ProcessQueueAsync()
+    {
+        PumpQueue();
+        return Task.CompletedTask;
+    }
+
+    private async Task QueueDownloadAsync(Func<Task> downloadTask, string description, IReadOnlyList<ArtworkCardViewModel>? previewCards = null)
+    {
+        // Snapshot the target list synchronously (cheap, just object construction),
+        // then create the placeholder job WITHOUT blocking the UI thread.
+        List<DownloadTarget>? targets = null;
+        if (previewCards != null && previewCards.Count > 0)
+        {
+            targets = previewCards.Select(c => new DownloadTarget
+            {
+                TargetId = c.Id,
+                Name = c.Title,
+                ThumbnailUrl = c.ThumbnailUrl,
+                UserName = c.UserName,
+                UserId = c.UserId,
+                Type = TargetType.Artwork,
+                Status = TargetStatus.Pending
+            }).ToList();
+        }
+
+        // Enqueue first so the queued entry exists even if placeholder creation is slow.
+        Guid? placeholderId = null;
+        lock (_queueLock)
+        {
+            _queueEntries.Enqueue((downloadTask, placeholderId));
+            QueuedDownloadCount = _queueEntries.Count;
+        }
+        StatusMessage = $"Queued: {description} ({QueuedDownloadCount} waiting)";
+        Logger.LogInformation("[Queue] Enqueued: {Desc}. Queue size: {Count}", description, QueuedDownloadCount);
+
+        // Create the History placeholder asynchronously (DB write off the UI thread).
+        if (targets != null)
+        {
+            var acctOverride = BuildAccountSettingsOverride();
+            try
+            {
+                var job = await Task.Run(() => _coordinator.CreateJobAsync(
+                    DownloadJobType.ImageId, $"(Queued) {description}", targets,
+                    settingsOverride: acctOverride,
+                    startImmediately: false));
+                placeholderId = job.Id;
+                // Attach the placeholder id to the queued entry (it may already be
+                // dequeued/running; if so, this is a harmless no-op).
+                lock (_queueLock)
+                {
+                    var items = _queueEntries.ToArray();
+                    var idx = Array.FindIndex(items, e => ReferenceEquals(e.Task, downloadTask));
+                    if (idx >= 0)
+                    {
+                        items[idx] = (downloadTask, job.Id);
+                        _queueEntries.Clear();
+                        foreach (var it in items) _queueEntries.Enqueue(it);
+                    }
+                    else
+                    {
+                        // Already dequeued — delete the now-orphan placeholder.
+                        _ = Task.Run(async () => { try { await _coordinator.DeleteJobAsync(job.Id); } catch { } });
+                        job = null!;
+                    }
+                }
+                if (job != null) _coordinator.NotifyJobSaved(job);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Could not create placeholder queue job");
+            }
+        }
+
+        PumpQueue();
+    }
 
     /// <summary>
     /// Adds multiple artwork cards in a batch to reduce UI thread pressure.
@@ -247,6 +471,49 @@ public partial class GalleryViewModel : ViewModelBase
         _showPreview = s.ShowPreview;
         _browsePanelWidth = s.BrowsePanelWidth >= 200 ? s.BrowsePanelWidth : 380;
         _showR18 = s.GalleryShowR18;
+
+        // Clean up stale active jobs from a previous session.
+        // On a fresh app launch, nothing is actually running, so any job left in
+        // Queued/Pending/Running status from before is dead state we should clear.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var jobs = await _coordinator.GetJobsAsync();
+                foreach (var j in jobs)
+                {
+                    // Placeholder queue jobs: delete outright
+                    if (j.Name != null && j.Name.StartsWith("(Queued) ")
+                        && j.Status is JobStatus.Queued or JobStatus.Pending)
+                    {
+                        try { await _coordinator.DeleteJobAsync(j.Id); } catch { }
+                        continue;
+                    }
+                    // Real jobs left in active state from a prior session — mark
+                    // as Cancelled so the user can see what was interrupted but
+                    // they no longer occupy concurrency slots.
+                    if (j.Status is JobStatus.Queued or JobStatus.Pending or JobStatus.Running)
+                    {
+                        try
+                        {
+                            j.Status = JobStatus.Cancelled;
+                            j.CompletedAt = DateTime.UtcNow;
+                            j.ErrorMessage ??= "Interrupted by app restart";
+                            await _jobRepository.SaveJobAsync(j);
+                            _coordinator.NotifyJobSaved(j);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "Failed to clean stale job {Id}", j.Id);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to clean orphan jobs");
+            }
+        });
 
         // Only load on first construction - singleton means this only fires once
         _ = LoadFollowedArtistsAsync();
@@ -854,7 +1121,7 @@ public partial class GalleryViewModel : ViewModelBase
             }
 
             if (isInitialLoad) ArtistsLoaded = false;
-            const int limit = 48;
+            const int limit = 96; // Larger page size to reduce API calls
             var seenLock = new object();
             // Seed 'seen' inside the lock so the initial read of Artists is
             // consistent with the locked writes done by parallel page tasks.
@@ -972,6 +1239,13 @@ public partial class GalleryViewModel : ViewModelBase
         IsLoadingArtists = true;
         StatusMessage = "Refreshing followed artists…";
 
+        // Preserve the currently-selected artist so clearing the list (which
+        // resets the bound ListBox selection to null) doesn't drop it — otherwise
+        // a refresh while viewing a gallery makes Download All report
+        // "select an artist first".
+        var prevSelected = SelectedArtist;
+        var prevSelectedId = prevSelected?.UserId;
+
         try
         {
             if (string.IsNullOrWhiteSpace(_settingsService.Current.UserId))
@@ -1036,6 +1310,22 @@ public partial class GalleryViewModel : ViewModelBase
             if (!IsLoading)
                 StatusMessage = $"{Artists.Count} followed artists (refreshed)";
             RebuildFilteredArtists();
+
+            // Restore the previously-selected artist (matched by id to the freshly
+            // created instance, falling back to the original for transient artists)
+            // without re-triggering a gallery reload — the gallery is already showing it.
+            if (prevSelectedId != null)
+            {
+                var restore = Artists.FirstOrDefault(a => a.UserId == prevSelectedId) ?? prevSelected;
+                if (restore != null && !ReferenceEquals(restore, SelectedArtist))
+                {
+                    _suppressArtistChanged = true;
+                    try { SelectedArtist = restore; }
+                    finally { _suppressArtistChanged = false; }
+                    foreach (var card in VisibleArtworks)
+                        card.IsCurrentArtist = card.UserId == restore.UserId;
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -1078,14 +1368,22 @@ public partial class GalleryViewModel : ViewModelBase
                 .Select(u => new ArtistCardViewModel(u))
                 .ToList();
             if (batch.Count == 0) return;
+            
+            // Batch add to UI to reduce thread switches
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                // Add all items first, then rebuild filter once
                 foreach (var vm in batch)
                 {
                     Artists.Add(vm);
-                    _ = vm.LoadAvatarAsync(_imageLoader);
                 }
                 RebuildFilteredArtists();
+                
+                // Start avatar loading after UI update
+                foreach (var vm in batch)
+                {
+                    _ = vm.LoadAvatarAsync(_imageLoader);
+                }
             });
         }
 
@@ -1123,12 +1421,12 @@ public partial class GalleryViewModel : ViewModelBase
                     hiddenCapture, totalBound, limit);
                 tasks.Add(Task.Run(async () =>
                 {
-                    // Step by half the page size so consecutive windows overlap.
+                    // Step by 7/8 of the page size to reduce overlap even more with larger pages.
                     // Pixiv's list drifts as artists are followed/unfollowed mid-fetch —
                     // a full-step advance can skip artists that shifted into the gap.
                     // Overlapping windows ensure every artist appears in at least one
                     // page. The shared dedup set discards the duplicates cheaply.
-                    var step = Math.Max(1, limit / 2);
+                    var step = Math.Max(1, limit * 7 / 8);
                     int offset = limit;
                     int consecutiveEmpty = 0;
                     while (offset < totalBound + limit) // fetch one window past Total to catch tail drift
@@ -1471,7 +1769,7 @@ public partial class GalleryViewModel : ViewModelBase
 
     public async Task DownloadPagesAsync(ArtworkCardViewModel card, IReadOnlyCollection<int> pageIndexes)
     {
-        IsBulkDownloading = true;
+        BeginBulkDownload();
         var pageLabel = pageIndexes.Count == 1
             ? $"p{pageIndexes.First() + 1}"
             : $"{pageIndexes.Count} pages";
@@ -1503,7 +1801,7 @@ public partial class GalleryViewModel : ViewModelBase
         }
         finally
         {
-            IsBulkDownloading = false;
+            EndBulkDownload();
             _ = Task.Run(async () => { await _jobRepository.SaveJobAsync(job); _coordinator.NotifyJobSaved(job); });
         }
     }
@@ -1511,6 +1809,10 @@ public partial class GalleryViewModel : ViewModelBase
     partial void OnSelectedArtistChanged(ArtistCardViewModel? value)
     {
         if (_suppressArtistChanged) return;
+        
+        // Debug: Log when SelectedArtist changes
+        System.Diagnostics.Debug.WriteLine($"SelectedArtist changed to: {value?.Name ?? "null"}");
+        OnPropertyChanged(nameof(SelectedArtist));
 
         // Sync IsCurrentArtist on all visible cards
         var selectedId = value?.UserId;
@@ -1569,6 +1871,7 @@ public partial class GalleryViewModel : ViewModelBase
             _currentArtistLoadedCount = cached.LoadedCount;
             ArtworksTotal = cached.TotalIds;
             CanLoadMore = cached.CanMore;
+            IsLoading = false; // ensure spinner clears even if a prior load was in-flight
             UpdateArtworkCountStatus();
             return;
         }
@@ -1670,33 +1973,136 @@ public partial class GalleryViewModel : ViewModelBase
     // ── Download commands ──────────────────────────────────────────────────
 
     [RelayCommand]
-    public Task DownloadSelectedAsync()
+    public async Task DownloadSelectedAsync()
     {
         var picked = VisibleArtworks.Where(a => a.IsSelected).ToList();
         if (picked.Count == 0)
         {
             StatusMessage = "No artworks selected.";
-            return Task.CompletedTask;
+            return;
         }
-        return DownloadCoreAsync(picked);
+
+        Func<Task> downloadTask = () => DownloadCoreAsync(picked);
+
+        if (_queueEntries.Count > 0 || !TryClaimBulkSlot())
+        {
+            await QueueDownloadAsync(downloadTask, $"Download selected ({picked.Count} artworks)", picked);
+        }
+        else
+        {
+            try { await downloadTask(); }
+            finally { ReleaseBulkSlot(); }
+        }
     }
 
     [RelayCommand]
-    public Task DownloadVisibleAsync() => DownloadCoreAsync(VisibleArtworks.ToList());
+    public async Task DownloadVisibleAsync()
+    {
+        var snapshot = VisibleArtworks.ToList();
+        if (snapshot.Count == 0) { StatusMessage = "No artworks loaded."; return; }
+
+        Func<Task> downloadTask = () => DownloadCoreAsync(snapshot);
+
+        if (_queueEntries.Count > 0 || !TryClaimBulkSlot())
+        {
+            await QueueDownloadAsync(downloadTask, $"Download loaded ({snapshot.Count} artworks)", snapshot);
+        }
+        else
+        {
+            try { await downloadTask(); }
+            finally { ReleaseBulkSlot(); }
+        }
+    }
 
     [RelayCommand]
     public async Task DownloadAllAsync()
     {
-        if (SelectedArtist == null || _currentArtistAllIds.Count == 0) return;
-
-        // Load all IDs first if not already done
-        if (_currentArtistLoadedCount < _currentArtistAllIds.Count)
+        if (SelectedArtist == null)
         {
-            StatusMessage = "Loading full gallery before download…";
-            while (CanLoadMore)
-                await LoadArtworkPageAsync(SelectedArtist, append: true);
+            StatusMessage = "Select an artist first.";
+            return;
         }
-        await DownloadCoreAsync(VisibleArtworks.ToList());
+
+        // Snapshot artist + id list so queued execution uses correct values
+        var artistSnapshot = SelectedArtist;
+        var artistName = artistSnapshot.Name;
+        var artistUserId = artistSnapshot.UserId;
+
+        // If IDs not yet populated (e.g. just navigated from Rankings), wait a bit
+        if (_currentArtistAllIds.Count == 0)
+        {
+            StatusMessage = $"Waiting for {artistName}'s artwork list to load…";
+            var waitStart = DateTime.UtcNow;
+            while (_currentArtistAllIds.Count == 0 && (DateTime.UtcNow - waitStart).TotalSeconds < 15)
+            {
+                await Task.Delay(200);
+                if (SelectedArtist?.UserId != artistUserId)
+                {
+                    StatusMessage = "Artist changed; download cancelled.";
+                    return;
+                }
+            }
+            if (_currentArtistAllIds.Count == 0)
+            {
+                StatusMessage = $"Could not load artwork list for {artistName}.";
+                return;
+            }
+        }
+
+        var allIdsSnapshot = _currentArtistAllIds.ToList();
+
+        Func<Task> downloadTask = async () =>
+        {
+            // Self-contained: fetch metadata for the snapshotted IDs directly so
+            // we don't share state with VisibleArtworks (which may be showing a
+            // different artist by the time this queued task runs).
+            var cards = new List<ArtworkCardViewModel>();
+            const int batchSize = 48;
+            for (int i = 0; i < allIdsSnapshot.Count; i += batchSize)
+            {
+                var batch = allIdsSnapshot.Skip(i).Take(batchSize).ToList();
+                StatusMessage = $"Loading {artistName} metadata… {Math.Min(i + batchSize, allIdsSnapshot.Count)}/{allIdsSnapshot.Count}";
+                try
+                {
+                    var metadata = await _pixivClient.GetArtworksMetadataAsync(artistUserId, batch);
+                    foreach (var id in batch)
+                    {
+                        if (metadata.TryGetValue(id, out var preview))
+                            cards.Add(new ArtworkCardViewModel(preview));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed metadata batch for {Artist}", artistName);
+                }
+                await Task.Yield();
+            }
+
+            if (cards.Count == 0)
+            {
+                StatusMessage = $"Could not load any artworks for {artistName}.";
+                return;
+            }
+
+            StatusMessage = $"Downloading {cards.Count} artworks from {artistName}…";
+            await DownloadCoreAsync(cards);
+        };
+
+        // Try to claim a slot; if all taken (or queue non-empty), enqueue for fairness
+        if (_queueEntries.Count > 0 || !TryClaimBulkSlot())
+        {
+            await QueueDownloadAsync(downloadTask, $"Download all from {artistName}", VisibleArtworks.ToList());
+        }
+        else
+        {
+            try { await downloadTask(); }
+            finally { ReleaseBulkSlot(); }
+        }
+    }
+
+    private bool CanDownload()
+    {
+        return SelectedArtist != null;
     }
 
     [RelayCommand]
@@ -1807,7 +2213,6 @@ public partial class GalleryViewModel : ViewModelBase
 
         if (approved.Count == 0) { StatusMessage = "All artworks skipped."; return; }
 
-        IsBulkDownloading = true;
         var total = approved.Count;
         var done = 0;
         var failed = 0;
@@ -1824,7 +2229,8 @@ public partial class GalleryViewModel : ViewModelBase
         var jobName = approved.Count == 1 ? $"{artistPrefix}{approved[0].Title}" : $"{artistPrefix}{approved.Count} artworks (with preset)";
         var activeJob = await _coordinator.CreateJobAsync(
             DownloadJobType.ImageId, jobName, targets,
-            settingsOverride: acctOverride, startImmediately: false);
+            settingsOverride: acctOverride, startImmediately: false,
+            initialStatusOverride: JobStatus.Running);
 
         using var cts = new System.Threading.CancellationTokenSource();
         _coordinator.RegisterExternalJob(activeJob.Id, cts);
@@ -1868,6 +2274,9 @@ public partial class GalleryViewModel : ViewModelBase
                 targets[idx].DownloadedItems = files.Count;
                 if (outputFolder == null && files.Count > 0)
                     outputFolder = Path.GetDirectoryName(files[0]);
+                // Persist completion immediately so a later pause/cancel/crash lets
+                // resume skip this artwork instead of re-fetching its metadata.
+                _ = _jobRepository.UpdateTargetStatusAsync(targets[idx].Id, TargetStatus.Completed, 1, files.Count);
             }
             catch (OperationCanceledException)
             {
@@ -1880,6 +2289,7 @@ public partial class GalleryViewModel : ViewModelBase
                 Interlocked.Increment(ref failed);
                 targets[idx].Status = TargetStatus.Failed;
                 targets[idx].ErrorMessage = ex.Message;
+                _ = _jobRepository.UpdateTargetStatusAsync(targets[idx].Id, TargetStatus.Failed, errorMessage: ex.Message);
                 Logger.LogError(ex, "Download failed for {Id}", card.Id);
             }
             finally
@@ -1890,7 +2300,6 @@ public partial class GalleryViewModel : ViewModelBase
         }).ToList();
 
         try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
-        IsBulkDownloading = false;
 
         var currentStatus = (await _coordinator.GetJobsAsync()).FirstOrDefault(j => j.Id == activeJob.Id)?.Status;
         if (currentStatus == JobStatus.Paused) { StatusMessage = "Download paused."; _coordinator.UnregisterExternalJob(activeJob.Id); return; }
@@ -1958,39 +2367,13 @@ public partial class GalleryViewModel : ViewModelBase
 
         var acctOverride = BuildAccountSettingsOverride();
 
-        // ── Re-download confirmation ──────────────────────────────────────────
-        // Check which cards already have files on disk and ask the user.
-        var approved = new List<ArtworkCardViewModel>(cards.Count);
-        var ownerWindow = _dialogService.OwnerWindow;
-        bool? bulkDecision = null; // null = ask per-card; true = yes-to-all; false = no-to-all
-
-        foreach (var card in cards)
-        {
-            if (_downloader.HasExistingFiles(card.Id, acctOverride))
-            {
-                if (bulkDecision == false) { continue; } // No-to-all: skip
-                if (bulkDecision == true)  { approved.Add(card); continue; } // Yes-to-all: approve
-
-                // Show dialog if we have a window, otherwise auto-approve
-                var choice = ownerWindow != null
-                    ? await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
-                        () => RedownloadConfirmDialog.ShowAsync(ownerWindow, card.Title, card.Thumbnail))
-                    : RedownloadChoice.Yes; // No UI available, default to Yes
-
-                if (choice == RedownloadChoice.NoToAll)  { bulkDecision = false; continue; }
-                if (choice == RedownloadChoice.No)       { continue; }
-                if (choice == RedownloadChoice.YesToAll) { bulkDecision = true; }
-                approved.Add(card); // Yes or YesToAll
-            }
-            else
-            {
-                approved.Add(card);
-            }
-        }
-
+        // Existing-file handling is governed universally by the Overwrite behavior
+        // setting (Skip / Overwrite / Backup) inside PixivDownloadService — no
+        // per-card disk scan or confirmation dialog here (that froze the UI on
+        // large jobs and bypassed the configured behavior).
+        var approved = cards.ToList();
         if (approved.Count == 0) { StatusMessage = "All artworks skipped."; return; }
 
-        IsBulkDownloading = true;
         var total = approved.Count;
         var done = 0;
         var failed = 0;
@@ -2007,7 +2390,8 @@ public partial class GalleryViewModel : ViewModelBase
         var jobName = approved.Count == 1 ? $"{artistPrefix}{approved[0].Title}" : $"{artistPrefix}{approved.Count} artworks";
         var activeJob = await _coordinator.CreateJobAsync(
             DownloadJobType.ImageId, jobName, targets,
-            settingsOverride: acctOverride, startImmediately: false);
+            settingsOverride: acctOverride, startImmediately: false,
+            initialStatusOverride: JobStatus.Running);
 
         // Register a semaphore-based executor so pause/cancel tokens flow through.
         using var cts = new System.Threading.CancellationTokenSource();
@@ -2053,6 +2437,9 @@ public partial class GalleryViewModel : ViewModelBase
                 targets[idx].DownloadedItems = files.Count;
                 if (outputFolder == null && files.Count > 0)
                     outputFolder = Path.GetDirectoryName(files[0]);
+                // Persist completion immediately so a later pause/cancel/crash lets
+                // resume skip this artwork instead of re-fetching its metadata.
+                _ = _jobRepository.UpdateTargetStatusAsync(targets[idx].Id, TargetStatus.Completed, 1, files.Count);
             }
             catch (OperationCanceledException)
             {
@@ -2065,6 +2452,7 @@ public partial class GalleryViewModel : ViewModelBase
                 Interlocked.Increment(ref failed);
                 targets[idx].Status = TargetStatus.Failed;
                 targets[idx].ErrorMessage = ex.Message;
+                _ = _jobRepository.UpdateTargetStatusAsync(targets[idx].Id, TargetStatus.Failed, errorMessage: ex.Message);
                 Logger.LogError(ex, "Download failed for {Id}", card.Id);
             }
             finally
@@ -2075,8 +2463,6 @@ public partial class GalleryViewModel : ViewModelBase
         }).ToList();
 
         try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
-
-        IsBulkDownloading = false;
 
         // Check if paused — coordinator already updated DB status via PauseJobAsync
         var currentStatus = (await _coordinator.GetJobsAsync()).FirstOrDefault(j => j.Id == activeJob.Id)?.Status;

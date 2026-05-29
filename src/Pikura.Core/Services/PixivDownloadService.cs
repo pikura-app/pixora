@@ -211,7 +211,14 @@ public sealed class PixivDownloadService
         var effectiveDateFormat = ovr?.DateFormat ?? s.DateFormat;
         var effectiveCreateSubfolder = ovr?.CreateSubfolderPerSubmission ?? s.CreateSubfolderPerSubmission;
         var effectiveSeparateR18 = ovr?.SeparateR18Folder ?? s.SeparateR18Folder;
+
+        // Overwrite behavior is the universal control for existing files:
+        // 0 = skip, 1 = overwrite, 2 = backup-then-overwrite.
+        // AllowRedownload (legacy/account flag) forces overwrite when set.
+        var effectiveOverwriteMode = ovr?.OverwriteMode ?? s.OverwriteMode;
         var allowRedownload = ovr?.AllowRedownload ?? false;
+        if (allowRedownload && effectiveOverwriteMode == 0) effectiveOverwriteMode = 1;
+        var effectiveBackup = (ovr?.BackupOldFile ?? s.BackupOldFile) || effectiveOverwriteMode == 2;
 
         var template = new FilenameTemplate(effectiveDateFormat);
         var ctx0 = new FilenameContext
@@ -312,12 +319,36 @@ public sealed class PixivDownloadService
             var destPath = Path.Combine(targetDir, fileName);
             Diag($"  page[{i}] destPath={destPath}");
 
-            if (!allowRedownload && File.Exists(destPath) && new FileInfo(destPath).Length > 0)
+            if (File.Exists(destPath) && new FileInfo(destPath).Length > 0)
             {
-                Diag($"  page[{i}] EXISTS, skipping (size={new FileInfo(destPath).Length})");
-                savedFiles.Add(destPath);
-                progress?.Report(new DownloadProgress(artwork.Id, batchIdx, batchTotal, new FileInfo(destPath).Length, null));
-                continue;
+                // 0 = skip existing, 1 = overwrite, 2 = backup-then-overwrite
+                if (effectiveOverwriteMode == 0)
+                {
+                    Diag($"  page[{i}] EXISTS, skipping (size={new FileInfo(destPath).Length})");
+                    savedFiles.Add(destPath);
+                    progress?.Report(new DownloadProgress(artwork.Id, batchIdx, batchTotal, new FileInfo(destPath).Length, null));
+                    continue;
+                }
+
+                if (effectiveBackup)
+                {
+                    try
+                    {
+                        var backupPath = destPath + ".bak";
+                        if (File.Exists(backupPath))
+                            backupPath = destPath + $".{DateTime.Now:yyyyMMddHHmmss}.bak";
+                        File.Move(destPath, backupPath);
+                        Diag($"  page[{i}] BACKED UP existing -> {backupPath}");
+                    }
+                    catch (Exception bex)
+                    {
+                        Diag($"  page[{i}] backup failed, will overwrite: {bex.Message}");
+                    }
+                }
+                else
+                {
+                    Diag($"  page[{i}] EXISTS, overwriting (mode={effectiveOverwriteMode})");
+                }
             }
 
             try

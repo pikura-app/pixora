@@ -131,13 +131,15 @@ public sealed class DownloadCoordinator : IDisposable
         List<DownloadTarget> targets,
         SettingsOverride? settingsOverride = null,
         bool startImmediately = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        JobStatus? initialStatusOverride = null)
     {
         // Queued = waiting for a concurrent slot to open.
         // Pending = slot is available, StartJobAsync will transition to Running immediately.
         var maxJobs = _settingsService.Current.MaxConcurrentJobs;
         var hasSlot = maxJobs <= 0 || _activeJobs.Count < maxJobs;
-        var initialStatus = (startImmediately && hasSlot) ? JobStatus.Pending : JobStatus.Queued;
+        var initialStatus = initialStatusOverride
+            ?? ((startImmediately && hasSlot) ? JobStatus.Pending : JobStatus.Queued);
 
         var job = new DownloadJob
         {
@@ -146,6 +148,7 @@ public sealed class DownloadCoordinator : IDisposable
             Targets = targets,
             Settings = settingsOverride ?? new SettingsOverride { UseGlobalSettings = true },
             Status = initialStatus,
+            StartedAt = initialStatus == JobStatus.Running ? DateTime.UtcNow : null,
             CreatedAt = DateTime.UtcNow
         };
 

@@ -1,3 +1,27 @@
+## Pikura 1.7.5
+
+Download queue reliability, retry performance, and History date grouping.
+
+### New Features
+
+- **History — date-grouped, collapsible sections** — Completed, Failed, and Cancelled tabs now group download jobs by date with collapsible headers ("Today", "Yesterday", weekday, or full date). Each header shows the job count and can be clicked to expand or collapse the group. The list is fully virtualized so it stays performant with 1000+ history entries.
+
+### Improvements
+
+- **Retry speed for failed / cancelled jobs** — Per-target completion status is now persisted to the database immediately when each artwork finishes, so retrying a partially-completed job skips already-downloaded artworks instantly without re-fetching metadata.
+- **Download behavior is now universal** — The Overwrite Mode setting (Skip / Overwrite / Backup) is applied consistently across all download types: gallery, bookmarks, discover, rankings, and scheduled artist downloads.
+
+### Fixes
+
+- **App freeze during "Download All"** — Queue placeholder job creation is now fully async; the UI thread is never blocked during large bulk-queue operations.
+- **Downloads wouldn't start while others were running** — Removed RelayCommand auto-disable that was preventing new downloads from being queued while concurrent slots were occupied.
+- **Queued jobs stuck as paused** — Fixed atomic slot-claiming so queued jobs correctly start as soon as a running slot becomes free, respecting the Max Concurrent Jobs setting.
+- **"Select an artist first" error on loaded gallery** — Preserves the selected artist during followed-artist list refresh so navigation state is never lost.
+- **Stuck loading spinner** — IsLoading is now correctly reset on cache hits when switching artist galleries.
+- **Orphaned queued jobs on startup** — Stale Queued/Pending jobs from previous sessions are cleaned up on launch.
+
+---
+
 ## Pikura 1.7.4
 
 Quality-of-life fixes for bookmark sorting, cross-section viewer persistence, and crash report noise.

@@ -662,4 +662,25 @@ public partial class GalleryView : UserControl
         // Also save to quick clipboard
         QuickClipboardService.CopyArtist(userId);
     }
+    
+    private async void OnDownloadAllClicked(object? sender, RoutedEventArgs e)
+    {
+        var vm = VM;
+        if (vm == null) return;
+        await vm.DownloadAllAsync();
+    }
+    
+    private async void OnDownloadLoadedClicked(object? sender, RoutedEventArgs e)
+    {
+        var vm = VM;
+        if (vm == null) return;
+        await vm.DownloadVisibleAsync();
+    }
+    
+    private async void OnDownloadSelectedClicked(object? sender, RoutedEventArgs e)
+    {
+        var vm = VM;
+        if (vm == null) return;
+        await vm.DownloadSelectedAsync();
+    }
 }

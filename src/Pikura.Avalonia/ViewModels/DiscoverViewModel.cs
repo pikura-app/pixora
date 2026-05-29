@@ -34,6 +34,7 @@ public partial class DiscoverViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private bool _isLoadingArtistWorks;
+    [ObservableProperty] private bool _isBulkDownloading;
     partial void OnIsLoadingArtistWorksChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowNoArtistPlaceholder));
@@ -199,6 +200,57 @@ public partial class DiscoverViewModel : ViewModelBase
             : FilteredArtistWorks.Select(c => c.Artwork).ToList();
         if (previews.Count == 0) return Task.CompletedTask;
         return GalleryVm.DownloadPreviewsAsync(previews);
+    }
+
+    [RelayCommand]
+    public async Task DownloadAllAsync()
+    {
+        if (SelectedUser == null || IsBulkDownloading) return;
+        
+        IsBulkDownloading = true;
+        try
+        {
+            // Get all artwork IDs for the selected user (same as LoadArtistWorksAsync)
+            var profile = await _pixivClient.GetUserProfileAllAsync(SelectedUser.UserId);
+            var allIds = profile.AllArtworkIds();
+            if (allIds.Count == 0)
+            {
+                StatusMessage = "No artworks found for this artist.";
+                return;
+            }
+
+            // Fetch all artwork metadata in batches
+            var allPreviews = new List<ArtworkPreview>();
+            const int batchSize = 48;
+            
+            for (int i = 0; i < allIds.Count; i += batchSize)
+            {
+                var batchIds = allIds.Skip(i).Take(batchSize).ToList();
+                var batch = await _pixivClient.GetArtworksMetadataAsync(SelectedUser.UserId, batchIds);
+                if (batch != null)
+                {
+                    allPreviews.AddRange(batch.Values);
+                }
+                
+                // Update status to show progress
+                StatusMessage = $"Fetching artwork metadata... {Math.Min(i + batchSize, allIds.Count)}/{allIds.Count}";
+            }
+
+            // Download all previews
+            if (allPreviews.Count > 0)
+            {
+                await GalleryVm.DownloadPreviewsAsync(allPreviews);
+                StatusMessage = $"Queued {allPreviews.Count} artworks for download.";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to fetch all artworks: {ex.Message}";
+        }
+        finally
+        {
+            IsBulkDownloading = false;
+        }
     }
 
     partial void OnCardSizeChanged(int value)

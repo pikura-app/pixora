@@ -34,9 +34,9 @@
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Padding="20,14">
-            <Grid ColumnDefinitions="*">
-                <StackPanel x:Name="NotesPanel" Grid.Column="0" Spacing="4"/>
-            </Grid>
+            <Border>
+                <StackPanel x:Name="NotesPanel" Spacing="4"/>
+            </Border>
         </ScrollViewer>
 
         <!-- Footer -->
