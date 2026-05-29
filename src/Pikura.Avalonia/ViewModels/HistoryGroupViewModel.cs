@@ -60,8 +60,8 @@ public partial class HistoryGroupViewModel : ObservableObject
         var today = DateTime.Now.Date;
         if (date == today) return "Today";
         if (date == today.AddDays(-1)) return "Yesterday";
-        if (date > today.AddDays(-7)) return date.ToString("dddd"); // e.g. "Monday"
-        if (date.Year == today.Year) return date.ToString("MMMM d"); // e.g. "May 28"
+        if (date > today.AddDays(-7)) return date.ToString("dddd, MMMM d"); // e.g. "Tuesday, May 27"
+        if (date.Year == today.Year) return date.ToString("MMMM d");        // e.g. "May 20"
         return date.ToString("MMMM d, yyyy");
     }
 }
