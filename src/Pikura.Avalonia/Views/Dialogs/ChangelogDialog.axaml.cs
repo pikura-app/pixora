@@ -128,7 +128,7 @@ public partial class ChangelogDialog : Window
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Margin = new Thickness(indent ? 10 : 0, 1, 0, 1),
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Stretch,
         };
 
         // Split on **bold** markers
